@@ -323,7 +323,7 @@ export function ChatPage() {
                         <div className="w-full">
                           <Textarea
                             value={editContent}
-                            onChange={(e) => setEditContent(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditContent(e.target.value)}
                             onKeyDown={handleEditKeyDown}
                             className="min-h-[80px] text-sm font-mono"
                             autoFocus

@@ -231,13 +231,13 @@ export function PresetPage() {
                 <div className="flex-1 space-y-2">
                   <Input
                     value={editName}
-                    onChange={(e) => setEditName(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
                     className="text-xl font-bold border-0 border-b rounded-none px-0 h-auto text-2xl focus-visible:ring-0"
                     placeholder="Preset name"
                   />
                   <Textarea
                     value={editDesc}
-                    onChange={(e) => setEditDesc(e.target.value)}
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditDesc(e.target.value)}
                     className="border-0 border-b rounded-none px-0 min-h-[40px] resize-none text-sm text-muted-foreground focus-visible:ring-0"
                     placeholder="Description (optional)"
                     rows={1}
@@ -327,7 +327,7 @@ export function PresetPage() {
           <div className="space-y-4">
             <div>
               <Label>Name</Label>
-              <Input value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Card name" />
+              <Input value={itemName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemName(e.target.value)} placeholder="Card name" />
             </div>
             <div className="flex gap-4">
               <div className="flex-1">
@@ -343,14 +343,14 @@ export function PresetPage() {
               </div>
               <div>
                 <Label>Order</Label>
-                <Input type="number" value={itemOrder} onChange={(e) => setItemOrder(parseInt(e.target.value) || 0)} className="w-20" />
+                <Input type="number" value={itemOrder} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemOrder(parseInt(e.target.value) || 0)} className="w-20" />
               </div>
             </div>
             <div>
               <Label>Content</Label>
               <Textarea
                 value={itemContent}
-                onChange={(e) => setItemContent(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setItemContent(e.target.value)}
                 placeholder="Enter the prompt content..."
                 rows={10}
                 className="font-mono text-xs"
