@@ -26,8 +26,10 @@ export interface BuildPromptInput {
   character: Character
   recentMessages: Message[]
   userInput: string
+  maxTotalTokens?: number
   systemRules?: string
   userPersona?: string
+  userName?: string
   contextBlocks?: ContextBlock[]
   presetItems?: { role: 'system' | 'user'; content: string; injectionOrder: number }[]
 }

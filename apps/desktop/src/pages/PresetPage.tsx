@@ -394,7 +394,7 @@ export function PresetPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={importOpen} onOpenChange={(v) => { setImportOpen(v); if (!v) setImportFile(null) }}>
+      <Dialog open={importOpen} onOpenChange={(v: boolean) => { setImportOpen(v); if (!v) setImportFile(null) }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>Import Preset</DialogTitle>

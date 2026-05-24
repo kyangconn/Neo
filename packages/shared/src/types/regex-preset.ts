@@ -14,6 +14,7 @@ export interface RegexPreset {
   name: string
   description: string
   rules: RegexRule[]
+  isGlobal: boolean
   createdAt: string
   updatedAt: string
 }
@@ -21,11 +22,13 @@ export interface RegexPreset {
 export interface CreateRegexPresetInput {
   name: string
   description: string
+  isGlobal?: boolean
 }
 
 export interface UpdateRegexPresetInput {
   name?: string
   description?: string
+  isGlobal?: boolean
 }
 
 export interface CreateRegexRuleInput {

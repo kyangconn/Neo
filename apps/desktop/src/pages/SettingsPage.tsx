@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2 } from 'lucide-react'
-import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle, CardDescription, Textarea, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
+import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2, Globe } from 'lucide-react'
+import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle, CardDescription, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { useTheme } from '@/app/theme'
 
@@ -50,7 +50,6 @@ export function SettingsPage() {
   const [section, setSection] = useState<Section>('api')
 
   const modelConfigs = useSettingsStore((s) => s.modelConfigs)
-  const modelConfig = useSettingsStore((s) => s.modelConfig)
   const activeConfigId = useSettingsStore((s) => s.activeConfigId)
   const saving = useSettingsStore((s) => s.saving)
   const testing = useSettingsStore((s) => s.testing)
@@ -235,6 +234,12 @@ export function SettingsPage() {
     toast('info', newId ? `Activated "${selectedRegexPreset?.name}"` : 'Deactivated')
   }
 
+  const handleToggleGlobalRegex = async () => {
+    if (!selectedRegexPresetId || !selectedRegexPreset) return
+    await updateRegexPreset(selectedRegexPresetId, { isGlobal: !selectedRegexPreset.isGlobal })
+    toast('info', selectedRegexPreset.isGlobal ? 'Removed global flag' : 'Set as global regex')
+  }
+
   const resetRuleForm = () => {
     setEditingRuleId(null)
     setRegexName('')
@@ -338,29 +343,29 @@ export function SettingsPage() {
 
               <div>
                 <Label htmlFor="config-name">Configuration Name</Label>
-                <Input id="config-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="My API Config" />
+                <Input id="config-name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} placeholder="My API Config" />
               </div>
               <div>
                 <Label htmlFor="base-url">Base URL</Label>
-                <Input id="base-url" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" />
+                <Input id="base-url" value={baseUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)} placeholder="https://api.openai.com/v1" />
                 <p className="text-xs text-muted-foreground mt-1">e.g. https://api.openai.com/v1 or http://localhost:11434/v1 for Ollama</p>
               </div>
               <div>
                 <Label htmlFor="api-key">API Key</Label>
-                <Input id="api-key" type="password" value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
+                <Input id="api-key" type="password" value={apiKey} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)} placeholder="sk-..." />
               </div>
               <div>
                 <Label htmlFor="model">Model</Label>
-                <Input id="model" value={model} onChange={(e) => setModel(e.target.value)} placeholder="gpt-4o-mini" />
+                <Input id="model" value={model} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModel(e.target.value)} placeholder="gpt-4o-mini" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="temperature">Temperature</Label>
-                  <Input id="temperature" value={temperature} onChange={(e) => setTemperature(e.target.value)} placeholder="0.8" type="number" step="0.1" min="0" max="2" />
+                  <Input id="temperature" value={temperature} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemperature(e.target.value)} placeholder="0.8" type="number" step="0.1" min="0" max="2" />
                 </div>
                 <div>
                   <Label htmlFor="max-tokens">Max Tokens</Label>
-                  <Input id="max-tokens" value={maxTokens} onChange={(e) => setMaxTokens(e.target.value)} placeholder="800" type="number" min="1" max="128000" />
+                  <Input id="max-tokens" value={maxTokens} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxTokens(e.target.value)} placeholder="800" type="number" min="1" max="128000" />
                 </div>
               </div>
               <div className="flex gap-2">
@@ -485,11 +490,14 @@ export function SettingsPage() {
                   <div className="p-4 pb-2 shrink-0 border-b">
                     <div className="flex items-start justify-between gap-3 mb-3">
                       <div className="flex-1 space-y-1.5">
-                        <Input value={regexPresetName} onChange={(e) => setRegexPresetName(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-lg font-bold focus-visible:ring-0" placeholder="Preset name" />
-                        <Input value={regexPresetDesc} onChange={(e) => setRegexPresetDesc(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-xs text-muted-foreground focus-visible:ring-0" placeholder="Description" />
+                        <Input value={regexPresetName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegexPresetName(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-lg font-bold focus-visible:ring-0" placeholder="Preset name" />
+                        <Input value={regexPresetDesc} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegexPresetDesc(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-xs text-muted-foreground focus-visible:ring-0" placeholder="Description" />
                       </div>
                       <div className="flex gap-1 shrink-0">
                         <Button size="sm" variant="outline" onClick={handleSaveRegexPresetMeta}>Save</Button>
+                        <Button size="sm" variant={selectedRegexPreset?.isGlobal ? 'default' : 'outline'} onClick={handleToggleGlobalRegex} title="Toggle global regex">
+                          <Globe className="h-3.5 w-3.5" />
+                        </Button>
                         <Button size="sm" variant={activeRegexPresetId === selectedRegexPresetId ? 'default' : 'outline'} onClick={handleActivateRegexPreset}>
                           {activeRegexPresetId === selectedRegexPresetId ? 'Active' : 'Activate'}
                         </Button>
@@ -501,7 +509,7 @@ export function SettingsPage() {
                   <div className="p-4 shrink-0 border-b">
                     <h3 className="text-sm font-semibold mb-3">{editingRuleId ? 'Edit Rule' : 'Add Rule'}</h3>
                     <div className="grid grid-cols-2 gap-3 mb-3">
-                      <Input value={regexName} onChange={(e) => setRegexName(e.target.value)} placeholder="Rule name" className="text-xs" />
+                      <Input value={regexName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegexName(e.target.value)} placeholder="Rule name" className="text-xs" />
                       <div className="flex items-center gap-3">
                         <label className="flex items-center gap-1.5 cursor-pointer">
                           <button type="button" role="switch" aria-checked={regexEnabled} onClick={() => setRegexEnabled(!regexEnabled)}
@@ -520,8 +528,8 @@ export function SettingsPage() {
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3 mb-3">
-                      <Input value={regexPattern} onChange={(e) => setRegexPattern(e.target.value)} placeholder='e.g. <summary>([\s\S]*?)</summary>' className="font-mono text-[10px]" />
-                      <Input value={regexTemplate} onChange={(e) => setRegexTemplate(e.target.value)} placeholder='e.g. $1' className="font-mono text-[10px]" />
+                      <Input value={regexPattern} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegexPattern(e.target.value)} placeholder='e.g. <summary>([\s\S]*?)</summary>' className="font-mono text-[10px]" />
+                      <Input value={regexTemplate} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setRegexTemplate(e.target.value)} placeholder='e.g. $1' className="font-mono text-[10px]" />
                     </div>
                     <div className="flex gap-2">
                       <Button size="sm" onClick={handleSaveRule}>{editingRuleId ? 'Update' : 'Add'} Rule</Button>
@@ -580,6 +588,7 @@ export function SettingsPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
       </div>
     </div>
   )

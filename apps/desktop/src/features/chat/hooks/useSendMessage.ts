@@ -2,8 +2,9 @@ import { useState, useCallback, useRef } from 'react'
 import { useChatStore } from '../chat.store'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { presetRepository } from '@/db/repositories'
-import { buildChatPrompt, createModelProvider, stripPromptContent, trimMessagesByTokens } from '@neo-tavern/core'
+import { buildChatPrompt, createModelProvider, stripPromptContent, WorldbookContributor } from '@neo-tavern/core'
 import type { Character, BuiltPrompt, Message } from '@neo-tavern/shared'
+import { useWorldbookStore } from '@/features/settings/worldbook.store'
 
 interface UseSendMessageOptions {
   character: Character | undefined
@@ -44,6 +45,20 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
     )
   }
 
+  const getWorldbookContextBlocks = async (userInput: string, recentMessages: Message[]) => {
+    const { worldbooks, activeWorldbookId } = useWorldbookStore.getState()
+    if (!activeWorldbookId || !character) return []
+    const wb = worldbooks.find((w) => w.id === activeWorldbookId)
+    if (!wb || wb.entries.length === 0) return []
+    const contributor = new WorldbookContributor()
+    contributor.setEntries(wb.entries)
+    return contributor.contribute({
+      character,
+      recentMessages,
+      userInput,
+    })
+  }
+
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim() || !chatId || !character) return
 
@@ -60,7 +75,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
       })
 
       const { messages: recentMessages } = useChatStore.getState()
-      const contextTokens = useSettingsStore.getState().contextTokens || 8000
+      const contextTokens = useSettingsStore.getState().contextTokens || 64000
 
       const activePresetId = await presetRepository.getActivePresetId()
       let presetItems: { role: 'system' | 'user'; content: string; injectionOrder: number }[] | undefined
@@ -77,11 +92,16 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         }
       }
 
+      const historyMessages = recentMessages.slice(0, -1)
+
       const built = buildChatPrompt({
         character,
-        recentMessages: trimMessagesByTokens(stripMessages(recentMessages), contextTokens) as Message[],
+        recentMessages: stripMessages(historyMessages) as Message[],
         userInput: content.trim(),
+        maxTotalTokens: contextTokens,
         presetItems,
+        contextBlocks: await getWorldbookContextBlocks(content.trim(), recentMessages),
+        userName: useSettingsStore.getState().personaName,
       })
 
       if (onPromptBuilt) {
@@ -95,6 +115,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
 
       const provider = createModelProvider(modelConfig)
 
+      const genStart = Date.now()
       const result = await provider.generate({
         messages: built.messages,
         model: modelConfig.model,
@@ -102,11 +123,15 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         maxTokens: modelConfig.maxTokens,
         signal: controller.signal,
       })
+      const generateDuration = Date.now() - genStart
 
       await addMessage({
         chatId,
         role: 'assistant',
         content: result.content,
+        reasoningContent: result.reasoningContent,
+        generateDuration,
+        usage: result.usage,
       })
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
@@ -159,7 +184,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
       const userContent = allMessages[lastUserIdx].content
 
       const afterDelete = useChatStore.getState().messages
-      const contextTokens = useSettingsStore.getState().contextTokens || 8000
+      const contextTokens = useSettingsStore.getState().contextTokens || 64000
 
       const activePresetId = await presetRepository.getActivePresetId()
       let presetItems: { role: 'system' | 'user'; content: string; injectionOrder: number }[] | undefined
@@ -172,11 +197,16 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         }
       }
 
+      const historyMessages = afterDelete.slice(0, -1)
+
       const built = buildChatPrompt({
         character,
-        recentMessages: trimMessagesByTokens(stripMessages(afterDelete), contextTokens) as Message[],
+        recentMessages: stripMessages(historyMessages) as Message[],
         userInput: userContent,
+        maxTotalTokens: contextTokens,
         presetItems,
+        contextBlocks: await getWorldbookContextBlocks(userContent, afterDelete),
+        userName: useSettingsStore.getState().personaName,
       })
 
       if (onPromptBuilt) onPromptBuilt(built)
@@ -185,6 +215,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
       if (!modelConfig) throw new Error('Model not configured. Please set up API settings first.')
 
       const provider = createModelProvider(modelConfig)
+      const genStart = Date.now()
       const result = await provider.generate({
         messages: built.messages,
         model: modelConfig.model,
@@ -192,8 +223,9 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         maxTokens: modelConfig.maxTokens,
         signal: controller.signal,
       })
+      const generateDuration = Date.now() - genStart
 
-      await addMessage({ chatId, role: 'assistant', content: result.content })
+      await addMessage({ chatId, role: 'assistant', content: result.content, reasoningContent: result.reasoningContent, generateDuration, usage: result.usage })
     } catch (err) {
       if ((err as Error).name === 'AbortError') {
         setError('Generation stopped')

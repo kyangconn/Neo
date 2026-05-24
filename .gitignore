@@ -9,4 +9,5 @@ target/
 .DS_Store
 Thumbs.db
 *.tsbuildinfo
+dev_reference/
 预设/

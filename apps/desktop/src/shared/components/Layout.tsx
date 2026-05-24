@@ -1,11 +1,13 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageSquare, User, Settings, Home, LayoutTemplate } from 'lucide-react'
+import { MessageSquare, User, Settings, Home, LayoutTemplate, BookOpen, Sparkles } from 'lucide-react'
 import { cn } from '@neo-tavern/ui'
 
 const navItems = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/character', icon: User, label: 'Characters' },
   { to: '/preset', icon: LayoutTemplate, label: 'Presets' },
+  { to: '/worldbook', icon: BookOpen, label: 'World Book' },
+  { to: '/persona', icon: Sparkles, label: 'Persona' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ]
 

@@ -1,9 +1,10 @@
 import { useEffect } from 'react'
 import { RouterProvider } from 'react-router-dom'
 import { router } from './router'
-import { seedTestCharacter } from './seed'
+import { seedTestCharacter, seedBuiltinRegex, seedLunaWorldbook, seedWritingPreset } from './seed'
 import { ToastContainer, useToast } from '@neo-tavern/ui'
 import { useSettingsStore } from '@/features/settings/settings.store'
+import { useWorldbookStore } from '@/features/settings/worldbook.store'
 import { ThemeProvider } from './theme'
 
 function AppContent() {
@@ -12,9 +13,14 @@ function AppContent() {
 
   useEffect(() => {
     seedTestCharacter()
+    seedBuiltinRegex()
+    seedLunaWorldbook()
+    seedWritingPreset()
     useSettingsStore.getState().loadAllConfigs()
     useSettingsStore.getState().loadContextTokens()
     useSettingsStore.getState().loadRegexRules()
+    useSettingsStore.getState().loadPersona()
+    useWorldbookStore.getState().loadWorldbooks()
   }, [])
 
   return (

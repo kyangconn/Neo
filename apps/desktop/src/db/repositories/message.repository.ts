@@ -16,7 +16,7 @@ export const messageRepository = {
   },
 
   async create(input: CreateMessageInput): Promise<Message> {
-    const msg: Message = { id: generateId(), chatId: input.chatId, role: input.role, content: input.content, createdAt: new Date().toISOString() }
+    const msg: Message = { id: generateId(), chatId: input.chatId, role: input.role, content: input.content, reasoningContent: input.reasoningContent, generateDuration: input.generateDuration, usage: input.usage, createdAt: new Date().toISOString() }
     const all = loadAll()
     all.push(msg)
     saveAll(all)

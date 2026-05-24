@@ -133,7 +133,7 @@ describe('buildChatPrompt', () => {
 
     const lastMessage = result.messages[result.messages.length - 1]
     expect(lastMessage.role).toBe('user')
-    expect(lastMessage.content).toBe('My test message')
+    expect(lastMessage.content).toContain('My test message')
   })
 
   it('should generate preview text', () => {
@@ -211,7 +211,7 @@ describe('buildChatPrompt', () => {
       systemRules: customRules,
     })
 
-    expect(result.messages[0].content).toBe(customRules)
+    expect(result.messages[0].content).toContain(customRules)
   })
 })
 

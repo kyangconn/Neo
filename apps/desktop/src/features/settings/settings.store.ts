@@ -19,6 +19,8 @@ interface SettingsState {
   regexPresets: RegexPreset[]
   activeRegexPresetId: string | null
   contextTokens: number
+  personaName: string
+  personaDesc: string
 
   loadAllConfigs: () => Promise<void>
   selectConfig: (id: string) => Promise<void>
@@ -38,6 +40,8 @@ interface SettingsState {
   toggleRegexRule: (presetId: string, ruleId: string) => Promise<void>
   getActiveRegexRules: () => RegexRule[]
   setContextTokens: (tokens: number) => void
+  loadPersona: () => void
+  savePersona: (name: string, desc: string) => void
   clearError: () => void
 }
 
@@ -51,7 +55,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   error: null,
   regexPresets: [],
   activeRegexPresetId: null,
-  contextTokens: 8000,
+  contextTokens: 0,
+  personaName: 'User',
+  personaDesc: '',
 
   loadAllConfigs: async () => {
     set({ loading: true, error: null })
@@ -182,22 +188,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   getActiveRegexRules: () => {
     const { regexPresets, activeRegexPresetId } = get()
-    if (!activeRegexPresetId) return []
-    const preset = regexPresets.find((p) => p.id === activeRegexPresetId)
-    if (!preset) return []
-    return preset.rules.filter((r) => r.enabled)
+    const rules: RegexRule[] = []
+    for (const p of regexPresets) {
+      if (p.isGlobal) {
+        rules.push(...p.rules.filter((r) => r.enabled))
+      }
+    }
+    if (activeRegexPresetId) {
+      const preset = regexPresets.find((p) => p.id === activeRegexPresetId)
+      if (preset) {
+        rules.push(...preset.rules.filter((r) => r.enabled))
+      }
+    }
+    const seen = new Set<string>()
+    return rules.filter((r) => { if (seen.has(r.pattern)) return false; seen.add(r.pattern); return true })
   },
 
   loadContextTokens: async () => {
     const raw = await settingsRepository.get('contextTokens')
-    if (raw) set({ contextTokens: parseInt(raw) || 8000 })
+    if (raw !== null && raw !== undefined) set({ contextTokens: parseInt(raw) || 0 })
   },
 
   createRegexPreset: async (input) => {
     set({ loading: true, error: null })
     try {
       const now = new Date().toISOString()
-      const preset: RegexPreset = { id: generateId(), name: input.name, description: input.description, rules: [], createdAt: now, updatedAt: now }
+      const preset: RegexPreset = { id: generateId(), name: input.name, description: input.description, rules: [], isGlobal: input.isGlobal || false, createdAt: now, updatedAt: now }
       const presets = [...get().regexPresets, preset]
       settingsRepository.saveRegexRules(presets)
       set({ regexPresets: presets, loading: false })
@@ -213,6 +229,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         const updated = { ...p, updatedAt: new Date().toISOString() }
         if (input.name !== undefined) updated.name = input.name
         if (input.description !== undefined) updated.description = input.description
+        if (input.isGlobal !== undefined) updated.isGlobal = input.isGlobal
         return updated
       })
       settingsRepository.saveRegexRules(presets)
@@ -304,5 +321,15 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setContextTokens: (tokens: number) => {
     settingsRepository.set('contextTokens', String(tokens))
     set({ contextTokens: tokens })
+  },
+
+  loadPersona: () => {
+    const persona = settingsRepository.loadPersona()
+    set({ personaName: persona.name, personaDesc: persona.desc })
+  },
+
+  savePersona: (name: string, desc: string) => {
+    settingsRepository.savePersona({ name, desc })
+    set({ personaName: name, personaDesc: desc })
   },
 }))

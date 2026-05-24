@@ -1,13 +1,15 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Send, ChevronDown, ChevronUp, ArrowLeft, Copy, Pencil, Check, X, ScrollText, RotateCcw, CheckCheck, ChevronRight, StopCircle } from 'lucide-react'
+import { Send, ChevronDown, ChevronUp, ArrowLeft, Copy, Pencil, Check, X, ScrollText, RotateCcw, CheckCheck, ChevronRight, StopCircle, BarChart3, Trash2, Brain } from 'lucide-react'
 import { Button, Input, Card, CardContent, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@neo-tavern/ui'
 import { useCharacterStore } from '@/features/character/character.store'
 import { useChatStore } from '@/features/chat/chat.store'
 import { useSendMessage } from '@/features/chat/hooks/useSendMessage'
 import { presetRepository } from '@/db/repositories'
-import { buildChatPrompt, formatPreview, applyRegexRules, trimMessagesByTokens } from '@neo-tavern/core'
+import { buildChatPrompt, formatPreview, applyRegexRules, resolveWorldbookEntries } from '@neo-tavern/core'
+import type { DisplayBlock } from '@neo-tavern/core'
 import { useSettingsStore } from '@/features/settings/settings.store'
+import { useWorldbookStore } from '@/features/settings/worldbook.store'
 import type { BuiltPrompt, Message } from '@neo-tavern/shared'
 
 function Avatar({ name, isUser }: { name: string; isUser?: boolean }) {
@@ -57,13 +59,20 @@ export function ChatPage() {
   const presetItemsRef = useRef<{ role: 'system' | 'user'; content: string; injectionOrder: number }[]>([])
 
   const { characters, loadCharacters } = useCharacterStore()
-  const { currentChat, messages, loading, error: chatError, loadChat, createOrGetChat, clearError, updateMessage } = useChatStore()
+  const { currentChat, messages, loading, error: chatError, loadChat, createOrGetChat, clearError, updateMessage, deleteMessage } = useChatStore()
   const regexPresets = useSettingsStore((s) => s.regexPresets)
   const activeRegexPresetId = useSettingsStore((s) => s.activeRegexPresetId)
   const activeRegexRules = (() => {
-    if (!activeRegexPresetId) return [] as typeof regexPresets[0]['rules']
-    const preset = regexPresets.find((p) => p.id === activeRegexPresetId)
-    return preset ? preset.rules.filter((r) => r.enabled) : []
+    const rules: typeof regexPresets[0]['rules'] = []
+    for (const p of regexPresets) {
+      if (p.isGlobal) rules.push(...p.rules.filter((r) => r.enabled))
+    }
+    if (activeRegexPresetId) {
+      const preset = regexPresets.find((p) => p.id === activeRegexPresetId)
+      if (preset) rules.push(...preset.rules.filter((r) => r.enabled))
+    }
+    const seen = new Set<string>()
+    return rules.filter((r) => { if (seen.has(r.pattern)) return false; seen.add(r.pattern); return true })
   })()
 
   const [input, setInput] = useState('')
@@ -73,6 +82,11 @@ export function ChatPage() {
   const [editContent, setEditContent] = useState('')
   const [promptDialogOpen, setPromptDialogOpen] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const personaName = useSettingsStore((s) => s.personaName)
+  const [tokenDialogOpen, setTokenDialogOpen] = useState(false)
+  const [deleteMsgTarget, setDeleteMsgTarget] = useState<Message | null>(null)
+  const [fontSize, setFontSize] = useState(15)
+  const [thinkingMsg, setThinkingMsg] = useState<Message | null>(null)
 
   const characterId = searchParams.get('characterId')
   const character = characters.find((c) => c.id === (currentChat?.characterId ?? characterId))
@@ -122,14 +136,45 @@ export function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
   }, [messages])
 
+  useEffect(() => {
+    if (!character) return
+    const settingsState = useSettingsStore.getState()
+    const wbState = useWorldbookStore.getState()
+    if (character.regexPresetId && character.regexPresetId !== settingsState.activeRegexPresetId) {
+      settingsState.setActiveRegexPreset(character.regexPresetId)
+    }
+    if (character.worldbookId && character.worldbookId !== wbState.activeWorldbookId) {
+      wbState.setActiveWorldbook(character.worldbookId)
+    }
+  }, [character?.id])
+
   const updatePreview = (userInput: string) => {
     if (!character) return
-    const cs = useSettingsStore.getState().contextTokens || 8000
+    const cs = useSettingsStore.getState().contextTokens || 64000
+    const wbState = useWorldbookStore.getState()
+    let contextBlocks: any[] | undefined
+    if (wbState.activeWorldbookId) {
+      const wb = wbState.worldbooks.find((w) => w.id === wbState.activeWorldbookId)
+      if (wb && wb.entries.length > 0) {
+        const recentText = messages.map((m) => m.content).join('\n')
+        const { matched } = resolveWorldbookEntries(wb.entries, userInput || '', recentText)
+        contextBlocks = matched.map((e) => ({
+          id: e.id,
+          source: 'worldbook' as const,
+          title: e.title,
+          content: e.content,
+          priority: e.priority,
+        }))
+      }
+    }
     const built = buildChatPrompt({
       character,
-      recentMessages: trimMessagesByTokens(messages, cs) as Message[],
+      recentMessages: messages,
       userInput: userInput || '(your message)',
+      maxTotalTokens: cs,
       presetItems: presetItemsRef.current,
+      contextBlocks,
+      userName: useSettingsStore.getState().personaName,
     })
     setPreviewText(formatPreview(built))
   }
@@ -215,9 +260,25 @@ export function ChatPage() {
     return false
   }
 
+  const handleDeleteMessage = async () => {
+    if (!deleteMsgTarget) return
+    try {
+      await deleteMessage(deleteMsgTarget.id)
+      setDeleteMsgTarget(null)
+      toast('info', 'Message deleted')
+    } catch { toast('error', 'Failed to delete') }
+  }
+
+  const usageMessages = messages.filter((m) => m.role === 'assistant' && m.usage)
+  const totalPrompt = usageMessages.reduce((s, m) => s + (m.usage?.promptTokens || 0), 0)
+  const totalCompletion = usageMessages.reduce((s, m) => s + (m.usage?.completionTokens || 0), 0)
+  const totalCacheHit = usageMessages.reduce((s, m) => s + (m.usage?.cacheHitTokens || 0), 0)
+  const totalCacheMiss = usageMessages.reduce((s, m) => s + (m.usage?.cacheMissTokens || 0), 0)
+  const cacheRate = totalPrompt > 0 ? ((totalCacheHit / totalPrompt) * 100).toFixed(1) : '-'
+
   return (
     <div className="flex h-full">
-      <div className="w-56 border-r p-4 flex flex-col gap-3">
+      <div className="w-60 border-r p-4 flex flex-col gap-3 overflow-y-auto shrink-0">
         <button onClick={() => navigate('/')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -235,19 +296,34 @@ export function ChatPage() {
       </div>
 
       <div className="flex-1 flex flex-col">
-        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4">
+        <div className="flex items-center justify-end gap-2 px-4 py-2 border-b shrink-0">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setTokenDialogOpen(true)}
+            className="text-muted-foreground hover:text-foreground text-xs gap-1"
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            {usageMessages.length > 0 ? (
+              <span>P:{totalPrompt} C:{totalCompletion} | 🔥 {cacheRate}%</span>
+            ) : (
+              <span>Token Stats</span>
+            )}
+          </Button>
+        </div>
+        <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50">
           {loading && <p className="text-sm text-muted-foreground text-center">Loading...</p>}
           {!loading && messages.length === 0 && !sending && (
             <p className="text-sm text-muted-foreground text-center mt-8">
-              {character ? character.firstMessage || `Start a conversation with ${character.name}` : 'Select a character to start chatting'}
+              {character ? (character.firstMessage || `Start a conversation with ${character.name}`).replace(/\{\{user\}\}/gi, personaName) : 'Select a character to start chatting'}
             </p>
           )}
-          <div className="max-w-3xl mx-auto space-y-6">
+          <div className="max-w-4xl mx-auto space-y-5">
             {messages.map((msg) => {
               const isUser = msg.role === 'user'
               const aiName = character?.name ?? 'AI'
               const split = !isUser && activeRegexRules.length > 0 ? applyRegexRules(msg.content, activeRegexRules) : null
-              const displayContent = split?.promptContent || msg.content
+              const displayContent = split?.displayContent ?? split?.promptContent ?? msg.content
 
               return (
                 <div key={msg.id}>
@@ -256,6 +332,15 @@ export function ChatPage() {
                       <div className="flex items-center gap-2">
                         <Avatar name={aiName} />
                         <span className="text-xs font-medium text-muted-foreground">{aiName}</span>
+                        {msg.generateDuration != null && (
+                          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
+                            {msg.generateDuration < 1000
+                              ? `${msg.generateDuration}ms`
+                              : msg.generateDuration < 60000
+                                ? `${(msg.generateDuration / 1000).toFixed(1)}s`
+                                : `${Math.floor(msg.generateDuration / 60000)}m ${Math.round((msg.generateDuration % 60000) / 1000)}s`}
+                          </span>
+                        )}
                       </div>
                       <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                         <Button
@@ -285,6 +370,17 @@ export function ChatPage() {
                         >
                           <ScrollText className="h-3.5 w-3.5" />
                         </Button>
+                        {msg.reasoningContent && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-purple-400"
+                            title="View AI thinking"
+                            onClick={() => setThinkingMsg(msg)}
+                          >
+                            <Brain className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                         {isLastAi(msg) && (
                           <Button
                             variant="ghost"
@@ -316,6 +412,15 @@ export function ChatPage() {
                           >
                             {copiedId === msg.id ? <CheckCheck className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                            title="Delete"
+                            onClick={() => setDeleteMsgTarget(msg)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
                         </div>
                       )}
 
@@ -337,10 +442,33 @@ export function ChatPage() {
                             </Button>
                           </div>
                         </div>
-                      ) : (
-                        <Card className={`${isUser ? 'bg-primary text-primary-foreground' : ''}`}>
+                      ) : isUser ? (
+                        <Card className="bg-primary text-primary-foreground">
                           <CardContent className="p-3">
-                            <p className="text-sm whitespace-pre-wrap">{displayContent}</p>
+                            <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{displayContent}</p>
+                          </CardContent>
+                        </Card>
+                      ) : split?.displayBlocks && split.displayBlocks.length > 0 ? (
+                        <Card>
+                          <CardContent className="p-3 space-y-2">
+                            {split.displayBlocks.map((block: DisplayBlock, bi: number) =>
+                              block.type === 'dialogue' ? (
+                                <div key={bi} className="bg-accent/60 border border-border/50 rounded-lg p-3 relative mt-3 first:mt-0">
+                                  <span className="absolute -top-2.5 left-3 bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                                    {block.speaker}
+                                  </span>
+                                  <p className="whitespace-pre-wrap pt-0.5" style={{ fontSize: `${fontSize}px` }}>{block.content}</p>
+                                </div>
+                              ) : (
+                                <p key={bi} className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{block.content}</p>
+                              )
+                            )}
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <Card>
+                          <CardContent className="p-3">
+                            <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{displayContent}</p>
                           </CardContent>
                         </Card>
                       )}
@@ -391,35 +519,50 @@ export function ChatPage() {
           </div>
         )}
 
-        <div className="border-t p-4">
-          <div className="max-w-3xl mx-auto flex gap-2">
-            <Input
-              value={input}
-              onChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              placeholder={character ? `Message ${character.name}...` : 'Type a message...'}
-              disabled={sending || !currentChat}
-            />
-            <Button onClick={handleSend} disabled={!input.trim() || sending || !currentChat} size="icon">
-              <Send className="h-4 w-4" />
-            </Button>
-            {sending && (
-              <Button variant="destructive" size="icon" onClick={abort} title="Stop generating">
-                <StopCircle className="h-4 w-4" />
+        <div className="border-t p-3">
+          <div className="max-w-4xl mx-auto flex items-center gap-2">
+            <div className="flex-1 flex gap-2">
+              <Input
+                value={input}
+                onChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                placeholder={character ? `Message ${character.name}...` : 'Type a message...'}
+                disabled={sending || !currentChat}
+              />
+              <Button onClick={handleSend} disabled={!input.trim() || sending || !currentChat} size="icon">
+                <Send className="h-4 w-4" />
               </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setPreviewOpen(!previewOpen)
-                if (!previewOpen && input.trim()) updatePreview(input.trim())
-              }}
-              className="shrink-0"
-            >
-              {previewOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-              Preview
-            </Button>
+              {sending && (
+                <Button variant="destructive" size="icon" onClick={abort} title="Stop generating">
+                  <StopCircle className="h-4 w-4" />
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setPreviewOpen(!previewOpen)
+                  if (!previewOpen && input.trim()) updatePreview(input.trim())
+                }}
+                className="shrink-0"
+              >
+                {previewOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                Preview
+              </Button>
+            </div>
+            <div className="flex items-center gap-1 shrink-0 px-1">
+              <span className="text-[10px] text-muted-foreground leading-none">A</span>
+              <input
+                type="range"
+                min="12"
+                max="22"
+                value={fontSize}
+                onChange={(e) => setFontSize(Number(e.target.value))}
+                className="w-12 h-1 accent-primary cursor-pointer"
+                title={`Font size: ${fontSize}px`}
+              />
+              <span className="text-[13px] font-bold text-muted-foreground leading-none">A</span>
+            </div>
           </div>
         </div>
 
@@ -444,6 +587,126 @@ export function ChatPage() {
             <Button variant="outline" onClick={() => setPromptDialogOpen(false)}>Close</Button>
             <Button variant="outline" onClick={() => { navigator.clipboard.writeText(previewText); toast('success', 'Copied') }}>
               <Copy className="h-3.5 w-3.5 mr-1" />Copy Prompt
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={tokenDialogOpen} onOpenChange={setTokenDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Token Usage &amp; Cache Hit
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            {usageMessages.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">
+                No usage data yet. Send a message to see stats.
+              </p>
+            ) : (
+              <>
+                <div className="grid grid-cols-5 gap-2 mb-4">
+                  <div className="bg-accent/50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold">{totalPrompt}</p>
+                    <p className="text-[10px] text-muted-foreground">Prompt</p>
+                  </div>
+                  <div className="bg-accent/50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold">{totalCompletion}</p>
+                    <p className="text-[10px] text-muted-foreground">Completion</p>
+                  </div>
+                  <div className="bg-accent/50 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold">{totalPrompt + totalCompletion}</p>
+                    <p className="text-[10px] text-muted-foreground">Total</p>
+                  </div>
+                  <div className="bg-emerald-500/10 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-emerald-600">{totalCacheHit}</p>
+                    <p className="text-[10px] text-muted-foreground">Cache Hit</p>
+                  </div>
+                  <div className="bg-blue-500/10 rounded-lg p-3 text-center">
+                    <p className="text-2xl font-bold text-blue-600">{cacheRate}%</p>
+                    <p className="text-[10px] text-muted-foreground">Hit Rate</p>
+                  </div>
+                </div>
+                {cacheRate === '-' && (
+                  <p className="text-xs text-muted-foreground mb-2 px-1">
+                    ⚠ Cache hit data unavailable — your API may not support prompt caching (Ollama/vLLM most instances do not). Supported by DeepSeek, OpenAI recent models, Anthropic.
+                  </p>
+                )}
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted">
+                        <th className="text-left p-2">#</th>
+                        <th className="text-right p-2">Prompt</th>
+                        <th className="text-right p-2">Completion</th>
+                        <th className="text-right p-2">Total</th>
+                        <th className="text-right p-2">🔥 Hit</th>
+                        <th className="text-right p-2">📉 Miss</th>
+                        <th className="text-right p-2">Rate</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usageMessages.map((m, i) => {
+                        const p = m.usage?.promptTokens || 0
+                        const c = m.usage?.completionTokens || 0
+                        const t = m.usage?.totalTokens || 0
+                        const h = m.usage?.cacheHitTokens || 0
+                        const ms = m.usage?.cacheMissTokens ?? (p - h)
+                        const r = p > 0 ? ((h / p) * 100).toFixed(1) : '-'
+                        return (
+                          <tr key={m.id} className="border-t">
+                            <td className="p-2 text-muted-foreground">{i + 1}</td>
+                            <td className="p-2 text-right">{p.toLocaleString()}</td>
+                            <td className="p-2 text-right">{c.toLocaleString()}</td>
+                            <td className="p-2 text-right">{t.toLocaleString()}</td>
+                            <td className="p-2 text-right text-emerald-600">{h > 0 ? h.toLocaleString() : '-'}</td>
+                            <td className="p-2 text-right text-orange-500">{ms > 0 ? ms.toLocaleString() : '-'}</td>
+                            <td className="p-2 text-right">{r}{r !== '-' ? '%' : ''}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTokenDialogOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!deleteMsgTarget} onOpenChange={() => setDeleteMsgTarget(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Message</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Delete this message? If it's a user message followed by an AI reply, the AI reply will also be deleted.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteMsgTarget(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteMessage}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!thinkingMsg} onOpenChange={() => setThinkingMsg(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-purple-400" />
+              AI Thinking
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto max-h-[60vh]">
+            <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground bg-muted/40 p-4 rounded-lg">{thinkingMsg?.reasoningContent || '(no thinking data)'}</pre>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setThinkingMsg(null)}>Close</Button>
+            <Button variant="outline" onClick={() => { navigator.clipboard.writeText(thinkingMsg?.reasoningContent || ''); toast('success', 'Copied') }}>
+              <Copy className="h-3.5 w-3.5 mr-1" />Copy
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -54,8 +54,8 @@ export const settingsRepository = {
     let configs = loadFromStorage()
     configs = configs.filter((c) => c.id !== id)
     saveToStorage(configs)
-    if (this.getActiveConfigId() === id) {
-      this.setActiveConfigId(configs[0]?.id ?? null)
+    if (await this.getActiveConfigId() === id) {
+      await this.setActiveConfigId(configs[0]?.id ?? null)
     }
   },
 
@@ -93,5 +93,17 @@ export const settingsRepository = {
       if (id) localStorage.setItem(REGEX_ACTIVE_KEY, id)
       else localStorage.removeItem(REGEX_ACTIVE_KEY)
     } catch {}
+  },
+
+  loadPersona(): { name: string; desc: string } {
+    try {
+      const raw = localStorage.getItem('neotavern_persona')
+      if (!raw) return { name: 'User', desc: '' }
+      return JSON.parse(raw)
+    } catch { return { name: 'User', desc: '' } }
+  },
+
+  savePersona(persona: { name: string; desc: string }): void {
+    try { localStorage.setItem('neotavern_persona', JSON.stringify(persona)) } catch {}
   },
 }

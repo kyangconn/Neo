@@ -43,14 +43,22 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     const data = await response.json()
     const content = data?.choices?.[0]?.message?.content ?? ''
+    const reasoningContent = data?.choices?.[0]?.message?.reasoning_content ?? ''
 
     return {
       content,
+      reasoningContent: reasoningContent || undefined,
       raw: data,
       usage: {
         promptTokens: data?.usage?.prompt_tokens,
         completionTokens: data?.usage?.completion_tokens,
         totalTokens: data?.usage?.total_tokens,
+        cacheHitTokens: data?.usage?.prompt_cache_hit_tokens
+          ?? data?.usage?.prompt_tokens_details?.cached_tokens,
+        cacheMissTokens: data?.usage?.prompt_cache_miss_tokens
+          ?? (data?.usage?.prompt_tokens_details?.cached_tokens != null
+            ? (data?.usage?.prompt_tokens || 0) - data?.usage?.prompt_tokens_details?.cached_tokens
+            : undefined),
       },
     }
   }

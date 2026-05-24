@@ -13,11 +13,14 @@ export interface GenerateInput {
 
 export interface GenerateResult {
   content: string
+  reasoningContent?: string
   raw?: unknown
   usage?: {
     promptTokens?: number
     completionTokens?: number
     totalTokens?: number
+    cacheHitTokens?: number
+    cacheMissTokens?: number
   }
 }
 

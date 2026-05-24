@@ -133,6 +133,8 @@ export const presetRepository = {
     } catch {}
   },
 
+  save: saveAll,
+
   async importFromJson(json: string): Promise<Preset> {
     const data = JSON.parse(json)
     const now = new Date().toISOString()
@@ -234,6 +236,7 @@ export const presetRepository = {
             name: presetName + ' Regex',
             description: 'Auto-imported from ' + presetName,
             rules: newRules,
+            isGlobal: false,
             createdAt: now,
             updatedAt: now,
           }

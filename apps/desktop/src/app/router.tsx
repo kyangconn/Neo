@@ -5,8 +5,10 @@ import { CharacterPage } from '@/pages/CharacterPage'
 import { ChatPage } from '@/pages/ChatPage'
 import { SettingsPage } from '@/pages/SettingsPage'
 import { PresetPage } from '@/pages/PresetPage'
+import { WorldbookPage } from '@/pages/WorldbookPage'
+import { PersonaPage } from '@/pages/PersonaPage'
 
-export const router = createBrowserRouter([
+export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
     path: '/',
     element: <Layout />,
@@ -16,6 +18,8 @@ export const router = createBrowserRouter([
       { path: 'chat/:id', element: <ChatPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'preset', element: <PresetPage /> },
+      { path: 'worldbook', element: <WorldbookPage /> },
+      { path: 'persona', element: <PersonaPage /> },
     ],
   },
 ])

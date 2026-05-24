@@ -8,6 +8,8 @@ export interface Character {
   firstMessage: string
   exampleDialogues?: string
   tags?: string[]
+  regexPresetId?: string
+  worldbookId?: string
   createdAt: string
   updatedAt: string
 }
@@ -21,6 +23,8 @@ export interface CreateCharacterInput {
   firstMessage: string
   exampleDialogues?: string
   tags?: string[]
+  regexPresetId?: string
+  worldbookId?: string
 }
 
 export interface UpdateCharacterInput {
@@ -32,4 +36,6 @@ export interface UpdateCharacterInput {
   firstMessage?: string
   exampleDialogues?: string
   tags?: string[]
+  regexPresetId?: string
+  worldbookId?: string
 }

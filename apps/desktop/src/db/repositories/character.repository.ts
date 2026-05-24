@@ -31,6 +31,8 @@ export const characterRepository = {
       firstMessage: input.firstMessage,
       exampleDialogues: input.exampleDialogues,
       tags: input.tags,
+      regexPresetId: input.regexPresetId,
+      worldbookId: input.worldbookId,
       createdAt: now,
       updatedAt: now,
     }
@@ -53,6 +55,8 @@ export const characterRepository = {
     if (input.firstMessage !== undefined) existing.firstMessage = input.firstMessage
     if (input.exampleDialogues !== undefined) existing.exampleDialogues = input.exampleDialogues
     if (input.tags !== undefined) existing.tags = input.tags
+    if (input.regexPresetId !== undefined) existing.regexPresetId = input.regexPresetId
+    if (input.worldbookId !== undefined) existing.worldbookId = input.worldbookId
     existing.updatedAt = new Date().toISOString()
     all[idx] = existing
     saveAll(all)
