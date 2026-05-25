@@ -14,6 +14,8 @@ export function PresetPage() {
   const navigate = useNavigate()
   const store = usePresetStore()
 
+  const [secretUnlocked, setSecretUnlocked] = useState(() => localStorage.getItem('neotavern_secret_unlocked') === '1')
+
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -35,6 +37,18 @@ export function PresetPage() {
   useEffect(() => {
     store.loadPresets()
   }, [])
+
+  useEffect(() => {
+    const onStorage = () => setSecretUnlocked(localStorage.getItem('neotavern_secret_unlocked') === '1')
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  useEffect(() => {
+    if (!selectedId && store.presets.length > 0) {
+      handleSelect(store.presets[0].id)
+    }
+  }, [store.presets])
 
   useEffect(() => {
     if (selectedId) {
@@ -173,7 +187,11 @@ export function PresetPage() {
     if (file) setImportFile(file)
   }
 
-  const sortedItems = selected ? [...selected.items].sort((a, b) => a.injectionOrder - b.injectionOrder) : []
+  const sortedItems = selected
+    ? [...selected.items]
+        .filter((i) => !i.hidden || secretUnlocked)
+        .sort((a, b) => a.injectionOrder - b.injectionOrder)
+    : []
 
   return (
     <div className="flex h-full">

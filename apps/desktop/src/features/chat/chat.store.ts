@@ -18,6 +18,7 @@ interface ChatState {
   addMessage: (input: CreateMessageInput) => Promise<Message>
   updateMessage: (id: string, content: string) => Promise<void>
   deleteMessage: (id: string) => Promise<void>
+  setSending: (sending: boolean) => void
   clearError: () => void
 }
 
@@ -125,6 +126,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   clearError: () => set({ error: null }),
+
+  setSending: (sending: boolean) => set({ sending }),
 
   updateMessage: async (id: string, content: string) => {
     try {

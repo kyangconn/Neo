@@ -9,6 +9,7 @@ export interface ModelConfig {
   model: string
   temperature: number
   maxTokens: number
+  reasoningEffort?: string
   createdAt: string
   updatedAt: string
 }
@@ -21,6 +22,7 @@ export interface CreateModelConfigInput {
   model: string
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: string
 }
 
 export interface UpdateModelConfigInput {
@@ -31,4 +33,5 @@ export interface UpdateModelConfigInput {
   model?: string
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: string
 }

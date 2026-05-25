@@ -42,24 +42,59 @@ function buildDisplayBlocks(content: string, regex: RegExp): DisplayBlock[] {
 export function applyRegexRules(content: string, rules: RegexRule[]): SplitResult {
   const enabled = rules.filter((r) => r.enabled)
   const sideBlocks: SideBlock[] = []
-  let promptContent = content
-  let displayBlocks: DisplayBlock[] = []
+
+  const promptStripRules: RegexRule[] = []
+  const unwrapRules: RegexRule[] = []
+  const dialogueRules: RegexRule[] = []
+  const templateRules: RegexRule[] = []
 
   for (const rule of enabled) {
+    if (rule.name.startsWith('💬')) {
+      dialogueRules.push(rule)
+    } else if (rule.stripFromPrompt) {
+      promptStripRules.push(rule)
+    } else if (rule.displayTemplate === '$1') {
+      unwrapRules.push(rule)
+    } else if (!rule.displayTemplate) {
+      promptStripRules.push(rule)
+    } else {
+      templateRules.push(rule)
+    }
+  }
+
+  let displayContent = content
+  for (const rule of promptStripRules) {
+    try { displayContent = displayContent.replace(new RegExp(rule.pattern, 'gs'), '') } catch { continue }
+  }
+
+  for (const rule of unwrapRules) {
+    try { displayContent = displayContent.replace(new RegExp(rule.pattern, 'gs'), '$1') } catch { continue }
+  }
+
+  const promptContent = displayContent.trim()
+
+  let displayBlocks: DisplayBlock[] = []
+  for (const rule of dialogueRules) {
+    try {
+      const regex = new RegExp(rule.pattern, 'gs')
+      displayBlocks = buildDisplayBlocks(displayContent, regex)
+      if (rule.stripFromPrompt) {
+        displayContent = displayContent.replace(regex, '')
+      }
+    } catch { continue }
+  }
+
+  displayContent = displayContent.trim()
+
+  let finalDisplayContent = displayBlocks.length > 0
+    ? displayBlocks.map((b) => b.type === 'dialogue' ? `**${b.speaker}：**${b.content}` : b.content).join('\n\n')
+    : displayContent
+
+  for (const rule of templateRules) {
     try {
       const regex = new RegExp(rule.pattern, 'gs')
       const matches = [...content.matchAll(regex)]
       if (matches.length === 0) continue
-
-      const isDialogue = rule.name.startsWith('💬')
-
-      if (isDialogue) {
-        displayBlocks = buildDisplayBlocks(content, regex)
-        if (rule.stripFromPrompt) {
-          promptContent = promptContent.replace(regex, '')
-        }
-        continue
-      }
 
       for (const match of matches) {
         let display = rule.displayTemplate
@@ -69,38 +104,27 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
         sideBlocks.push({ name: rule.name, content: display })
       }
 
-      if (rule.stripFromPrompt) {
-        promptContent = promptContent.replace(regex, '')
+      finalDisplayContent = finalDisplayContent.replace(regex, '')
+      for (const block of displayBlocks) {
+        block.content = block.content.replace(regex, '')
       }
-    } catch {
-      continue
-    }
+    } catch { continue }
   }
-
-  promptContent = promptContent.trim()
-
-  const displayContent = displayBlocks.length > 0
-    ? displayBlocks.map((b) => b.type === 'dialogue' ? `**${b.speaker}：**${b.content}` : b.content).join('\n\n')
-    : promptContent
 
   return {
     mainContent: content,
     promptContent,
-    displayContent,
+    displayContent: finalDisplayContent,
     displayBlocks,
     sideBlocks,
   }
 }
 
 export function stripPromptContent(content: string, rules: RegexRule[]): string {
-  const enabled = rules.filter((r) => r.enabled && r.stripFromPrompt)
   let result = content
-  for (const rule of enabled) {
-    try {
-      result = result.replace(new RegExp(rule.pattern, 'gs'), '')
-    } catch {
-      continue
-    }
+  for (const rule of rules) {
+    if (!rule.enabled || !rule.stripFromPrompt) continue
+    try { result = result.replace(new RegExp(rule.pattern, 'gs'), '') } catch { continue }
   }
   return result.trim()
 }

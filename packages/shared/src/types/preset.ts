@@ -3,6 +3,7 @@ export interface PresetItem {
   presetId: string
   name: string
   enabled: boolean
+  hidden?: boolean
   role: 'system' | 'user'
   content: string
   injectionOrder: number
@@ -32,6 +33,7 @@ export interface UpdatePresetInput {
 export interface CreatePresetItemInput {
   name: string
   enabled: boolean
+  hidden?: boolean
   role: 'system' | 'user'
   content: string
   injectionOrder: number

@@ -22,10 +22,11 @@ interface UseSendMessageReturn {
 }
 
 export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMessageOptions): UseSendMessageReturn {
-  const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const addMessage = useChatStore((s) => s.addMessage)
   const deleteMessage = useChatStore((s) => s.deleteMessage)
+  const sending = useChatStore((s) => s.sending)
+  const setSending = useChatStore((s) => s.setSending)
   const abortRef = useRef<AbortController | null>(null)
 
   const abort = useCallback(() => {
@@ -121,6 +122,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         model: modelConfig.model,
         temperature: modelConfig.temperature,
         maxTokens: modelConfig.maxTokens,
+        reasoningEffort: modelConfig.reasoningEffort || undefined,
         signal: controller.signal,
       })
       const generateDuration = Date.now() - genStart

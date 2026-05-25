@@ -35,6 +35,12 @@ export function WorldbookPage() {
 
   useEffect(() => { loadWorldbooks() }, [loadWorldbooks])
 
+  useEffect(() => {
+    if (!selectedId && worldbooks.length > 0) {
+      handleSelect(worldbooks[0].id)
+    }
+  }, [worldbooks])
+
   const selected = worldbooks.find((w) => w.id === selectedId) ?? null
   const entries = selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { Send, ChevronDown, ChevronUp, ArrowLeft, Copy, Pencil, Check, X, ScrollText, RotateCcw, CheckCheck, ChevronRight, StopCircle, BarChart3, Trash2, Brain } from 'lucide-react'
+import { Send, ChevronDown, ChevronUp, ArrowLeft, Copy, Pencil, Check, X, ScrollText, RotateCcw, CheckCheck, StopCircle, BarChart3, Trash2, Brain } from 'lucide-react'
 import { Button, Input, Card, CardContent, Textarea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@neo-tavern/ui'
 import { useCharacterStore } from '@/features/character/character.store'
 import { useChatStore } from '@/features/chat/chat.store'
@@ -22,28 +22,6 @@ function Avatar({ name, isUser }: { name: string; isUser?: boolean }) {
   )
 }
 
-function SideBlockCard({ name, content }: { name: string; content: string }) {
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="w-full">
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors px-0.5"
-      >
-        <ChevronRight className={`h-3 w-3 transition-transform ${open ? 'rotate-90' : ''}`} />
-        {name}
-      </button>
-      {open && (
-        <Card className="mt-1 bg-muted/40">
-          <CardContent className="p-2">
-            <p className="text-xs whitespace-pre-wrap text-muted-foreground">{content}</p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
 function toast(type: 'success' | 'error' | 'info', message: string) {
   const fn = (window as any).__toast
   if (fn) fn(type, message)
@@ -55,6 +33,7 @@ export function ChatPage() {
   const navigate = useNavigate()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const lastAiMsgRef = useRef<HTMLDivElement>(null)
   const initRef = useRef<string | null>(null)
   const presetItemsRef = useRef<{ role: 'system' | 'user'; content: string; injectionOrder: number }[]>([])
 
@@ -133,8 +112,18 @@ export function ChatPage() {
   }, [id, characterId, characters.length])
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
-  }, [messages])
+    const lastMsg = messages[messages.length - 1]
+    if (!lastMsg) return
+    if (lastMsg.role === 'assistant' && !sending && lastAiMsgRef.current) {
+      const container = messagesContainerRef.current
+      if (container) {
+        const top = lastAiMsgRef.current.offsetTop - container.offsetTop - 16
+        container.scrollTo({ top, behavior: 'smooth' })
+      }
+    } else if (lastMsg.role === 'user') {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'instant' })
+    }
+  }, [messages.length, sending])
 
   useEffect(() => {
     if (!character) return
@@ -319,14 +308,15 @@ export function ChatPage() {
             </p>
           )}
           <div className="max-w-4xl mx-auto space-y-5">
-            {messages.map((msg) => {
+            {messages.map((msg, idx) => {
               const isUser = msg.role === 'user'
+              const isFinalAi = !isUser && idx === messages.length - 1
               const aiName = character?.name ?? 'AI'
               const split = !isUser && activeRegexRules.length > 0 ? applyRegexRules(msg.content, activeRegexRules) : null
               const displayContent = split?.displayContent ?? split?.promptContent ?? msg.content
 
               return (
-                <div key={msg.id}>
+                <div key={msg.id} ref={isFinalAi ? lastAiMsgRef : undefined}>
                   {!isUser && (
                     <div className="flex items-center justify-between mb-1.5 px-1 group">
                       <div className="flex items-center gap-2">
@@ -473,13 +463,9 @@ export function ChatPage() {
                         </Card>
                       )}
 
-                      {!isUser && split && split.sideBlocks.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-1.5">
-                          {split.sideBlocks.map((block, si) => (
-                            <SideBlockCard key={si} name={block.name} content={block.content} />
-                          ))}
-                        </div>
-                      )}
+                      {split?.sideBlocks.map((side, si) => (
+                        <div key={si} style={{ fontSize: `${fontSize}px` }} dangerouslySetInnerHTML={{ __html: side.content }} />
+                      ))}
                     </div>
                   </div>
                 </div>

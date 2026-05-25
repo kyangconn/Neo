@@ -7,11 +7,15 @@ import { useSettingsStore } from '@/features/settings/settings.store'
 import { useWorldbookStore } from '@/features/settings/worldbook.store'
 import { ThemeProvider } from './theme'
 
+let seeded = false
+
 function AppContent() {
   const { toasts, addToast, removeToast } = useToast()
   ;(window as any).__toast = addToast
 
   useEffect(() => {
+    if (seeded) return
+    seeded = true
     seedTestCharacter()
     seedBuiltinRegex()
     seedLunaWorldbook()

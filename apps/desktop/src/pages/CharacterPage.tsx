@@ -37,6 +37,12 @@ export function CharacterPage() {
     loadCharacters()
   }, [loadCharacters])
 
+  useEffect(() => {
+    if (!editingId && characters.length > 0) {
+      handleEdit(characters[0])
+    }
+  }, [characters])
+
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return

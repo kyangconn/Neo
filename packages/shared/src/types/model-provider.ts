@@ -8,6 +8,7 @@ export interface GenerateInput {
   model: string
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: string
   signal?: AbortSignal
 }
 
@@ -34,4 +35,5 @@ export interface ModelProvider {
   name: string
   generate(input: GenerateInput): Promise<GenerateResult>
   streamGenerate?(input: GenerateInput): AsyncIterable<GenerateChunk>
+  listModels?(baseUrl: string, apiKey: string): Promise<string[]>
 }

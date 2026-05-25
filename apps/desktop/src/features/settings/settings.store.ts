@@ -91,6 +91,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         model: input.model,
         temperature: input.temperature ?? 0.8,
         maxTokens: input.maxTokens ?? 800,
+        reasoningEffort: input.reasoningEffort,
         createdAt: now,
         updatedAt: now,
       }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2, Globe } from 'lucide-react'
+import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2, Globe, Download } from 'lucide-react'
 import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle, CardDescription, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { useTheme } from '@/app/theme'
@@ -28,6 +28,7 @@ const themes = [
 function fillForm(cfg: {
   name: string; baseUrl: string; apiKey: string; model: string
   temperature: number; maxTokens: number
+  reasoningEffort?: string
 }) {
   setFormName(cfg.name)
   setFormBaseUrl(cfg.baseUrl)
@@ -35,6 +36,7 @@ function fillForm(cfg: {
   setFormModel(cfg.model)
   setFormTemperature(String(cfg.temperature))
   setFormMaxTokens(String(cfg.maxTokens))
+  setFormReasoningEffort(cfg.reasoningEffort || '')
 }
 
 let setFormName: (v: string) => void = () => {}
@@ -43,6 +45,7 @@ let setFormApiKey: (v: string) => void = () => {}
 let setFormModel: (v: string) => void = () => {}
 let setFormTemperature: (v: string) => void = () => {}
 let setFormMaxTokens: (v: string) => void = () => {}
+let setFormReasoningEffort: (v: string) => void = () => {}
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -80,8 +83,14 @@ export function SettingsPage() {
   const [model, setModel] = useState('')
   const [temperature, setTemperature] = useState('0.8')
   const [maxTokens, setMaxTokens] = useState('800')
+  const [reasoningEffort, setReasoningEffort] = useState('')
   const [loaded, setLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string>('__new__')
+
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [easterEggClicks, setEasterEggClicks] = useState(0)
+  const [secretUnlocked, setSecretUnlocked] = useState(() => localStorage.getItem('neotavern_secret_unlocked') === '1')
 
   setFormName = setName
   setFormBaseUrl = setBaseUrl
@@ -89,6 +98,7 @@ export function SettingsPage() {
   setFormModel = setModel
   setFormTemperature = setTemperature
   setFormMaxTokens = setMaxTokens
+  setFormReasoningEffort = setReasoningEffort
 
   const [selectedRegexPresetId, setSelectedRegexPresetId] = useState<string | null>(null)
   const [regexPresetName, setRegexPresetName] = useState('')
@@ -144,11 +154,12 @@ export function SettingsPage() {
     try {
       const temp = parseFloat(temperature) || 0.8
       const tokens = parseInt(maxTokens) || 800
+      const re = reasoningEffort || undefined
       if (selectedId !== '__new__' && modelConfigs.some((c) => c.id === selectedId)) {
-        await updateModelConfig(selectedId, { baseUrl, apiKey, model, name, temperature: temp, maxTokens: tokens })
+        await updateModelConfig(selectedId, { baseUrl, apiKey, model, name, temperature: temp, maxTokens: tokens, reasoningEffort: re })
         toast('success', `"${name || 'Configuration'}" updated.`)
       } else {
-        const cfg = await saveModelConfig({ provider: 'openai-compatible', baseUrl, apiKey, model, name, temperature: temp, maxTokens: tokens })
+        const cfg = await saveModelConfig({ provider: 'openai-compatible', baseUrl, apiKey, model, name, temperature: temp, maxTokens: tokens, reasoningEffort: re })
         setSelectedId(cfg.id)
         toast('success', `"${name || 'Configuration'}" saved.`)
       }
@@ -183,6 +194,39 @@ export function SettingsPage() {
     const result = await testConnection(baseUrl, apiKey, model || 'gpt-4o-mini')
     if (result.ok) toast('success', result.message)
     else toast('error', result.message)
+  }
+
+  const handleFetchModels = async () => {
+    if (!baseUrl.trim()) { toast('error', 'Please enter a Base URL first.'); return }
+    setFetchingModels(true)
+    try {
+      const response = await fetch(`${baseUrl.replace(/\/$/, '')}/models`, {
+        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      })
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const data = await response.json() as { data?: Array<{ id: string }> }
+      const models = (data.data || []).map((m) => m.id).sort((a, b) => a.localeCompare(b))
+      if (models.length === 0) { toast('error', 'No models returned from API'); return }
+      setAvailableModels(models)
+      if (!model || !models.includes(model)) setModel(models[0])
+      toast('success', `Loaded ${models.length} models`)
+    } catch (err) {
+      toast('error', `Failed: ${(err as Error).message}`)
+    } finally {
+      setFetchingModels(false)
+    }
+  }
+
+  const handleContextEasterEgg = () => {
+    if (secretUnlocked) { setSection('context'); return }
+    const next = easterEggClicks + 1
+    setEasterEggClicks(next)
+    if (next >= 10) {
+      localStorage.setItem('neotavern_secret_unlocked', '1')
+      setSecretUnlocked(true)
+      toast('success', '🔓 Secret unlocked! Check the writing preset.')
+    }
+    setSection('context')
   }
 
   const selectedRegexPreset = regexPresets.find((p) => p.id === selectedRegexPresetId) ?? null
@@ -302,7 +346,8 @@ export function SettingsPage() {
           <ArrowLeft className="h-4 w-4" />Back
         </button>
         {sections.map((s) => (
-          <button key={s.key} onClick={() => setSection(s.key)}
+          <button key={s.key}
+            onClick={() => s.key === 'context' ? handleContextEasterEgg() : setSection(s.key)}
             className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors
               ${section === s.key ? 'bg-accent text-foreground font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}`}
           ><s.icon className="h-4 w-4" />{s.label}</button>
@@ -355,8 +400,28 @@ export function SettingsPage() {
                 <Input id="api-key" type="password" value={apiKey} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)} placeholder="sk-..." />
               </div>
               <div>
-                <Label htmlFor="model">Model</Label>
-                <Input id="model" value={model} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModel(e.target.value)} placeholder="gpt-4o-mini" />
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <Label htmlFor="model">Model</Label>
+                    {availableModels.length > 0 ? (
+                      <select id="model" value={model} onChange={(e) => setModel(e.target.value)}
+                        className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      >
+                        {availableModels.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <Input id="model" value={model} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModel(e.target.value)} placeholder="gpt-4o-mini" />
+                    )}
+                  </div>
+                  <Button variant="outline" size="sm" onClick={handleFetchModels} disabled={fetchingModels} className="shrink-0">
+                    <Download className="h-3.5 w-3.5 mr-1" />{fetchingModels ? 'Loading...' : 'Fetch'}
+                  </Button>
+                </div>
+                {availableModels.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">{availableModels.length} models available</p>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -367,6 +432,21 @@ export function SettingsPage() {
                   <Label htmlFor="max-tokens">Max Tokens</Label>
                   <Input id="max-tokens" value={maxTokens} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxTokens(e.target.value)} placeholder="800" type="number" min="1" max="128000" />
                 </div>
+              </div>
+              <div>
+                <Label htmlFor="reasoning-effort">Reasoning Effort</Label>
+                <select
+                  id="reasoning-effort"
+                  value={reasoningEffort}
+                  onChange={(e) => setReasoningEffort(e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                >
+                  <option value="">Off</option>
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                </select>
+                <p className="text-xs text-muted-foreground mt-1">Relevant for o1/o3 reasoning models. Leave off for most models.</p>
               </div>
               <div className="flex gap-2">
                 <Button onClick={handleSave} disabled={saving} className="flex-1">

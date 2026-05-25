@@ -37,20 +37,52 @@ export async function seedBuiltinRegex() {
   const builtin = presets.find((p) => p.id === '_neo_builtin')
   const now = new Date().toISOString()
 
+  const requiredRules = [
+    {
+      id: generateId(),
+      presetId: '_neo_builtin',
+      name: '💬 Dialogue',
+      pattern: BUILTIN_PATTERN,
+      displayTemplate: BUILTIN_TEMPLATE,
+      stripFromPrompt: false,
+      enabled: true,
+      createdAt: now,
+    },
+    {
+      id: generateId(),
+      presetId: '_neo_builtin',
+      name: '📦 Content (hide)',
+      pattern: '<content>([\\s\\S]*?)</content>',
+      displayTemplate: '$1',
+      stripFromPrompt: false,
+      enabled: true,
+      createdAt: now,
+    },
+    {
+      id: generateId(),
+      presetId: '_neo_builtin',
+      name: '💭 Inner Thoughts',
+      pattern: '<details><summary>内心-([^<]+)</summary>([\\s\\S]*?)</details>',
+      displayTemplate: '<details class="neo-thoughts" open><summary>💭 $1</summary>$2</details>',
+      stripFromPrompt: false,
+      enabled: true,
+      createdAt: now,
+    },
+    {
+      id: generateId(),
+      presetId: '_neo_builtin',
+      name: '📋 Summary',
+      pattern: '(?<!<details>)\\s*<summary>([\\s\\S]*?)</summary>',
+      displayTemplate: '<details class="neo-summary"><summary>剧情摘要</summary>$1</details>',
+      stripFromPrompt: false,
+      enabled: true,
+      createdAt: now,
+    },
+  ]
+
   if (builtin) {
     builtin.isGlobal = true
-    if (!builtin.rules.length || builtin.rules[0].pattern !== BUILTIN_PATTERN) {
-      builtin.rules = [{
-        id: generateId(),
-        presetId: '_neo_builtin',
-        name: '💬 Dialogue',
-        pattern: BUILTIN_PATTERN,
-        displayTemplate: BUILTIN_TEMPLATE,
-        stripFromPrompt: false,
-        enabled: true,
-        createdAt: now,
-      }]
-    }
+    builtin.rules = requiredRules
     settingsRepository.saveRegexRules(presets)
     return
   }
@@ -58,20 +90,9 @@ export async function seedBuiltinRegex() {
   const builtinPreset: RegexPreset = {
     id: '_neo_builtin',
     name: 'NEO Built-in',
-    description: 'Auto-generated system rules for dialogue formatting',
+    description: 'Auto-generated system rules for dialogue, content, and summary formatting',
     isGlobal: true,
-    rules: [
-      {
-        id: generateId(),
-        presetId: '_neo_builtin',
-        name: '💬 Dialogue',
-        pattern: BUILTIN_PATTERN,
-        displayTemplate: BUILTIN_TEMPLATE,
-        stripFromPrompt: false,
-        enabled: true,
-        createdAt: now,
-      },
-    ],
+    rules: requiredRules,
     createdAt: now,
     updatedAt: now,
   }
@@ -345,7 +366,8 @@ const WRITING_PRESET_ITEMS: Omit<PresetItem, 'id' | 'presetId' | 'createdAt' | '
   },
   {
     name: 'NSFW 温柔风格',
-    enabled: true,
+    enabled: false,
+    hidden: true,
     role: 'system',
     content: `涉及亲密场景时：要温柔，不许有任何粗暴、过度激烈的行为。生理反应要弱化，避免身体反弓、剧烈颤抖、尖叫、痉挛。在没有用户要求时，不结束亲密场景，而是将回复停止在亲密中途。台词用温柔、亲密的风格，融入自然的呻吟和喘息，适当描述自身身体感受和情感反应。注意保持角色人设和说话方式，避免硬凹温柔导致角色崩坏。`,
     injectionOrder: 20,
@@ -390,7 +412,22 @@ const WRITING_PRESET_ITEMS: Omit<PresetItem, 'id' | 'presetId' | 'createdAt' | '
 export async function seedWritingPreset() {
   const existing = await presetRepository.list()
   const wp = existing.find((p) => p.id === WRITING_PRESET_ID)
-  if (wp) return
+
+  if (wp) {
+    let changed = false
+    const now = new Date().toISOString()
+    for (const item of wp.items) {
+      if (item.name === 'NSFW 温柔风格') {
+        if (!item.hidden) { item.hidden = true; changed = true }
+        if (item.enabled) { item.enabled = false; changed = true }
+      }
+    }
+    if (changed) {
+      wp.updatedAt = now
+      presetRepository.save(existing)
+    }
+    return
+  }
 
   const now = new Date().toISOString()
   const preset: Preset = {

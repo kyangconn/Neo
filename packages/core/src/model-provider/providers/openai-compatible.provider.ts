@@ -20,6 +20,24 @@ export class OpenAICompatibleProvider implements ModelProvider {
     this.apiKey = options.apiKey
   }
 
+  static async listModels(baseUrl: string, apiKey: string): Promise<string[]> {
+    const url = `${baseUrl.replace(/\/$/, '')}/models`
+    const response = await fetch(url, {
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+    })
+    if (!response.ok) {
+      throw new Error(`Failed to list models: ${response.status}`)
+    }
+    const data = await response.json() as { data?: Array<{ id: string }> }
+    return (data.data || [])
+      .map((m: { id: string }) => m.id)
+      .sort((a: string, b: string) => a.localeCompare(b))
+  }
+
+  async listModels(baseUrl: string, apiKey: string): Promise<string[]> {
+    return OpenAICompatibleProvider.listModels(baseUrl, apiKey)
+  }
+
   async generate(input: GenerateInput): Promise<GenerateResult> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -32,6 +50,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
         messages: input.messages,
         temperature: input.temperature ?? 0.8,
         max_tokens: input.maxTokens ?? 800,
+        ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
       }),
       signal: input.signal,
     })
