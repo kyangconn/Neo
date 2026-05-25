@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { OpenAICompatibleProvider } from '@neo-tavern/core'
+import { OpenAICompatibleProvider } from '../providers/openai-compatible.provider'
 import type { GenerateInput } from '@neo-tavern/shared'
 
 describe('OpenAICompatibleProvider', () => {

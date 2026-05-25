@@ -8,7 +8,7 @@ import { useWorldbookStore } from '@/features/settings/worldbook.store'
 import { generateId } from '@neo-tavern/shared'
 import type { CreateCharacterInput, Character, RegexPreset, Worldbook } from '@neo-tavern/shared'
 import { settingsRepository, worldbookRepository } from '@/db/repositories'
-import { parseJsonCharacterCard, parsePngCharacterCard, type ParsedCharacterCard } from '@/shared/utils/parse-character-card'
+import { parseJsonCharacterCard, parsePngCharacterCard, type ParsedCharacterCard } from '@/utils/parse-character-card'
 
 const emptyForm: CreateCharacterInput = {
   name: '',

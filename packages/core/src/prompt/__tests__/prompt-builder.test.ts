@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildChatPrompt, estimateTokens } from '@neo-tavern/core'
+import { buildChatPrompt, estimateTokens } from '../prompt-builder'
 import type { Character, Message } from '@neo-tavern/shared'
 
 const mockCharacter: Character = {

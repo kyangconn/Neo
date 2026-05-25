@@ -1,5 +1,5 @@
 import { createBrowserRouter } from 'react-router-dom'
-import { Layout } from '@/shared/components'
+import { Layout } from '@/components'
 import { HomePage } from '@/pages/HomePage'
 import { CharacterPage } from '@/pages/CharacterPage'
 import { ChatPage } from '@/pages/ChatPage'
