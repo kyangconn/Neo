@@ -1,182 +1,213 @@
 # NeoTavern
 
-> 下一代角色扮演 AI 聊天客户端 — 基于 Tauri + React + TypeScript
+NeoTavern 是一个面向角色扮演的 AI 聊天桌面客户端，重点服务长上下文、角色卡、预设提示词、世界书和正则后处理工作流。项目基于 Tauri v2、React、TypeScript 和 pnpm workspace 构建，适合接入 DeepSeek、OpenAI 以及其他 OpenAI-compatible API。
 
----
+## 适合谁
 
-## 截图
+- 想用 DeepSeek 做长上下文角色扮演的人。
+- 需要管理多个角色、预设、世界书和 API 配置的人。
+- 希望把提示词拆成可排序、可开关、可导入导出的卡片的人。
+- 想在本地桌面应用里保存配置和聊天数据的人。
 
-```
-╔══════════════════════════════════════════════╗
-║  Nav: Home | Characters | Presets | Settings ║
-╠══════════════════════════════════════════════╣
-║  Left Panel         ║  Chat Area             ║
-║  Character info     ║  ┌──────────────────┐  ║
-║  Personality        ║  │ AI: Roleplay...  │  ║
-║  Scenario           ║  └──────────────────┘  ║
-║                     ║  > Summary ▸           ║
-║                     ║  > 内心 ▸              ║
-║                     ║                        ║
-║                     ║  [Input box] [Send] [⏹]║
-║                     ║  [Prompt Preview ▾]    ║
-╚══════════════════════════════════════════════╝
-```
+## 功能概览
 
-## 功能亮点
+### 聊天体验
 
-### 🎭 角色管理
-- 创建 / 编辑 / 删除角色卡片
-- 支持角色名、描述、性格、场景、开场白、示例对话、标签
-- 选择角色即可开始新对话
+- 角色聊天界面，支持角色头像、开场白、消息编辑、复制、删除和重新生成。
+- 用户消息删除时可同步删除紧跟的 assistant 回复，保持问答轮次干净。
+- 支持停止生成、Prompt Preview、完整提示词查看。
+- 右上角显示 token 统计、缓存命中率，以及 DeepSeek 100 万上下文使用进度条。
+- Token 统计弹窗展示 Prompt、Completion、Total、Cache Hit、Hit Rate 和 1M Context。
 
-### 💬 对话系统
-- 实时聊天界面，双方头像显示
-- **停止生成**：AI 输出中途可中断
-- 每条 AI 消息可 **复制 / 编辑 / 查看完整提示词 / 重新生成**
-- Prompt Preview 实时预览完整提示词拼装
-- **上下文 Token 滑块**（Settings → Context），用 token 预算控制历史消息数量
+### 角色与世界书
 
-### 📦 预设管理系统
-- 创建多个预设，每个预设包含多张**卡片**
-- 每张卡片：名称、开关（滑块）、角色（system/user）、内容、排序号
-- 一键激活预设，激活后卡片自动注入对话 Prompt
-- **导入/导出 JSON**：兼容酒馆（SillyTavern）预设格式
-- 导入时自动提取预设名（从 `extensions.presetdetailnfo.nameGroup`）
+- 创建、编辑、删除角色卡。
+- 支持角色描述、性格、场景、开场白、示例对话、头像和标签。
+- 角色页支持“选择查看 / 单独编辑”的工作流。
+- 世界书条目可按关键词触发并注入上下文。
+- 内置示例角色 Seraphina 和艾尔多利亚世界书。
 
-### 🔧 正则系统（附内容提取）
-- 正则预设管理（Settings → Regex Rules），结构类似提示词预设
-- 每条正则规则可配置：名称、正则模式、显示模板、**启用/禁用开关**、**Strip from Prompt 开关**
-- AI 输出自动按正则拆分：正文 + 附属折叠块（摘要、思考等）
-- 附属内容不会进入下一轮 Prompt（仅正文参与）
-- 导入酒馆预设时自动提取 `regex_scripts` 中的正则规则
+### 预设提示词
 
-### ⚙️ API 配置
-- 兼容 OpenAI 及所有 OpenAI-compatible 端点（Ollama、vLLM 等）
-- 多个 API 配置并存，随时切换
-- 连接测试功能
+- 一个预设可以包含多张 prompt 卡片。
+- 每张卡片支持启用/禁用、system/user role、内容编辑和排序。
+- 条目支持拖拽排序，并真实写回 `injectionOrder`。
+- Prompt builder 会按 `injectionOrder` 注入预设条目，因此页面顺序会真实影响提示词组成。
+- 支持导入/导出 JSON，兼容部分 SillyTavern 预设结构。
 
-### 🎨 外观
-- Light / Dark / System 三种主题
-- 即时切换，无需重启
+### 正则后处理
 
-### 🖥️ 跨平台桌面应用
-- 基于 **Tauri** 构建原生桌面应用
-- Windows / macOS / Linux 支持
+- 支持正则预设和规则管理。
+- 可将 AI 输出拆成正文、摘要、思考块、行动按钮等展示结构。
+- 可配置 strip from prompt，避免展示用内容进入下一轮上下文。
+- `$actions` 规则可以把“请选择下一步行动”列表渲染成可点击按钮。
+
+### 配置与存储
+
+- 支持多个 OpenAI-compatible API 配置。
+- 支持主题切换：Light / Dark / System。
+- 数据优先写入 Tauri app-data 目录下的 `store.json`。
+- 浏览器开发环境保留 localStorage fallback。
+- 启动时会迁移旧的 `neotavern*` localStorage 数据。
+- Tauri CSP 已启用显式策略，减少不必要的 WebView 权限暴露。
 
 ## 技术栈
 
-| 层 | 技术 |
-|----|------|
-| 桌面壳 | Tauri v2 (Rust) |
-| 前端框架 | React 18 + TypeScript |
+| 模块 | 技术 |
+| --- | --- |
+| 桌面壳 | Tauri v2 + Rust |
+| 前端 | React 18 + TypeScript + Vite |
 | 状态管理 | Zustand |
-| 数据库 | localStorage |
-| 包管理 | pnpm workspace monorepo |
-| UI 组件 | Radix UI + Tailwind CSS |
-| 图标 | Lucide Icons |
+| UI | Tailwind CSS + Radix UI + Lucide Icons |
+| 核心逻辑 | Workspace package `@neo-tavern/core` |
+| 类型共享 | Workspace package `@neo-tavern/shared` |
+| 包管理 | pnpm workspace |
+| 本地存储 | Tauri app-data JSON store + browser fallback |
 
 ## 项目结构
 
-```
+```text
 Neo/
 ├── apps/
-│   └── desktop/            # Tauri 桌面应用
+│   └── desktop/
+│       ├── public/                 # 静态资源
 │       ├── src/
-│       │   ├── app/        # 路由、主题、启动
-│       │   ├── db/         # localStorage 仓储层
-│       │   ├── features/   # 按功能模块（chat/character/settings/preset）
-│       │   ├── pages/      # 页面组件
-│       │   └── shared/     # 共享组件
-│       └── src-tauri/      # Tauri Rust 后端
+│       │   ├── app/                # 应用启动、主题、种子数据
+│       │   ├── db/                 # 存储适配器和 repositories
+│       │   ├── features/           # chat / character / settings / preset stores
+│       │   ├── pages/              # 页面组件
+│       │   └── main.tsx
+│       └── src-tauri/              # Tauri Rust 后端
 ├── packages/
-│   ├── shared/             # 共享类型定义
-│   ├── core/               # 核心业务逻辑（Prompt Builder、模型调用、正则引擎）
-│   └── ui/                 # UI 组件库（Button、Card、Dialog 等）
-├── 预设/                   # 预设导入示例
-├── start.bat               # Windows 一键启动
-├── launch.bat              # 菜单式启动（含 Rust 自动安装）
-└── package.json            # Workspace 根配置
+│   ├── core/                       # Prompt builder、模型 provider、regex、worldbook 逻辑
+│   ├── shared/                     # 共享类型和工具
+│   └── ui/                         # 共享 UI 组件
+├── docs/
+│   └── current-changes.md          # 当前改动记录
+├── setup.ps1                       # Windows 安装启动脚本
+├── 一键安装启动.bat                 # Windows 一键入口
+├── package.json
+└── pnpm-workspace.yaml
 ```
 
 ## 快速开始
 
-### 前提条件
-- [Node.js](https://nodejs.org/) >= 18
-- [pnpm](https://pnpm.io/) >= 8
-- [Rust](https://rustup.rs/)（Tauri 桌面应用需要）
+### 环境要求
 
-### 安装
+- Node.js 18 或更高版本。
+- pnpm。
+- Rust stable。运行 Tauri 桌面应用或构建安装包时需要。
+
+### 安装依赖
 
 ```bash
-# 克隆仓库
-git clone https://github.com/YOUR_USERNAME/Neo.git
+git clone https://github.com/YELEBAI/Neo.git
 cd Neo
-
-# 安装依赖
 pnpm install
 ```
 
-### 运行
+### Web 开发模式
 
-**方式一：Web 开发模式（浏览器）**
 ```bash
 pnpm dev
-# 打开 http://localhost:1420
 ```
 
-**方式二：Tauri 桌面应用**
+默认地址：
+
+```text
+http://localhost:1420
+```
+
+### Tauri 桌面开发模式
+
 ```bash
 pnpm tauri dev
 ```
 
-**方式三：Windows 一键启动**
-双击 `start.bat` 或 `launch.bat`
+也可以使用更显式的命令：
 
-### 构建
+```bash
+pnpm --filter @neo-tavern/desktop tauri dev
+```
+
+### Windows 一键启动
+
+在 Windows 上可以直接运行：
+
+```text
+一键安装启动.bat
+```
+
+或：
+
+```powershell
+./setup.ps1
+```
+
+脚本会检查 Node.js、pnpm 和 Rust，并尝试安装缺失依赖。
+
+## 构建
+
+### 构建前端
 
 ```bash
 pnpm build
 ```
 
-### 运行测试
+### 构建 Tauri 应用
 
 ```bash
+pnpm --filter @neo-tavern/desktop tauri build
+```
+
+## 测试与检查
+
+```bash
+pnpm --filter @neo-tavern/desktop exec tsc -p tsconfig.json --noEmit --incremental false
+pnpm --filter @neo-tavern/core test
 pnpm --filter @neo-tavern/desktop test
 ```
 
-## 预设导入
+Rust 检查：
 
-1. 打开应用 → 左侧导航进入 **Presets**
-2. 点击左下角 **Import** 按钮
-3. 选择 `.json` 预设文件（兼容酒馆格式）
-4. 导入后预设卡片和正则规则自动配好
+```bash
+cd apps/desktop/src-tauri
+cargo check
+```
 
-示例预设文件在 `预设/` 目录。
+## 使用 DeepSeek
 
-## 正则规则配置
+1. 打开 Settings。
+2. 新增或编辑 API 配置。
+3. Base URL 填写你的 DeepSeek OpenAI-compatible endpoint。
+4. 填写 API Key 和模型名。
+5. 保存并切换到该配置。
+6. 在聊天页右上角查看 token 数据、缓存命中率和 `1M` 上下文占用条。
 
-1. Settings → Regex Rules
-2. 创建正则预设 → 添加规则
-3. 规则配置：
-   - **Name**：规则名称
-   - **Enabled**：开关
-   - **Strip**：是否从 Prompt 中移除匹配内容
-   - **Pattern**：JS 正则表达式
-   - **Display**：显示模板（`$1`, `$2` 引用捕获组）
-4. 点 **Activate** 激活预设
-5. 聊天中 AI 输出自动按规则拆分
+`1M` 上下文进度条按当前会话最近一轮 usage 的 `totalTokens` 估算。如果接口没有返回 `totalTokens`，会使用 `promptTokens + completionTokens` 作为兜底。
 
-常用规则示例：
-| 名称 | Pattern | Strip |
-|------|---------|-------|
-| Summary | `<summary>([\s\S]*?)<\/summary>` | ✅ |
-| 思考 | `<(thought\|os)>\s?([\s\S]*?)\s?<\/[\S\s]*?>` | ✅ |
-| JSON代码块 | `` ```json([\s\S]*?)``` `` | ✅ |
+## 预设排序如何影响提示词
 
-## License
+预设页面中的卡片顺序不是纯 UI 展示。拖拽排序后，应用会重写每张卡片的 `injectionOrder`：
 
-MIT
+```text
+Prompt #1 -> injectionOrder 10
+Prompt #2 -> injectionOrder 20
+Prompt #3 -> injectionOrder 30
+```
 
----
+生成提示词时，`@neo-tavern/core` 会按 `injectionOrder` 从小到大注入这些卡片。因此你在预设页看到的顺序，就是实际发给模型的预设提示词顺序。
 
-*Built with ♥ by the NeoTavern team*
+## 数据位置
+
+Tauri 环境下，NeoTavern 会把应用数据写入系统 app-data 目录中的 `store.json`。浏览器开发模式下会 fallback 到 localStorage。
+
+迁移逻辑会在启动时读取旧的 `neotavern*` localStorage key，并复制到 Tauri app-data store。迁移不会主动删除旧 localStorage 数据。
+
+## 文档
+
+- 当前改动记录：[docs/current-changes.md](docs/current-changes.md)
+
+## 许可证
+
+当前仓库尚未提供明确 LICENSE 文件。发布或分发前请先补充许可证信息。
