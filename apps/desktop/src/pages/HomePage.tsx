@@ -1,21 +1,46 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Settings, MessageSquare, Trash2 } from 'lucide-react'
-import { Button, Card, CardContent, CardHeader, CardTitle, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
+import { Plus, Settings, Trash2 } from 'lucide-react'
+import { Button, Card, CardHeader, CardTitle, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
 import { useCharacterStore } from '@/features/character/character.store'
 import { useChatStore } from '@/features/chat/chat.store'
-import type { Chat } from '@neo-tavern/shared'
+import type { Character, Chat } from '@neo-tavern/shared'
+
+type HomeContextMenu =
+  | { type: 'character'; x: number; y: number; character: Character }
+  | { type: 'chat'; x: number; y: number; chat: Chat; character?: Character }
 
 export function HomePage() {
   const navigate = useNavigate()
   const { characters, loading: charsLoading, loadCharacters } = useCharacterStore()
   const { chats, loading: chatsLoading, loadChats, deleteChat } = useChatStore()
   const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null)
+  const [contextMenu, setContextMenu] = useState<HomeContextMenu | null>(null)
+  const charactersById = useMemo(() => new Map(characters.map((char) => [char.id, char])), [characters])
 
   useEffect(() => {
     loadCharacters()
     loadChats()
   }, [loadCharacters, loadChats])
+
+  useEffect(() => {
+    if (!contextMenu) return
+
+    const close = () => setContextMenu(null)
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+
+    window.addEventListener('click', close)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('keydown', closeOnEscape)
+
+    return () => {
+      window.removeEventListener('click', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [contextMenu])
 
   const handleCharacterClick = (characterId: string) => {
     const existingChat = chats.find((c) => c.characterId === characterId)
@@ -29,6 +54,18 @@ export function HomePage() {
   const handleOpenChat = (chatId: string) => {
     navigate(`/chat/${chatId}`)
   }
+
+  const openCharacterContextMenu = (event: React.MouseEvent, character: Character) => {
+    event.preventDefault()
+    setContextMenu({ type: 'character', x: event.clientX, y: event.clientY, character })
+  }
+
+  const openChatContextMenu = (event: React.MouseEvent, chat: Chat, character?: Character) => {
+    event.preventDefault()
+    setContextMenu({ type: 'chat', x: event.clientX, y: event.clientY, chat, character })
+  }
+
+  const closeContextMenu = () => setContextMenu(null)
 
   const handleDeleteConfirm = async () => {
     if (!deleteTarget) return
@@ -55,10 +92,24 @@ export function HomePage() {
               <button
                 key={char.id}
                 onClick={() => handleCharacterClick(char.id)}
-                className="text-left p-2 rounded-lg hover:bg-accent transition-colors"
+                onContextMenu={(event) => openCharacterContextMenu(event, char)}
+                className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-accent"
               >
-                <p className="text-sm font-medium truncate">{char.name}</p>
-                <p className="text-xs text-muted-foreground truncate">{char.description}</p>
+                {char.avatar ? (
+                  <img
+                    src={char.avatar}
+                    alt={char.name}
+                    className="h-10 w-10 shrink-0 rounded-lg border border-border/30 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/30 bg-accent/60">
+                    <span className="text-sm font-bold text-muted-foreground">{char.name.charAt(0)}</span>
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{char.name}</p>
+                  <p className="truncate text-xs text-muted-foreground">{char.description}</p>
+                </div>
               </button>
             ))}
           </div>
@@ -81,33 +132,122 @@ export function HomePage() {
             <p className="text-sm text-muted-foreground">No chats yet. Select a character to start.</p>
           )}
           <div className="grid gap-3">
-            {chats.map((chat) => (
-              <Card
-                key={chat.id}
-                className="cursor-pointer hover:bg-accent/50 transition-colors group"
-                onClick={() => handleOpenChat(chat.id)}
-              >
-                <CardHeader className="p-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4" />
-                      {chat.title}
-                    </CardTitle>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7 opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive transition-all"
-                      onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteTarget(chat) }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardHeader>
-              </Card>
-            ))}
+            {chats.map((chat) => {
+              const character = charactersById.get(chat.characterId)
+              const displayName = character?.name || chat.title
+              const avatar = character?.avatar
+
+              return (
+                <Card
+                  key={chat.id}
+                  className="group cursor-pointer transition-colors hover:bg-accent/50"
+                  onClick={() => handleOpenChat(chat.id)}
+                  onContextMenu={(event: React.MouseEvent) => openChatContextMenu(event, chat, character)}
+                >
+                  <CardHeader className="p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <CardTitle className="flex min-w-0 items-center gap-3 text-sm">
+                        {avatar ? (
+                          <img
+                            src={avatar}
+                            alt={displayName}
+                            className="h-10 w-10 shrink-0 rounded-lg border border-border/30 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/30 bg-accent/60">
+                            <span className="text-sm font-bold text-muted-foreground">{displayName.charAt(0)}</span>
+                          </div>
+                        )}
+                        <span className="min-w-0 truncate">{chat.title}</span>
+                      </CardTitle>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 shrink-0 text-muted-foreground opacity-0 transition-all hover:text-destructive group-hover:opacity-100"
+                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); setDeleteTarget(chat) }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardHeader>
+                </Card>
+              )
+            })}
           </div>
         </div>
       </div>
+
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-44 overflow-hidden rounded-md border bg-popover p-1 text-sm text-popover-foreground shadow-lg"
+          style={{
+            left: Math.min(contextMenu.x, window.innerWidth - 190),
+            top: Math.min(contextMenu.y, window.innerHeight - 120),
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          {contextMenu.type === 'character' ? (
+            <>
+              <button
+                type="button"
+                className="w-full rounded px-3 py-2 text-left hover:bg-accent"
+                onClick={() => {
+                  closeContextMenu()
+                  handleCharacterClick(contextMenu.character.id)
+                }}
+              >
+                Open chat
+              </button>
+              <button
+                type="button"
+                className="w-full rounded px-3 py-2 text-left hover:bg-accent"
+                onClick={() => {
+                  closeContextMenu()
+                  navigate('/character')
+                }}
+              >
+                Manage character
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="w-full rounded px-3 py-2 text-left hover:bg-accent"
+                onClick={() => {
+                  closeContextMenu()
+                  handleOpenChat(contextMenu.chat.id)
+                }}
+              >
+                Open chat
+              </button>
+              {contextMenu.character && (
+                <button
+                  type="button"
+                  className="w-full rounded px-3 py-2 text-left hover:bg-accent"
+                  onClick={() => {
+                    const characterId = contextMenu.character?.id
+                    closeContextMenu()
+                    if (characterId) handleCharacterClick(characterId)
+                  }}
+                >
+                  Open character chat
+                </button>
+              )}
+              <button
+                type="button"
+                className="w-full rounded px-3 py-2 text-left text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  closeContextMenu()
+                  setDeleteTarget(contextMenu.chat)
+                }}
+              >
+                Delete chat
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>

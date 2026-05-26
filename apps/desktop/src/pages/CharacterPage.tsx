@@ -19,6 +19,25 @@ const emptyForm: CreateCharacterInput = {
   exampleDialogues: '',
 }
 
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer)
+  const chunkSize = 0x8000
+  let binary = ''
+
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.subarray(i, i + chunkSize)
+    for (let j = 0; j < chunk.length; j++) {
+      binary += String.fromCharCode(chunk[j])
+    }
+  }
+
+  return btoa(binary)
+}
+
+function pngAvatarDataUrl(buffer: ArrayBuffer) {
+  return `data:image/png;base64,${arrayBufferToBase64(buffer)}`
+}
+
 export function CharacterPage() {
   const navigate = useNavigate()
   const { characters, loading, error, loadCharacters, createCharacter, updateCharacter, deleteCharacter, clearError } = useCharacterStore()
@@ -53,10 +72,12 @@ export function CharacterPage() {
     try {
       const isPng = file.name.toLowerCase().endsWith('.png')
       let card: ParsedCharacterCard | null
+      let avatar: string | undefined
 
       if (isPng) {
         const buf = await file.arrayBuffer()
         card = parsePngCharacterCard(buf)
+        if (card) avatar = pngAvatarDataUrl(buf)
       } else {
         const text = await file.text()
         card = parseJsonCharacterCard(text)
@@ -69,6 +90,7 @@ export function CharacterPage() {
 
       const char = await createCharacter({
         name: charName,
+        avatar,
         description: card.description,
         personality: card.personality,
         scenario: card.scenario,
@@ -77,6 +99,7 @@ export function CharacterPage() {
       })
 
       const importedParts: string[] = ['Character']
+      if (avatar) importedParts.push('avatar')
 
       if (card.regexScripts.length > 0) {
         const regexRules: any[] = []

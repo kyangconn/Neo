@@ -1,7 +1,30 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import type { ChangeEvent, KeyboardEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, ArrowLeft, BookOpen, CheckCircle2 } from 'lucide-react'
-import { Button, Input, Textarea, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@neo-tavern/ui'
+import {
+  ArrowLeft,
+  BookOpen,
+  CheckCircle2,
+  FileText,
+  KeyRound,
+  Plus,
+  Power,
+  Save,
+  Trash2,
+  X,
+} from 'lucide-react'
+import {
+  Button,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  Input,
+  ScrollArea,
+  Textarea,
+} from '@neo-tavern/ui'
 import { useWorldbookStore } from '@/features/settings/worldbook.store'
 import type { WorldbookEntry } from '@neo-tavern/shared'
 
@@ -10,13 +33,78 @@ function toast(type: 'success' | 'error' | 'info', message: string) {
   if (fn) fn(type, message)
 }
 
+function keywordsFrom(keys: string) {
+  return keys
+    .split(/[,，、\n]/)
+    .map((key) => key.trim())
+    .filter(Boolean)
+}
+
+function isLongEntry(entry: WorldbookEntry) {
+  return entry.content.length > 420 || entry.content.split('\n').length > 8
+}
+
+function entryModeLabel(entry: WorldbookEntry) {
+  if (entry.type === 'always') return 'Always'
+  return entry.triggerMode === 'and' ? 'Trigger AND' : 'Trigger OR'
+}
+
+function CountPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-md border bg-card/50 px-3 py-2">
+      <div className="text-base font-semibold leading-none">{value}</div>
+      <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+    </div>
+  )
+}
+
+function SwitchButton({
+  checked,
+  onClick,
+  label,
+}: {
+  checked: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={(event) => {
+        event.stopPropagation()
+        onClick()
+      }}
+      className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+        checked ? 'bg-primary' : 'bg-muted-foreground/30'
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 rounded-full bg-background shadow-sm transition-transform ${
+          checked ? 'translate-x-4' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  )
+}
+
 export function WorldbookPage() {
   const navigate = useNavigate()
   const {
-    worldbooks, activeWorldbookId, loading,
-    loadWorldbooks, createWorldbook, updateWorldbook, deleteWorldbook,
-    setActiveWorldbook, addEntry, updateEntry,
-    deleteEntry, toggleEntry,
+    worldbooks,
+    activeWorldbookId,
+    loading,
+    loadWorldbooks,
+    createWorldbook,
+    updateWorldbook,
+    deleteWorldbook,
+    setActiveWorldbook,
+    addEntry,
+    updateEntry,
+    deleteEntry,
+    toggleEntry,
   } = useWorldbookStore()
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -32,8 +120,11 @@ export function WorldbookPage() {
   const [entryTriggerMode, setEntryTriggerMode] = useState<'and' | 'or'>('or')
   const [entryEnabled, setEntryEnabled] = useState(true)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(() => new Set())
 
-  useEffect(() => { loadWorldbooks() }, [loadWorldbooks])
+  useEffect(() => {
+    loadWorldbooks()
+  }, [loadWorldbooks])
 
   useEffect(() => {
     if (!selectedId && worldbooks.length > 0) {
@@ -41,13 +132,41 @@ export function WorldbookPage() {
     }
   }, [worldbooks])
 
-  const selected = worldbooks.find((w) => w.id === selectedId) ?? null
-  const entries = selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []
+  const selected = worldbooks.find((worldbook) => worldbook.id === selectedId) ?? null
+  const entries = useMemo(
+    () => (selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []),
+    [selected],
+  )
+  const selectedEntry = editingEntryId ? entries.find((entry) => entry.id === editingEntryId) : null
+  const stats = useMemo(() => {
+    const source = selected?.entries ?? []
+    return {
+      total: source.length,
+      enabled: source.filter((entry) => entry.enabled).length,
+      always: source.filter((entry) => entry.enabled && entry.type === 'always').length,
+      trigger: source.filter((entry) => entry.enabled && entry.type === 'trigger').length,
+    }
+  }, [selected])
+
+  const resetEntryForm = () => {
+    setEditingEntryId(null)
+    setEntryTitle('')
+    setEntryKeys('')
+    setEntryContent('')
+    setEntryPriority('100')
+    setEntryType('trigger')
+    setEntryTriggerMode('or')
+    setEntryEnabled(true)
+  }
 
   const handleSelect = (id: string) => {
     setSelectedId(id)
-    const wb = worldbooks.find((w) => w.id === id)
-    if (wb) { setWbName(wb.name); setWbDesc(wb.description) }
+    const wb = worldbooks.find((worldbook) => worldbook.id === id)
+    if (wb) {
+      setWbName(wb.name)
+      setWbDesc(wb.description)
+    }
+    setExpandedEntryIds(new Set())
     resetEntryForm()
   }
 
@@ -57,23 +176,38 @@ export function WorldbookPage() {
       setSelectedId(wb.id)
       setWbName(wb.name)
       setWbDesc('')
-    } catch { toast('error', 'Failed') }
+      setExpandedEntryIds(new Set())
+      resetEntryForm()
+    } catch {
+      toast('error', 'Failed')
+    }
   }
 
   const handleSaveMeta = async () => {
     if (!selectedId) return
-    try { await updateWorldbook(selectedId, { name: wbName, description: wbDesc }); toast('success', 'Saved') }
-    catch { toast('error', 'Failed') }
+    try {
+      await updateWorldbook(selectedId, { name: wbName, description: wbDesc })
+      toast('success', 'Saved')
+    } catch {
+      toast('error', 'Failed')
+    }
   }
 
   const handleDelete = async () => {
     if (!deleteTarget) return
     try {
       await deleteWorldbook(deleteTarget.id)
-      if (selectedId === deleteTarget.id) { setSelectedId(null); setWbName(''); setWbDesc('') }
+      if (selectedId === deleteTarget.id) {
+        setSelectedId(null)
+        setWbName('')
+        setWbDesc('')
+        resetEntryForm()
+      }
       setDeleteTarget(null)
       toast('info', `"${deleteTarget.name}" deleted`)
-    } catch { toast('error', 'Failed') }
+    } catch {
+      toast('error', 'Failed')
+    }
   }
 
   const handleActivate = async () => {
@@ -83,30 +217,58 @@ export function WorldbookPage() {
     toast('info', newId ? `Activated "${selected?.name}"` : 'Deactivated')
   }
 
-  const resetEntryForm = () => {
-    setEditingEntryId(null); setEntryTitle(''); setEntryKeys(''); setEntryContent('')
-    setEntryPriority('100'); setEntryType('trigger'); setEntryTriggerMode('or'); setEntryEnabled(true)
+  const startEditEntry = (entry: WorldbookEntry) => {
+    setEditingEntryId(entry.id)
+    setEntryTitle(entry.title)
+    setEntryKeys(entry.keys)
+    setEntryContent(entry.content)
+    setEntryPriority(String(entry.priority))
+    setEntryType(entry.type)
+    setEntryTriggerMode(entry.triggerMode)
+    setEntryEnabled(entry.enabled)
   }
 
-  const startEditEntry = (e: WorldbookEntry) => {
-    setEditingEntryId(e.id); setEntryTitle(e.title); setEntryKeys(e.keys)
-    setEntryContent(e.content); setEntryPriority(String(e.priority))
-    setEntryType(e.type); setEntryTriggerMode(e.triggerMode); setEntryEnabled(e.enabled)
+  const handleEntryCardKeyDown = (event: KeyboardEvent<HTMLElement>, entry: WorldbookEntry) => {
+    if (event.currentTarget !== event.target) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    startEditEntry(entry)
   }
 
   const handleSaveEntry = async () => {
-    if (!selectedId || !entryTitle.trim()) { toast('error', 'Title required'); return }
+    if (!selectedId || !entryTitle.trim()) {
+      toast('error', 'Title required')
+      return
+    }
+
+    const parsedPriority = Number.parseInt(entryPriority, 10)
+    const data = {
+      title: entryTitle.trim(),
+      keys: entryKeys,
+      content: entryContent,
+      priority: Number.isFinite(parsedPriority) ? parsedPriority : 100,
+      type: entryType,
+      triggerMode: entryTriggerMode,
+      enabled: entryEnabled,
+    }
+
     try {
-      const data = { title: entryTitle.trim(), keys: entryKeys, content: entryContent, priority: parseInt(entryPriority) || 100, type: entryType, triggerMode: entryTriggerMode, enabled: entryEnabled }
-      if (editingEntryId) { await updateEntry(selectedId, editingEntryId, data); toast('success', `"${entryTitle}" updated`) }
-      else { await addEntry(selectedId, data); toast('success', `"${entryTitle}" added`) }
+      if (editingEntryId) {
+        await updateEntry(selectedId, editingEntryId, data)
+        toast('success', `"${entryTitle}" updated`)
+      } else {
+        await addEntry(selectedId, data)
+        toast('success', `"${entryTitle}" added`)
+      }
       resetEntryForm()
-    } catch { toast('error', 'Failed') }
+    } catch {
+      toast('error', 'Failed')
+    }
   }
 
   const handleDeleteEntry = (entryId: string) => {
     if (!selectedId) return
-    const entry = entries.find((e) => e.id === entryId)
+    const entry = entries.find((candidate) => candidate.id === entryId)
     deleteEntry(selectedId, entryId)
     if (editingEntryId === entryId) resetEntryForm()
     toast('info', `"${entry?.title || 'Entry'}" deleted`)
@@ -117,135 +279,401 @@ export function WorldbookPage() {
     toggleEntry(selectedId, entryId)
   }
 
+  const toggleEntryExpanded = (entryId: string) => {
+    setExpandedEntryIds((current) => {
+      const next = new Set(current)
+      if (next.has(entryId)) next.delete(entryId)
+      else next.add(entryId)
+      return next
+    })
+  }
+
   return (
-    <div className="flex h-full">
-      <div className="w-56 border-r p-4 flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <button onClick={() => navigate('/')} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
-            <ArrowLeft className="h-4 w-4" />Back
-          </button>
-          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={handleCreate}><Plus className="h-3.5 w-3.5" /></Button>
+    <div className="flex h-full min-h-0 overflow-hidden bg-background">
+      <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r bg-card/30">
+        <div className="shrink-0 space-y-4 border-b p-4">
+          <div className="flex items-center justify-between">
+            <button
+              onClick={() => navigate('/')}
+              className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCreate} title="New world book">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+          <div>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">World Books</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{worldbooks.length} books available</p>
+          </div>
         </div>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-2">Books</h2>
-        <ScrollArea className="flex-1 -mx-2 px-2">
-          <div className="flex flex-col gap-0.5">
-            {loading && <p className="text-xs text-muted-foreground p-2">Loading...</p>}
-            {!loading && worldbooks.length === 0 && <p className="text-xs text-muted-foreground p-2">No world books</p>}
-            {worldbooks.map((wb) => (
-              <button key={wb.id} onClick={() => handleSelect(wb.id)}
-                className={`text-left px-2 py-1.5 rounded text-sm transition-colors flex items-center justify-between gap-1
-                  ${selectedId === wb.id ? 'bg-accent text-foreground font-medium' : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'}`}>
-                <span className="truncate text-xs">{wb.name}</span>
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <span className="text-[10px] text-muted-foreground">{wb.entries.length}</span>
-                  {activeWorldbookId === wb.id && <CheckCircle2 className="h-3 w-3 text-green-500" />}
-                </div>
-              </button>
-            ))}
+
+        <ScrollArea type="always" className="min-h-0 flex-1">
+          <div className="space-y-2 p-3 pr-5">
+            {loading && <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Loading...</p>}
+            {!loading && worldbooks.length === 0 && (
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No world books</p>
+            )}
+            {worldbooks.map((worldbook) => {
+              const isSelected = selectedId === worldbook.id
+              const enabledCount = worldbook.entries.filter((entry) => entry.enabled).length
+
+              return (
+                <button
+                  key={worldbook.id}
+                  type="button"
+                  onClick={() => handleSelect(worldbook.id)}
+                  className={`w-full rounded-lg border p-3 text-left transition-colors ${
+                    isSelected
+                      ? 'border-primary/40 bg-accent text-foreground'
+                      : 'border-border/70 bg-background/30 text-muted-foreground hover:border-border hover:bg-accent/50 hover:text-foreground'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="min-w-0 truncate text-sm font-semibold">{worldbook.name}</span>
+                    {activeWorldbookId === worldbook.id && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />}
+                  </div>
+                  <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
+                    {worldbook.description || 'No description'}
+                  </p>
+                  <div className="mt-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    <span>{worldbook.entries.length} entries</span>
+                    <span>{enabledCount} on</span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         </ScrollArea>
-      </div>
+      </aside>
 
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {!selected ? (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-            <div className="text-center space-y-2">
-              <BookOpen className="h-8 w-8 mx-auto opacity-30" />
-              <p>Select a world book or create one</p>
-              <Button variant="outline" size="sm" onClick={handleCreate}><Plus className="h-3.5 w-3.5 mr-1" />New Book</Button>
+          <div className="flex flex-1 items-center justify-center text-muted-foreground">
+            <div className="space-y-3 text-center">
+              <BookOpen className="mx-auto h-10 w-10 opacity-30" />
+              <p className="text-sm">Select a world book or create one</p>
+              <Button variant="outline" size="sm" onClick={handleCreate}>
+                <Plus className="mr-1.5 h-3.5 w-3.5" />
+                New Book
+              </Button>
             </div>
           </div>
         ) : (
           <>
-            <div className="p-4 pb-2 shrink-0 border-b">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex-1 space-y-1.5">
-                  <Input value={wbName} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWbName(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-lg font-bold focus-visible:ring-0" placeholder="Book name" />
-                  <Input value={wbDesc} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWbDesc(e.target.value)} className="border-0 border-b rounded-none px-0 h-auto text-xs text-muted-foreground focus-visible:ring-0" placeholder="Description" />
+            <header className="shrink-0 border-b px-5 py-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="mb-2 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                    <BookOpen className="h-3.5 w-3.5" />
+                    World book
+                  </div>
+                  <Input
+                    value={wbName}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWbName(event.target.value)}
+                    className="h-auto border-0 border-b bg-transparent px-0 pb-1 text-2xl font-bold shadow-none focus-visible:ring-0"
+                    placeholder="Book name"
+                  />
+                  <Input
+                    value={wbDesc}
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWbDesc(event.target.value)}
+                    className="mt-2 h-auto border-0 border-b bg-transparent px-0 pb-1 text-sm text-muted-foreground shadow-none focus-visible:ring-0"
+                    placeholder="Description"
+                  />
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <Button size="sm" variant="outline" onClick={handleSaveMeta}>Save</Button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={handleSaveMeta}>
+                    <Save className="mr-1.5 h-3.5 w-3.5" />
+                    Save
+                  </Button>
                   <Button size="sm" variant={activeWorldbookId === selectedId ? 'default' : 'outline'} onClick={handleActivate}>
+                    <Power className="mr-1.5 h-3.5 w-3.5" />
                     {activeWorldbookId === selectedId ? 'Active' : 'Activate'}
                   </Button>
-                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => setDeleteTarget(selected)}><Trash2 className="h-3.5 w-3.5" /></Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => setDeleteTarget(selected)}
+                    title="Delete world book"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
-            </div>
+              <div className="mt-4 grid w-full max-w-xl grid-cols-4 gap-2">
+                <CountPill label="entries" value={stats.total} />
+                <CountPill label="enabled" value={stats.enabled} />
+                <CountPill label="always" value={stats.always} />
+                <CountPill label="trigger" value={stats.trigger} />
+              </div>
+            </header>
 
-            <div className="p-4 shrink-0 border-b">
-              <h3 className="text-sm font-semibold mb-3">{editingEntryId ? 'Edit Entry' : 'Add Entry'}</h3>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <Input value={entryTitle} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEntryTitle(e.target.value)} placeholder="Entry title" className="text-xs" />
-                <div className="flex items-center gap-2">
-                  <select value={entryType} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEntryType(e.target.value as 'always' | 'trigger')}
-                    className="h-7 rounded border border-input bg-transparent px-2 text-xs">
-                    <option value="always">Always</option>
-                    <option value="trigger">Trigger</option>
-                  </select>
-                  {entryType === 'trigger' && (
-                    <select value={entryTriggerMode} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setEntryTriggerMode(e.target.value as 'and' | 'or')}
-                      className="h-7 rounded border border-input bg-transparent px-2 text-xs">
-                      <option value="and">🔵 蓝灯 AND</option>
-                      <option value="or">🟢 绿灯 OR</option>
-                    </select>
-                  )}
-                  <label className="flex items-center gap-1.5 cursor-pointer shrink-0">
-                    <button type="button" role="switch" aria-checked={entryEnabled} onClick={() => setEntryEnabled(!entryEnabled)}
-                      className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${entryEnabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}>
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${entryEnabled ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-                    </button>
-                    <span className="text-[10px]">On</span>
-                  </label>
-                </div>
-              </div>
-              <div className="mb-3">
-                <Input value={entryKeys} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEntryKeys(e.target.value)} placeholder="Keywords (comma-separated)" className="text-xs" />
-              </div>
-              <div className="grid grid-cols-2 gap-3 mb-3">
-                <Textarea value={entryContent} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEntryContent(e.target.value)} placeholder="Entry content..." rows={3} className="text-xs" />
-                <div>
-                  <Input value={entryPriority} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEntryPriority(e.target.value)} placeholder="Priority" type="number" className="text-xs w-20 mb-2" />
-                  <p className="text-[10px] text-muted-foreground">Higher = closer to top</p>
-                </div>
-              </div>
-              <div className="flex gap-2">
-                <Button size="sm" onClick={handleSaveEntry}>{editingEntryId ? 'Update' : 'Add'} Entry</Button>
-                {editingEntryId && <Button size="sm" variant="outline" onClick={resetEntryForm}>Cancel</Button>}
-              </div>
-            </div>
-
-            <ScrollArea className="flex-1 p-4">
-              <div className="space-y-1.5">
-                {entries.length === 0 && <p className="text-xs text-muted-foreground p-2">No entries yet</p>}
-                {entries.map((e) => (
-                  <div key={e.id} className={`flex items-start gap-2 p-2 rounded-lg ${!e.enabled ? 'opacity-40' : 'hover:bg-accent/50'}`}>
-                    <button type="button" role="switch" aria-checked={e.enabled} onClick={() => handleToggleEntry(e.id)}
-                      className={`mt-0.5 shrink-0 relative inline-flex h-4 w-7 items-center rounded-full transition-colors ${e.enabled ? 'bg-primary' : 'bg-muted-foreground/30'}`}>
-                      <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${e.enabled ? 'translate-x-[14px]' : 'translate-x-[2px]'}`} />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs font-medium truncate">{e.title}</span>
-                        {e.type === 'always'
-                          ? <span className="text-[8px] bg-blue-500/10 text-blue-600 px-1 py-0.5 rounded shrink-0">常驻</span>
-                          : <span className={`text-[8px] px-1 py-0.5 rounded shrink-0 ${e.triggerMode === 'and' ? 'bg-blue-500/10 text-blue-600' : 'bg-emerald-500/10 text-emerald-600'}`}>
-                            {e.triggerMode === 'and' ? '🔵 蓝灯' : '🟢 绿灯'}</span>
-                        }
-                        <span className="text-[8px] text-muted-foreground">P{e.priority}</span>
-                      </div>
-                      {e.keys && <p className="text-[10px] text-muted-foreground truncate mt-0.5">{e.keys}</p>}
-                      <p className="text-[10px] text-muted-foreground line-clamp-2 mt-0.5">{e.content.slice(0, 120)}</p>
-                    </div>
-                    <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => startEditEntry(e)}><span className="text-[10px]">✎</span></Button>
-                    <Button size="icon" variant="ghost" className="h-6 w-6 text-destructive" onClick={() => handleDeleteEntry(e.id)}><Trash2 className="h-3 w-3" /></Button>
+            <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_380px] overflow-hidden">
+              <section className="flex min-w-0 flex-col overflow-hidden">
+                <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">Entries</h3>
+                    <p className="text-xs text-muted-foreground">Sorted by priority. Higher entries are considered first.</p>
                   </div>
-                ))}
-              </div>
-            </ScrollArea>
+                  <Button size="sm" variant="outline" onClick={resetEntryForm}>
+                    <Plus className="mr-1.5 h-3.5 w-3.5" />
+                    New Entry
+                  </Button>
+                </div>
+
+                <ScrollArea type="always" className="min-h-0 flex-1">
+                  <div className="space-y-3 p-5 pr-7">
+                    {entries.length === 0 && (
+                      <div className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+                        <FileText className="mx-auto mb-2 h-7 w-7 opacity-35" />
+                        No entries yet
+                      </div>
+                    )}
+                    {entries.map((entry) => {
+                      const keywords = keywordsFrom(entry.keys)
+                      const isExpanded = expandedEntryIds.has(entry.id)
+                      const isLong = isLongEntry(entry)
+                      const isEditing = editingEntryId === entry.id
+
+                      return (
+                        <article
+                          key={entry.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => startEditEntry(entry)}
+                          onKeyDown={(event) => handleEntryCardKeyDown(event, entry)}
+                          className={`rounded-lg border bg-card/40 p-4 transition-colors ${
+                            isEditing ? 'border-primary/50 bg-accent/35' : 'border-border/80 hover:bg-accent/25'
+                          } ${entry.enabled ? '' : 'opacity-55'} cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`}
+                        >
+                          <div className="flex items-start gap-3">
+                            <SwitchButton
+                              checked={entry.enabled}
+                              onClick={() => handleToggleEntry(entry.id)}
+                              label={`${entry.enabled ? 'Disable' : 'Enable'} ${entry.title}`}
+                            />
+                            <div className="min-w-0 flex-1 space-y-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="min-w-0 truncate text-sm font-semibold">
+                                  {entry.title || 'Untitled entry'}
+                                </span>
+                                <span
+                                  className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                    entry.type === 'always'
+                                      ? 'bg-sky-500/10 text-sky-500'
+                                      : entry.triggerMode === 'and'
+                                        ? 'bg-blue-500/10 text-blue-500'
+                                        : 'bg-emerald-500/10 text-emerald-500'
+                                  }`}
+                                >
+                                  {entryModeLabel(entry)}
+                                </span>
+                                <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                  P{entry.priority}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap gap-1.5">
+                                {keywords.length === 0 ? (
+                                  <span className="inline-flex items-center rounded-full border border-dashed px-2 py-0.5 text-[10px] text-muted-foreground">
+                                    <KeyRound className="mr-1 h-3 w-3" />
+                                    No keywords
+                                  </span>
+                                ) : (
+                                  <>
+                                    {keywords.slice(0, 8).map((keyword) => (
+                                      <span key={keyword} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                                        {keyword}
+                                      </span>
+                                    ))}
+                                    {keywords.length > 8 && (
+                                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                                        +{keywords.length - 8}
+                                      </span>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+
+                              <div
+                                className={`relative rounded-md border bg-background/60 px-3 py-2 text-xs leading-6 text-muted-foreground ${
+                                  isLong ? (isExpanded ? 'max-h-80 overflow-y-auto' : 'max-h-36 overflow-hidden') : ''
+                                }`}
+                              >
+                                <div className="whitespace-pre-wrap break-words">{entry.content || 'No content'}</div>
+                                {isLong && !isExpanded && (
+                                  <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-background to-transparent" />
+                                )}
+                              </div>
+
+                              {isLong && (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation()
+                                    toggleEntryExpanded(entry.id)
+                                  }}
+                                  className="text-xs font-medium text-primary hover:underline"
+                                >
+                                  {isExpanded ? 'Collapse content' : 'Expand content'}
+                                </button>
+                              )}
+                            </div>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 text-destructive"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  handleDeleteEntry(entry.id)
+                                }}
+                                title="Delete entry"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </div>
+                        </article>
+                      )
+                    })}
+                  </div>
+                </ScrollArea>
+              </section>
+
+              <aside className="flex min-h-0 flex-col overflow-hidden border-l bg-card/25">
+                <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">{editingEntryId ? 'Edit Entry' : 'New Entry'}</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {selectedEntry ? `Editing ${selectedEntry.title}` : 'Create reusable lore for this world book'}
+                    </p>
+                  </div>
+                  {editingEntryId && (
+                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={resetEntryForm} title="Cancel editing">
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
+                <ScrollArea type="always" className="min-h-0 flex-1">
+                  <div className="space-y-4 p-4 pr-6">
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Title</span>
+                      <Input
+                        value={entryTitle}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryTitle(event.target.value)}
+                        placeholder="Entry title"
+                      />
+                    </label>
+
+                    <div className="space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Injection type</span>
+                      <div className="grid grid-cols-2 rounded-md border bg-background p-1">
+                        <button
+                          type="button"
+                          onClick={() => setEntryType('always')}
+                          className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                            entryType === 'always' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                          }`}
+                        >
+                          Always
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEntryType('trigger')}
+                          className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                            entryType === 'trigger' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-accent'
+                          }`}
+                        >
+                          Trigger
+                        </button>
+                      </div>
+                    </div>
+
+                    {entryType === 'trigger' && (
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Trigger mode</span>
+                        <div className="grid grid-cols-2 rounded-md border bg-background p-1">
+                          <button
+                            type="button"
+                            onClick={() => setEntryTriggerMode('and')}
+                            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                              entryTriggerMode === 'and' ? 'bg-blue-500 text-white' : 'text-muted-foreground hover:bg-accent'
+                            }`}
+                          >
+                            AND all
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEntryTriggerMode('or')}
+                            className={`rounded px-3 py-1.5 text-xs font-medium transition-colors ${
+                              entryTriggerMode === 'or' ? 'bg-emerald-500 text-white' : 'text-muted-foreground hover:bg-accent'
+                            }`}
+                          >
+                            OR any
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Keywords</span>
+                      <Input
+                        value={entryKeys}
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryKeys(event.target.value)}
+                        placeholder="Comma-separated keywords"
+                      />
+                    </label>
+
+                    <label className="block space-y-1.5">
+                      <span className="text-xs font-medium text-muted-foreground">Content</span>
+                      <Textarea
+                        value={entryContent}
+                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEntryContent(event.target.value)}
+                        placeholder="Entry content..."
+                        className="min-h-[260px] resize-none text-sm leading-6"
+                      />
+                    </label>
+
+                    <div className="grid grid-cols-[1fr_auto] gap-3">
+                      <label className="block space-y-1.5">
+                        <span className="text-xs font-medium text-muted-foreground">Priority</span>
+                        <Input
+                          value={entryPriority}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryPriority(event.target.value)}
+                          type="number"
+                          placeholder="100"
+                        />
+                      </label>
+                      <div className="space-y-1.5">
+                        <span className="block text-xs font-medium text-muted-foreground">Enabled</span>
+                        <div className="flex h-9 items-center">
+                          <SwitchButton checked={entryEnabled} onClick={() => setEntryEnabled(!entryEnabled)} label="Toggle entry enabled" />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </ScrollArea>
+
+                <div className="flex shrink-0 items-center justify-between gap-2 border-t p-4">
+                  <Button onClick={handleSaveEntry} className="flex-1">
+                    {editingEntryId ? 'Update Entry' : 'Add Entry'}
+                  </Button>
+                  {editingEntryId && (
+                    <Button variant="outline" onClick={resetEntryForm}>
+                      Cancel
+                    </Button>
+                  )}
+                </div>
+              </aside>
+            </div>
           </>
         )}
-      </div>
+      </main>
 
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
@@ -254,8 +682,12 @@ export function WorldbookPage() {
             <DialogDescription>Delete "{deleteTarget?.name}" and all entries? This cannot be undone.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDelete}>Delete</Button>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleDelete}>
+              Delete
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
