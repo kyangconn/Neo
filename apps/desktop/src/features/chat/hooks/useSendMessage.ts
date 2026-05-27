@@ -2,7 +2,7 @@ import { useState, useCallback } from 'react'
 import { useChatStore } from '../chat.store'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { chatMemoryRepository, presetRepository, settingsRepository } from '@/db/repositories'
-import { buildLightweightMemorySummary, createMemoryContextBlock, hashMessages, splitMessagesByRecentTurns } from '../memory'
+import { buildLightweightMemorySummary, countMemoryTurns, createMemoryContextBlock, hashMessages, splitMessagesByRecentTurns } from '../memory'
 import { buildChatPrompt, createModelProvider, stripPromptContent, WorldbookContributor } from '@neo-tavern/core'
 import type { Character, BuiltPrompt, ContextBlock, Message, ModelConfig } from '@neo-tavern/shared'
 import type { GenerationPhase } from '../chat.types'
@@ -34,6 +34,8 @@ let activeAbortController: AbortController | null = null
 let activeGenerationId: string | null = null
 
 const LOCAL_MEMORY_COMPRESSOR_KEY = 'local'
+const MEMORY_COMPACTION_BATCH_TURNS = 4
+const MEMORY_COMPACTION_BATCH_MIN_CHARS = 6000
 
 function capText(content: string, maxChars: number) {
   const normalized = content.replace(/\r\n/g, '\n').trim()
@@ -54,6 +56,45 @@ function formatMessagesForCompression(messages: Message[], maxChars: number) {
 
   if (source.length <= sourceLimit) return source
   return `（来源过长，已优先保留靠后的旧剧情片段。）\n${source.slice(source.length - sourceLimit).trimStart()}`
+}
+
+function countMessageChars(messages: Message[]) {
+  return messages.reduce((total, message) => total + message.content.length, 0)
+}
+
+function shouldCompactMemoryBuffer(messages: Message[], maxChars: number) {
+  if (messages.length === 0) return false
+  return countMemoryTurns(messages) >= MEMORY_COMPACTION_BATCH_TURNS
+    || countMessageChars(messages) >= Math.max(MEMORY_COMPACTION_BATCH_MIN_CHARS, Math.floor(maxChars * 1.5))
+}
+
+function stripMemorySummaryHeader(summary: string) {
+  return summary
+    .replace(/^以下是较早剧情的(?:轻量|智能|稳定)记忆摘要[^\n]*\n?/u, '')
+    .trim()
+}
+
+function clampMemorySummary(summary: string, maxChars: number) {
+  const normalized = summary.trim()
+  if (normalized.length <= maxChars) return normalized
+  const firstLineBreak = normalized.indexOf('\n')
+  const header = firstLineBreak >= 0 ? normalized.slice(0, firstLineBreak).trim() : ''
+  const body = firstLineBreak >= 0 ? normalized.slice(firstLineBreak + 1).trim() : normalized
+  const marker = '\n…\n'
+  const budget = Math.max(200, maxChars - header.length - marker.length)
+  return `${header}${marker}${body.slice(-budget).trimStart()}`
+}
+
+function buildIncrementalLocalMemorySummary(previousSummary: string, newMessages: Message[], maxChars: number) {
+  if (!previousSummary.trim()) return buildLightweightMemorySummary(newMessages, maxChars)
+  const header = '以下是较早剧情的稳定记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
+  const previousBody = stripMemorySummaryHeader(previousSummary)
+  const newBody = stripMemorySummaryHeader(buildLightweightMemorySummary(newMessages, Math.max(1000, maxChars)))
+  return clampMemorySummary([
+    header,
+    previousBody,
+    newBody,
+  ].filter(Boolean).join('\n'), maxChars)
 }
 
 function getMemoryCompressorKey(config: ModelConfig | null) {
@@ -78,7 +119,8 @@ async function buildModelMemorySummary(
   messages: Message[],
   maxChars: number,
   compressorConfig: ModelConfig,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  previousSummary?: string
 ) {
   const provider = createModelProvider(compressorConfig)
   const source = formatMessagesForCompression(messages, maxChars)
@@ -90,6 +132,7 @@ async function buildModelMemorySummary(
           '你是 NeoTavern 的剧情记忆压缩器。',
           '你的任务是把较早对话压缩成稳定记忆，用于后续角色扮演保持连续性。',
           '只记录已经发生或已经明确设定的事实，不续写剧情，不新增设定，不评价内容。',
+          '如果提供了现有稳定摘要，请把新增旧剧情合并进去，输出一份完整的新摘要。',
           '优先保留：角色关系、地点、物品、承诺、目标、伤势/状态、未解决事件、用户角色已经做过的事。',
         ].join('\n'),
       },
@@ -100,8 +143,10 @@ async function buildModelMemorySummary(
           '使用简洁中文分点；最近完整对话会单独提供，所以这里只需要旧剧情记忆。',
           '不要输出解释，不要说“好的”，直接输出摘要。',
           '',
+          previousSummary?.trim() ? `【现有稳定摘要】\n${previousSummary.trim()}\n` : '',
+          previousSummary?.trim() ? '【新增旧剧情】' : '【较早对话】',
           source,
-        ].join('\n'),
+        ].filter(Boolean).join('\n'),
       },
     ],
     model: compressorConfig.model,
@@ -117,8 +162,8 @@ async function buildModelMemorySummary(
 
   const summary = result.content.trim()
   if (!summary) throw new Error('Compression API returned an empty summary.')
-  const header = '以下是较早剧情的智能记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
-  return capText(summary.startsWith(header) ? summary : `${header}\n${summary}`, maxChars)
+  const header = '以下是较早剧情的稳定记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
+  return clampMemorySummary(summary.startsWith(header) ? summary : `${header}\n${summary}`, maxChars)
 }
 
 export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMessageOptions): UseSendMessageReturn {
@@ -199,42 +244,63 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
     }
 
     const memorySourceMessages = stripMessages(memoryMessages) as Message[]
-    const sourceHash = hashMessages(memorySourceMessages)
     const compressorConfig = await resolveMemoryCompressorConfig(settings.memoryCompressorConfigId)
     const compressorKey = getMemoryCompressorKey(compressorConfig)
     const cached = chatId ? await chatMemoryRepository.get(chatId) : null
-    const cacheHit = !!cached
-      && cached.sourceHash === sourceHash
+    const cachedMessageCount = Math.max(0, Math.min(cached?.sourceMessageCount ?? 0, memorySourceMessages.length))
+    const cachedPrefixMessages = cachedMessageCount > 0
+      ? memorySourceMessages.slice(0, cachedMessageCount)
+      : []
+    const cacheReusable = !!cached
+      && cachedMessageCount > 0
+      && cached.sourceHash === hashMessages(cachedPrefixMessages)
       && cached.compressorKey === compressorKey
       && cached.memorySummaryMaxChars === settings.memorySummaryMaxChars
 
     let compressionMode: 'local' | 'model' | 'fallback' = compressorConfig ? 'fallback' : 'local'
-    let summary = cacheHit
-      ? cached!.summary
-      : ''
+    let summarizedMessageCount = cacheReusable ? cachedMessageCount : 0
+    let summary = cacheReusable ? cached!.summary : ''
+    let overflowMemoryMessages = cacheReusable
+      ? memorySourceMessages.slice(cachedMessageCount)
+      : [] as Message[]
+    let shouldPersistMemory = false
 
-    if (!cacheHit) {
+    if (!cacheReusable || shouldCompactMemoryBuffer(overflowMemoryMessages, settings.memorySummaryMaxChars)) {
+      const messagesToSummarize = cacheReusable
+        ? overflowMemoryMessages
+        : memorySourceMessages
+      const previousSummary = cacheReusable ? summary : undefined
+
       if (compressorConfig) {
         try {
-          summary = await buildModelMemorySummary(memorySourceMessages, settings.memorySummaryMaxChars, compressorConfig, signal)
+          summary = await buildModelMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars, compressorConfig, signal, previousSummary)
           compressionMode = 'model'
         } catch (err) {
           if ((err as Error).name === 'AbortError') throw err
-          summary = buildLightweightMemorySummary(memorySourceMessages, settings.memorySummaryMaxChars)
+          summary = cacheReusable
+            ? buildIncrementalLocalMemorySummary(summary, messagesToSummarize, settings.memorySummaryMaxChars)
+            : buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
           compressionMode = 'fallback'
         }
       } else {
-        summary = buildLightweightMemorySummary(memorySourceMessages, settings.memorySummaryMaxChars)
+        summary = cacheReusable
+          ? buildIncrementalLocalMemorySummary(summary, messagesToSummarize, settings.memorySummaryMaxChars)
+          : buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
         compressionMode = 'local'
       }
+
+      summarizedMessageCount = memorySourceMessages.length
+      overflowMemoryMessages = []
+      shouldPersistMemory = true
     }
 
-    if (chatId && !cacheHit) {
+    if (chatId && shouldPersistMemory) {
+      const summarizedSourceMessages = memorySourceMessages.slice(0, summarizedMessageCount)
       await chatMemoryRepository.upsert({
         chatId,
         summary,
-        sourceHash,
-        sourceMessageCount: memorySourceMessages.length,
+        sourceHash: hashMessages(summarizedSourceMessages),
+        sourceMessageCount: summarizedMessageCount,
         compressorConfigId: compressorConfig?.id ?? null,
         compressorKey,
         compressionMode,
@@ -243,7 +309,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
     }
 
     return {
-      recentMessages,
+      recentMessages: [...overflowMemoryMessages, ...recentMessages],
       memoryBlock: createMemoryContextBlock(summary),
     }
   }
