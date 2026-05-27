@@ -29,26 +29,46 @@ export function hashMessages(messages: Message[]) {
   return (hash >>> 0).toString(36)
 }
 
-export function splitMessagesByRecentTurns(messages: Message[], turnLimit: number) {
-  const limit = Math.max(1, Math.floor(turnLimit || DEFAULT_PROMPT_RECENT_TURNS))
-  let turns = 0
+function isMemoryTurnStart(messages: Message[], index: number) {
+  const message = messages[index]
+  if (!message) return false
+  if (message.role === 'user') return true
+  if (message.role === 'assistant') {
+    return index === 0 || messages[index - 1]?.role !== 'user'
+  }
+  return index === 0
+}
 
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role !== 'user') continue
-    turns += 1
-    if (turns > limit) {
-      let start = i + 1
-      while (start < messages.length && messages[start].role !== 'user') start += 1
-      return {
-        memoryMessages: messages.slice(0, start),
-        recentMessages: messages.slice(start),
-      }
+export function countMemoryTurns(messages: Message[]) {
+  return messages.reduce((count, _message, index) => (
+    count + (isMemoryTurnStart(messages, index) ? 1 : 0)
+  ), 0)
+}
+
+export function getRecentMemoryTurnStartIndex(messages: Message[], turnLimit: number) {
+  const limit = Math.max(1, Math.floor(turnLimit || DEFAULT_PROMPT_RECENT_TURNS))
+  const starts: number[] = []
+
+  for (let i = 0; i < messages.length; i++) {
+    if (isMemoryTurnStart(messages, i)) starts.push(i)
+  }
+
+  if (starts.length <= limit) return 0
+  return starts[starts.length - limit]
+}
+
+export function splitMessagesByRecentTurns(messages: Message[], turnLimit: number) {
+  const start = getRecentMemoryTurnStartIndex(messages, turnLimit)
+  if (start <= 0) {
+    return {
+      memoryMessages: [] as Message[],
+      recentMessages: messages,
     }
   }
 
   return {
-    memoryMessages: [] as Message[],
-    recentMessages: messages,
+    memoryMessages: messages.slice(0, start),
+    recentMessages: messages.slice(start),
   }
 }
 

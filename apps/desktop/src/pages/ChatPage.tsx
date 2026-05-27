@@ -5,7 +5,7 @@ import { Button, Input, Card, CardContent, Textarea, Dialog, DialogContent, Dial
 import { useCharacterStore } from '@/features/character/character.store'
 import { useChatStore } from '@/features/chat/chat.store'
 import { useSendMessage } from '@/features/chat/hooks/useSendMessage'
-import { buildLightweightMemorySummary, createMemoryContextBlock, splitMessagesByRecentTurns } from '@/features/chat/memory'
+import { buildLightweightMemorySummary, countMemoryTurns, createMemoryContextBlock, getRecentMemoryTurnStartIndex, splitMessagesByRecentTurns } from '@/features/chat/memory'
 import type { GenerationPhase } from '@/features/chat/chat.types'
 import { chatRepository, chatSavepointRepository, createDefaultSavepointName, messageRepository, presetRepository } from '@/db/repositories'
 import type { ChatSavepoint } from '@/db/repositories'
@@ -39,7 +39,7 @@ function toast(type: 'success' | 'error' | 'info', message: string) {
 const DEEPSEEK_CONTEXT_LIMIT = 1_000_000
 const CHAT_FONT_SIZE_KEY = 'neotavern_chat_font_size'
 const CHAT_DRAFT_KEY_PREFIX = 'neotavern_chat_draft'
-const CONTINUE_PROMPT = '继续'
+const CONTINUE_PROMPT = '续写剧情'
 const CHAT_VISIBLE_TURN_LIMIT = 20
 const CHAT_FONT_SIZE_MIN = 12
 const CHAT_FONT_SIZE_MAX = 22
@@ -67,29 +67,6 @@ function getChatDraftKey(chatId: string) {
 function clampChatFontSize(value: number) {
   if (!Number.isFinite(value)) return 15
   return Math.min(CHAT_FONT_SIZE_MAX, Math.max(CHAT_FONT_SIZE_MIN, Math.round(value)))
-}
-
-function countUserTurns(messages: Message[]) {
-  return messages.filter((message) => message.role === 'user').length
-}
-
-function getRecentTurnStartIndex(messages: Message[], turnLimit: number) {
-  if (turnLimit <= 0) return messages.length
-
-  let turns = 0
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role !== 'user') continue
-    turns += 1
-    if (turns > turnLimit) {
-      let start = i + 1
-      while (start < messages.length && messages[start].role !== 'user') {
-        start += 1
-      }
-      return start
-    }
-  }
-
-  return 0
 }
 
 function formatDuration(ms: number) {
@@ -622,13 +599,13 @@ export function ChatPage() {
   const contextUsageTitle = currentContextTokens > 0
     ? `${currentContextTokens.toLocaleString()} / ${DEEPSEEK_CONTEXT_LIMIT.toLocaleString()} current conversation context tokens`
     : 'No context usage data yet'
-  const recentMessageStartIndex = getRecentTurnStartIndex(messages, CHAT_VISIBLE_TURN_LIMIT)
+  const recentMessageStartIndex = getRecentMemoryTurnStartIndex(messages, CHAT_VISIBLE_TURN_LIMIT)
   const hasOlderMessages = recentMessageStartIndex > 0
   const visibleMessages = hasOlderMessages && !showOlderMessages
     ? messages.slice(recentMessageStartIndex)
     : messages
   const hiddenMessages = hasOlderMessages ? messages.slice(0, recentMessageStartIndex) : []
-  const hiddenTurnCount = countUserTurns(hiddenMessages)
+  const hiddenTurnCount = countMemoryTurns(hiddenMessages)
 
   return (
     <div className="flex h-full">

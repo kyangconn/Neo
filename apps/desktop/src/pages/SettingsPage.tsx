@@ -786,7 +786,7 @@ export function SettingsPage() {
                       onChange={(e) => setPromptRecentTurns(parseInt(e.target.value))}
                       className="w-full h-2 rounded-full appearance-none bg-muted-foreground/20 cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
                     />
-                    <p className="text-[10px] text-muted-foreground">Prompt keeps this many latest user turns in full.</p>
+                    <p className="text-[10px] text-muted-foreground">Prompt keeps this many latest story turns in full, including hidden continue replies.</p>
                   </label>
                   <label className="space-y-2">
                     <div className="flex items-center justify-between gap-3">

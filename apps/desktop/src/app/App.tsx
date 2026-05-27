@@ -27,6 +27,7 @@ function AppContent() {
       await seedEldoriaWorldbook()
       await useSettingsStore.getState().loadAllConfigs()
       await useSettingsStore.getState().loadContextTokens()
+      await useSettingsStore.getState().loadMemorySettings()
       await useSettingsStore.getState().loadRegexRules()
       await useSettingsStore.getState().loadPersona()
       await useWorldbookStore.getState().loadWorldbooks()
