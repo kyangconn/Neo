@@ -49,7 +49,7 @@ const DEEPSEEK_MODEL_OPTIONS = [
 function fillForm(cfg: {
   name: string; baseUrl: string; apiKey: string; model: string
   temperature: number; maxTokens: number
-  reasoningEffort?: string
+  reasoningEffort?: string; streamingEnabled?: boolean
 }) {
   setFormName(cfg.name)
   setFormBaseUrl(cfg.baseUrl)
@@ -58,6 +58,7 @@ function fillForm(cfg: {
   setFormTemperature(String(cfg.temperature))
   setFormMaxTokens(String(cfg.maxTokens))
   setFormReasoningEffort(cfg.reasoningEffort || '')
+  setFormStreamingEnabled(cfg.streamingEnabled !== false)
 }
 
 let setFormName: (v: string) => void = () => {}
@@ -67,6 +68,36 @@ let setFormModel: (v: string) => void = () => {}
 let setFormTemperature: (v: string) => void = () => {}
 let setFormMaxTokens: (v: string) => void = () => {}
 let setFormReasoningEffort: (v: string) => void = () => {}
+let setFormStreamingEnabled: (v: boolean) => void = () => {}
+
+function SwitchButton({
+  checked,
+  onClick,
+  label,
+}: {
+  checked: boolean
+  onClick: () => void
+  label: string
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={onClick}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+        checked ? 'bg-primary' : 'bg-muted-foreground/30'
+      }`}
+    >
+      <span
+        className={`inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform ${
+          checked ? 'translate-x-5' : 'translate-x-0.5'
+        }`}
+      />
+    </button>
+  )
+}
 
 export function SettingsPage() {
   const navigate = useNavigate()
@@ -105,6 +136,7 @@ export function SettingsPage() {
   const [temperature, setTemperature] = useState('0.8')
   const [maxTokens, setMaxTokens] = useState('4096')
   const [reasoningEffort, setReasoningEffort] = useState('')
+  const [streamingEnabled, setStreamingEnabled] = useState(true)
   const [loaded, setLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string>('__new__')
 
@@ -120,6 +152,7 @@ export function SettingsPage() {
   setFormTemperature = setTemperature
   setFormMaxTokens = setMaxTokens
   setFormReasoningEffort = setReasoningEffort
+  setFormStreamingEnabled = setStreamingEnabled
 
   const [selectedRegexPresetId, setSelectedRegexPresetId] = useState<string | null>(null)
   const [regexPresetName, setRegexPresetName] = useState('')
@@ -141,6 +174,7 @@ export function SettingsPage() {
     setTemperature('0.8')
     setMaxTokens('4096')
     setReasoningEffort('')
+    setStreamingEnabled(true)
     setAvailableModels([])
   }
 
@@ -190,19 +224,20 @@ export function SettingsPage() {
       const nextBaseUrl = baseUrl.trim() || DEEPSEEK_BASE_URL
       const nextApiKey = apiKey.trim()
       const nextModel = model.trim() || DEFAULT_DEEPSEEK_MODEL
+      const nextStreamingEnabled = streamingEnabled
       if (!nextApiKey) {
         toast('error', 'Please enter your DeepSeek API key first.')
         return
       }
       if (selectedId !== '__new__' && modelConfigs.some((c) => c.id === selectedId)) {
-        await updateModelConfig(selectedId, { baseUrl: nextBaseUrl, apiKey: nextApiKey, model: nextModel, name: nextName, temperature: temp, maxTokens: tokens, reasoningEffort: re })
+        await updateModelConfig(selectedId, { baseUrl: nextBaseUrl, apiKey: nextApiKey, model: nextModel, name: nextName, temperature: temp, maxTokens: tokens, reasoningEffort: re, streamingEnabled: nextStreamingEnabled })
         setName(nextName)
         setBaseUrl(nextBaseUrl)
         setApiKey(nextApiKey)
         setModel(nextModel)
         toast('success', `"${nextName}" updated.`)
       } else {
-        const cfg = await saveModelConfig({ provider: 'openai-compatible', baseUrl: nextBaseUrl, apiKey: nextApiKey, model: nextModel, name: nextName, temperature: temp, maxTokens: tokens, reasoningEffort: re })
+        const cfg = await saveModelConfig({ provider: 'openai-compatible', baseUrl: nextBaseUrl, apiKey: nextApiKey, model: nextModel, name: nextName, temperature: temp, maxTokens: tokens, reasoningEffort: re, streamingEnabled: nextStreamingEnabled })
         setName(nextName)
         setBaseUrl(nextBaseUrl)
         setApiKey(nextApiKey)
@@ -614,6 +649,20 @@ export function SettingsPage() {
                     <p className="text-muted-foreground">Format</p>
                     <p className="mt-1 text-sm font-semibold">OpenAI Chat</p>
                   </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">Live Text Display</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Keep DeepSeek streaming internally; show text chunk by chunk, or reveal it after the draft is finished.
+                    </p>
+                  </div>
+                  <SwitchButton
+                    checked={streamingEnabled}
+                    onClick={() => setStreamingEnabled(!streamingEnabled)}
+                    label="Toggle live text display"
+                  />
                 </div>
 
                 <div className="flex flex-col gap-2 sm:flex-row">

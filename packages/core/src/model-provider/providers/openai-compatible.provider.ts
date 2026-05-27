@@ -38,6 +38,20 @@ export class OpenAICompatibleProvider implements ModelProvider {
     return OpenAICompatibleProvider.listModels(baseUrl, apiKey)
   }
 
+  private mapUsage(data: any): GenerateResult['usage'] {
+    return {
+      promptTokens: data?.usage?.prompt_tokens,
+      completionTokens: data?.usage?.completion_tokens,
+      totalTokens: data?.usage?.total_tokens,
+      cacheHitTokens: data?.usage?.prompt_cache_hit_tokens
+        ?? data?.usage?.prompt_tokens_details?.cached_tokens,
+      cacheMissTokens: data?.usage?.prompt_cache_miss_tokens
+        ?? (data?.usage?.prompt_tokens_details?.cached_tokens != null
+          ? (data?.usage?.prompt_tokens || 0) - data?.usage?.prompt_tokens_details?.cached_tokens
+          : undefined),
+    }
+  }
+
   async generate(input: GenerateInput): Promise<GenerateResult> {
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
@@ -68,17 +82,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       content,
       reasoningContent: reasoningContent || undefined,
       raw: data,
-      usage: {
-        promptTokens: data?.usage?.prompt_tokens,
-        completionTokens: data?.usage?.completion_tokens,
-        totalTokens: data?.usage?.total_tokens,
-        cacheHitTokens: data?.usage?.prompt_cache_hit_tokens
-          ?? data?.usage?.prompt_tokens_details?.cached_tokens,
-        cacheMissTokens: data?.usage?.prompt_cache_miss_tokens
-          ?? (data?.usage?.prompt_tokens_details?.cached_tokens != null
-            ? (data?.usage?.prompt_tokens || 0) - data?.usage?.prompt_tokens_details?.cached_tokens
-            : undefined),
-      },
+      usage: this.mapUsage(data),
     }
   }
 
@@ -94,7 +98,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
         messages: input.messages,
         temperature: input.temperature ?? 0.8,
         max_tokens: input.maxTokens ?? 800,
+        ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
         stream: true,
+        stream_options: { include_usage: true },
       }),
       signal: input.signal,
     })
@@ -128,9 +134,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
           try {
             const parsed = JSON.parse(dataStr)
-            const delta = parsed?.choices?.[0]?.delta?.content ?? ''
-            if (delta) {
-              yield { contentDelta: delta, raw: parsed }
+            const delta = parsed?.choices?.[0]?.delta ?? {}
+            const contentDelta = delta?.content ?? ''
+            const reasoningContentDelta = delta?.reasoning_content ?? delta?.reasoningContent ?? ''
+            const usage = parsed?.usage ? this.mapUsage(parsed) : undefined
+            if (contentDelta || reasoningContentDelta || usage) {
+              yield { contentDelta, reasoningContentDelta, usage, raw: parsed }
             }
           } catch {
             continue

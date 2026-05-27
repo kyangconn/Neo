@@ -10,6 +10,7 @@ export interface ModelConfig {
   temperature: number
   maxTokens: number
   reasoningEffort?: string
+  streamingEnabled?: boolean
   createdAt: string
   updatedAt: string
 }
@@ -23,6 +24,7 @@ export interface CreateModelConfigInput {
   temperature?: number
   maxTokens?: number
   reasoningEffort?: string
+  streamingEnabled?: boolean
 }
 
 export interface UpdateModelConfigInput {
@@ -34,4 +36,5 @@ export interface UpdateModelConfigInput {
   temperature?: number
   maxTokens?: number
   reasoningEffort?: string
+  streamingEnabled?: boolean
 }

@@ -20,7 +20,7 @@ export const messageRepository = {
   },
 
   async create(input: CreateMessageInput): Promise<Message> {
-    const msg: Message = { id: generateId(), chatId: input.chatId, role: input.role, content: input.content, reasoningContent: input.reasoningContent, generateDuration: input.generateDuration, usage: input.usage, createdAt: new Date().toISOString() }
+    const msg: Message = { id: generateId(), chatId: input.chatId, role: input.role, content: input.content, reasoningContent: input.reasoningContent, generateDuration: input.generateDuration, thinkingDuration: input.thinkingDuration, usage: input.usage, createdAt: new Date().toISOString() }
     const all = await loadAll()
     all.push(msg)
     await saveAll(all)
@@ -36,6 +36,15 @@ export const messageRepository = {
     const idx = all.findIndex((m) => m.id === id)
     if (idx === -1) throw new Error(`Message not found: ${id}`)
     all[idx].content = content
+    await saveAll(all)
+    return all[idx]
+  },
+
+  async patch(id: string, patch: Partial<Pick<Message, 'content' | 'reasoningContent' | 'generateDuration' | 'thinkingDuration' | 'usage'>>): Promise<Message> {
+    const all = await loadAll()
+    const idx = all.findIndex((m) => m.id === id)
+    if (idx === -1) throw new Error(`Message not found: ${id}`)
+    all[idx] = { ...all[idx], ...patch }
     await saveAll(all)
     return all[idx]
   },

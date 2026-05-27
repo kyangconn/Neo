@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { chatRepository, messageRepository } from '@/db/repositories'
 import type { Chat, Message, CreateChatInput, CreateMessageInput } from '@neo-tavern/shared'
+import type { GenerationPhase } from './chat.types'
 
 interface ChatState {
   chats: Chat[]
@@ -8,6 +9,9 @@ interface ChatState {
   messages: Message[]
   loading: boolean
   sending: boolean
+  sendingChatId: string | null
+  streamingMessageId: string | null
+  generationPhase: GenerationPhase | null
   error: string | null
 
   loadChats: () => Promise<void>
@@ -17,8 +21,17 @@ interface ChatState {
   loadMessages: (chatId: string) => Promise<void>
   addMessage: (input: CreateMessageInput) => Promise<Message>
   updateMessage: (id: string, content: string) => Promise<void>
+  patchMessage: (
+    id: string,
+    patch: Partial<Pick<Message, 'content' | 'reasoningContent' | 'generateDuration' | 'thinkingDuration' | 'usage'>>,
+    options?: { persist?: boolean },
+  ) => Promise<void>
   deleteMessage: (id: string) => Promise<void>
   deleteMessages: (ids: string[]) => Promise<void>
+  beginSending: (chatId: string) => void
+  setStreamingMessageId: (id: string | null) => void
+  setGenerationPhase: (phase: GenerationPhase) => void
+  finishSending: (chatId?: string) => void
   setSending: (sending: boolean) => void
   clearError: () => void
 }
@@ -40,6 +53,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
   messages: [],
   loading: false,
   sending: false,
+  sendingChatId: null,
+  streamingMessageId: null,
+  generationPhase: null,
   error: null,
 
   loadChats: async () => {
@@ -53,7 +69,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   loadChat: async (id: string) => {
-    set({ loading: true, error: null, sending: false })
+    set({ loading: true, error: null })
     try {
       const chat = await chatRepository.getById(id)
       if (chat) {
@@ -70,11 +86,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createOrGetChat: async (input: CreateChatInput) => {
     set({ loading: true, error: null })
     try {
-      const previousId = get().currentChat?.id
       const inMemory = get().chats.find((c) => c.characterId === input.characterId)
       if (inMemory) {
         const messages = await messageRepository.listByChatId(inMemory.id)
-        set({ currentChat: inMemory, messages, loading: false, sending: inMemory.id !== previousId ? false : get().sending })
+        set({ currentChat: inMemory, messages, loading: false })
         return inMemory
       }
       const existing = await chatRepository.getByCharacterId(input.characterId)
@@ -82,7 +97,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const chat = existing[0]
         const messages = await messageRepository.listByChatId(chat.id)
         const state = get()
-        set({ currentChat: chat, messages, chats: state.chats, loading: false, sending: chat.id !== previousId ? false : get().sending })
+        set({ currentChat: chat, messages, chats: state.chats, loading: false })
         return chat
       }
       const chat = await chatRepository.create(input)
@@ -91,7 +106,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentChat: chat,
         messages: [],
         loading: false,
-        sending: false,
       }))
       return chat
     } catch (err) {
@@ -109,6 +123,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         chats: state.chats.filter((c) => c.id !== id),
         currentChat: state.currentChat?.id === id ? null : state.currentChat,
         messages: state.currentChat?.id === id ? [] : state.messages,
+        sending: state.sendingChatId === id ? false : state.sending,
+        sendingChatId: state.sendingChatId === id ? null : state.sendingChatId,
+        streamingMessageId: state.sendingChatId === id ? null : state.streamingMessageId,
+        generationPhase: state.sendingChatId === id ? null : state.generationPhase,
         loading: false,
       }))
     } catch (err) {
@@ -145,7 +163,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearError: () => set({ error: null }),
 
-  setSending: (sending: boolean) => set({ sending }),
+  beginSending: (chatId: string) => set({ sending: true, sendingChatId: chatId, streamingMessageId: null, generationPhase: 'thinking' }),
+
+  setStreamingMessageId: (id: string | null) => set({ streamingMessageId: id }),
+
+  setGenerationPhase: (phase: GenerationPhase) => set((state) => (
+    state.sending ? { generationPhase: phase } : {}
+  )),
+
+  finishSending: (chatId?: string) => set((state) => {
+    if (chatId && state.sendingChatId && state.sendingChatId !== chatId) return {}
+    return { sending: false, sendingChatId: null, streamingMessageId: null, generationPhase: null }
+  }),
+
+  setSending: (sending: boolean) => set((state) => ({
+    sending,
+    sendingChatId: sending ? (state.sendingChatId ?? state.currentChat?.id ?? null) : null,
+    streamingMessageId: sending ? state.streamingMessageId : null,
+    generationPhase: sending ? (state.generationPhase ?? 'thinking') : null,
+  })),
 
   updateMessage: async (id: string, content: string) => {
     try {
@@ -154,6 +190,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((state) => ({
         messages: state.messages.map((m) => (m.id === id ? updated : m)),
         ...applyTouchedChat(state, chat),
+      }))
+    } catch (err) {
+      set({ error: (err as Error).message })
+      throw err
+    }
+  },
+
+  patchMessage: async (id, patch, options = {}) => {
+    const persist = options.persist ?? true
+    set((state) => ({
+      messages: state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+    }))
+    if (!persist) return
+    try {
+      const updated = await messageRepository.patch(id, patch)
+      set((state) => ({
+        messages: state.messages.map((m) => (m.id === id ? updated : m)),
       }))
     } catch (err) {
       set({ error: (err as Error).message })

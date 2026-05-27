@@ -15,6 +15,7 @@ export interface Message {
   content: string
   reasoningContent?: string
   generateDuration?: number
+  thinkingDuration?: number
   usage?: MessageUsage
   createdAt: string
 }
@@ -25,5 +26,6 @@ export interface CreateMessageInput {
   content: string
   reasoningContent?: string
   generateDuration?: number
+  thinkingDuration?: number
   usage?: MessageUsage
 }

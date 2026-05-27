@@ -26,7 +26,9 @@ export interface GenerateResult {
 }
 
 export interface GenerateChunk {
-  contentDelta: string
+  contentDelta?: string
+  reasoningContentDelta?: string
+  usage?: GenerateResult['usage']
   raw?: unknown
 }
 

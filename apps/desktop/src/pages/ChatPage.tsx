@@ -5,6 +5,7 @@ import { Button, Input, Card, CardContent, Textarea, Dialog, DialogContent, Dial
 import { useCharacterStore } from '@/features/character/character.store'
 import { useChatStore } from '@/features/chat/chat.store'
 import { useSendMessage } from '@/features/chat/hooks/useSendMessage'
+import type { GenerationPhase } from '@/features/chat/chat.types'
 import { presetRepository } from '@/db/repositories'
 import { getStorageItem, setStorageItem } from '@/db/storage'
 import { buildChatPrompt, formatPreview, applyRegexRules, resolveWorldbookEntries } from '@neo-tavern/core'
@@ -50,6 +51,28 @@ function formatCompactToken(value: number) {
 function clampChatFontSize(value: number) {
   if (!Number.isFinite(value)) return 15
   return Math.min(CHAT_FONT_SIZE_MAX, Math.max(CHAT_FONT_SIZE_MIN, Math.round(value)))
+}
+
+function formatDuration(ms: number) {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`
+}
+
+function getGenerationStatus(phase: GenerationPhase | null) {
+  if (phase === 'writing') {
+    return {
+      label: '正文落笔中',
+      tag: 'writing',
+      detail: '正在把这一幕写成角色回复',
+    }
+  }
+
+  return {
+    label: '剧情构思中',
+    tag: 'thinking',
+    detail: '正在整理角色动机、场景节奏与下一步推进',
+  }
 }
 
 function parseSafeDetails(content: string): { className: 'neo-summary' | 'neo-thoughts'; open: boolean; summary: string; body: string } | null {
@@ -157,7 +180,7 @@ export function ChatPage() {
     void setStorageItem(CHAT_FONT_SIZE_KEY, String(next))
   }
 
-  const { sendMessage, regenerate, abort, sending, error: sendError, clearError: clearSendError } = useSendMessage({
+  const { sendMessage, regenerate, abort, sending, sendingChatId, streamingMessageId, generationPhase, error: sendError, clearError: clearSendError } = useSendMessage({
     character,
     chatId: currentChat?.id,
     onPromptBuilt: (built: BuiltPrompt) => {
@@ -335,6 +358,9 @@ export function ChatPage() {
   }
 
   const displayError = sendError || chatError
+  const isGeneratingCurrentChat = sending && !!currentChat?.id && sendingChatId === currentChat.id
+  const hasStreamingMessage = isGeneratingCurrentChat && !!streamingMessageId && messages.some((m) => m.id === streamingMessageId)
+  const generationStatus = getGenerationStatus(generationPhase)
 
   const isLastAi = (msg: Message) => {
     if (msg.role !== 'assistant') return false
@@ -443,7 +469,7 @@ export function ChatPage() {
         </div>
         <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50">
           {loading && <p className="text-sm text-muted-foreground text-center">Loading...</p>}
-          {!loading && messages.length === 0 && !sending && (
+          {!loading && messages.length === 0 && !isGeneratingCurrentChat && (
             <div className="max-w-4xl mx-auto">
               {character ? (
                 <div>
@@ -475,6 +501,8 @@ export function ChatPage() {
               const aiName = character?.name ?? 'AI'
               const split = !isUser && activeRegexRules.length > 0 ? applyRegexRules(msg.content, activeRegexRules) : null
               const displayContent = split?.displayContent ?? split?.promptContent ?? msg.content
+              const isStreamingAi = !isUser && isGeneratingCurrentChat && msg.id === streamingMessageId
+              const hasDisplayContent = displayContent.trim().length > 0
 
               return (
                 <div key={msg.id} ref={isFinalAi ? lastAiMsgRef : undefined}>
@@ -483,13 +511,18 @@ export function ChatPage() {
                       <div className="flex items-center gap-2">
                         <Avatar name={aiName} src={character?.avatar} />
                         <span className="text-xs font-medium text-muted-foreground">{aiName}</span>
-                        {msg.generateDuration != null && (
-                          <span className="text-[10px] text-muted-foreground/60 tabular-nums">
-                            {msg.generateDuration < 1000
-                              ? `${msg.generateDuration}ms`
-                              : msg.generateDuration < 60000
-                                ? `${(msg.generateDuration / 1000).toFixed(1)}s`
-                                : `${Math.floor(msg.generateDuration / 60000)}m ${Math.round((msg.generateDuration % 60000) / 1000)}s`}
+                        {isStreamingAi && (
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-muted-foreground animate-pulse">
+                            {generationPhase === 'writing'
+                              ? <Pencil className="h-3 w-3 text-primary" />
+                              : <Brain className="h-3 w-3 text-primary" />}
+                            <span>{generationStatus.label}</span>
+                            <span className="text-[10px] uppercase text-muted-foreground/60">{generationStatus.tag}</span>
+                          </span>
+                        )}
+                        {msg.thinkingDuration != null && (
+                          <span className="text-[10px] text-muted-foreground/60 tabular-nums" title="Thinking time">
+                            思考 {formatDuration(msg.thinkingDuration)}
                           </span>
                         )}
                       </div>
@@ -526,7 +559,7 @@ export function ChatPage() {
                             variant="ghost"
                             size="icon"
                             className="h-6 w-6 text-muted-foreground hover:text-purple-400"
-                            title="View AI thinking"
+                            title="查看创作过程"
                             onClick={() => setThinkingMsg(msg)}
                           >
                             <Brain className="h-3.5 w-3.5" />
@@ -608,7 +641,7 @@ export function ChatPage() {
                             <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{displayContent}</p>
                           </CardContent>
                         </Card>
-                      ) : split?.displayBlocks && split.displayBlocks.length > 0 ? (
+                      ) : split?.displayBlocks && split.displayBlocks.length > 0 && hasDisplayContent ? (
                         <Card>
                           <CardContent className="p-3 space-y-2">
                             {split.displayBlocks.map((block: DisplayBlock, bi: number) =>
@@ -627,8 +660,19 @@ export function ChatPage() {
                         </Card>
                       ) : (
                         <Card>
-                          <CardContent className="p-3">
-                            <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{displayContent}</p>
+                          <CardContent className="p-3 space-y-2">
+                            {isStreamingAi && !hasDisplayContent ? (
+                              <>
+                                <p className="text-sm text-muted-foreground">{generationStatus.detail}</p>
+                                <div className="flex gap-1" aria-label={generationStatus.label}>
+                                  <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                  <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                  <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                </div>
+                              </>
+                            ) : (
+                              <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>{displayContent}</p>
+                            )}
                           </CardContent>
                         </Card>
                       )}
@@ -643,21 +687,28 @@ export function ChatPage() {
                 </div>
               )
             })}
-            {sending && (
+            {isGeneratingCurrentChat && !hasStreamingMessage && (
               <div>
                 <div className="flex items-center gap-2 mb-1.5 px-1">
                   <Avatar name={character?.name ?? 'AI'} src={character?.avatar} />
                   <span className="text-xs font-medium text-muted-foreground">{character?.name ?? 'AI'}</span>
-                  <span className="text-xs text-muted-foreground animate-pulse ml-1">thinking...</span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-muted-foreground animate-pulse ml-1">
+                    {generationPhase === 'writing'
+                      ? <Pencil className="h-3 w-3 text-primary" />
+                      : <Brain className="h-3 w-3 text-primary" />}
+                    <span>{generationStatus.label}</span>
+                    <span className="text-[10px] uppercase text-muted-foreground/60">{generationStatus.tag}</span>
+                  </span>
                 </div>
                 <div className="flex gap-3">
                   <div className="w-8 shrink-0" />
                   <Card className="max-w-[75%]">
-                    <CardContent className="p-3">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '0ms' }} />
-                        <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '150ms' }} />
-                        <span className="w-2 h-2 rounded-full bg-muted-foreground/40 animate-bounce" style={{ animationDelay: '300ms' }} />
+                    <CardContent className="p-3 space-y-2">
+                      <p className="text-sm text-muted-foreground">{generationStatus.detail}</p>
+                      <div className="flex gap-1" aria-label={generationStatus.label}>
+                        <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '0ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '150ms' }} />
+                        <span className="w-2 h-2 rounded-full bg-primary/50 animate-bounce" style={{ animationDelay: '300ms' }} />
                       </div>
                     </CardContent>
                   </Card>
@@ -860,11 +911,11 @@ export function ChatPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Brain className="h-5 w-5 text-purple-400" />
-              AI Thinking
+              创作过程
             </DialogTitle>
           </DialogHeader>
           <div className="overflow-y-auto max-h-[60vh]">
-            <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground bg-muted/40 p-4 rounded-lg">{thinkingMsg?.reasoningContent || '(no thinking data)'}</pre>
+            <pre className="text-xs whitespace-pre-wrap font-mono text-muted-foreground bg-muted/40 p-4 rounded-lg">{thinkingMsg?.reasoningContent || '(暂无创作过程数据)'}</pre>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setThinkingMsg(null)}>Close</Button>
