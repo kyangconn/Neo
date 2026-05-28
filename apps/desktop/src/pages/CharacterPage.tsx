@@ -1,14 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import {
-  Plus,
-  Trash2,
-  Edit,
-  ArrowLeft,
-  Upload,
-  MoreHorizontal,
-} from "lucide-react";
+import { Plus, Trash2, Edit, ArrowLeft, Upload, MoreHorizontal } from "lucide-react";
 import {
   Button,
   Input,
@@ -25,19 +18,11 @@ import { useCharacterStore } from "@/features/character/character.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import { generateId } from "@neo-tavern/shared";
-import type {
-  CreateCharacterInput,
-  Character,
-  RegexPreset,
-  Worldbook,
-} from "@neo-tavern/shared";
+import type { CreateCharacterInput, Character, RegexPreset, Worldbook } from "@neo-tavern/shared";
 import { settingsRepository, worldbookRepository } from "@/db/repositories";
-import {
-  parseJsonCharacterCard,
-  parsePngCharacterCard,
-  type ParsedCharacterCard,
-} from "@/utils/parse-character-card";
+import { parseJsonCharacterCard, parsePngCharacterCard, type ParsedCharacterCard } from "@/utils/parse-character-card";
 import { CharacterAvatarTile } from "@/components";
+import { toast } from "@/utils/toast";
 
 const emptyForm: CreateCharacterInput = {
   name: "",
@@ -77,32 +62,17 @@ export function CharacterPage() {
   const navigate = useNavigate();
   const { t } = useTranslation("character");
   const { t: tc } = useTranslation("common");
-  const {
-    characters,
-    loading,
-    error,
-    loadCharacters,
-    createCharacter,
-    updateCharacter,
-    deleteCharacter,
-    clearError,
-  } = useCharacterStore();
+  const { characters, loading, error, loadCharacters, createCharacter, updateCharacter, deleteCharacter, clearError } =
+    useCharacterStore();
   const [form, setForm] = useState<CreateCharacterInput>(emptyForm);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [characterMenu, setCharacterMenu] = useState<CharacterMenu | null>(
-    null,
-  );
+  const [characterMenu, setCharacterMenu] = useState<CharacterMenu | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const toast = (type: "success" | "error" | "info", msg: string) => {
-    const fn = (window as any).__toast;
-    if (fn) fn(type, msg);
-  };
 
   useEffect(() => {
     loadCharacters();
@@ -157,10 +127,7 @@ export function CharacterPage() {
     setCharacterMenu({ x: event.clientX, y: event.clientY, character: char });
   };
 
-  const openCharacterMenuFromButton = (
-    event: React.MouseEvent<HTMLButtonElement>,
-    char: Character,
-  ) => {
+  const openCharacterMenuFromButton = (event: React.MouseEvent<HTMLButtonElement>, char: Character) => {
     event.preventDefault();
     event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
@@ -362,28 +329,19 @@ export function CharacterPage() {
     if (!deleteTarget) return;
     try {
       if (deleteTarget.regexPresetId) {
-        const presets = useSettingsStore
-          .getState()
-          .regexPresets.filter((p) => p.id !== deleteTarget.regexPresetId);
+        const presets = useSettingsStore.getState().regexPresets.filter((p) => p.id !== deleteTarget.regexPresetId);
         await settingsRepository.saveRegexRules(presets);
         useSettingsStore.getState().loadRegexRules();
       }
       if (deleteTarget.worldbookId) {
-        const wbs = useWorldbookStore
-          .getState()
-          .worldbooks.filter((w) => w.id !== deleteTarget.worldbookId);
+        const wbs = useWorldbookStore.getState().worldbooks.filter((w) => w.id !== deleteTarget.worldbookId);
         await worldbookRepository.save(wbs);
         useWorldbookStore.getState().loadWorldbooks();
       }
       await deleteCharacter(deleteTarget.id);
       setDeleteTarget(null);
       if (selectedId === deleteTarget.id) setSelectedId(null);
-      if (
-        selected?.id === deleteTarget.id ||
-        creating ||
-        editingId === deleteTarget.id
-      )
-        closeDetail();
+      if (selected?.id === deleteTarget.id || creating || editingId === deleteTarget.id) closeDetail();
       if (editingId === deleteTarget.id) {
         setEditingId(null);
         setCreating(false);
@@ -397,8 +355,7 @@ export function CharacterPage() {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const hasContent = (text: string | undefined) =>
-    text && text.trim().length > 0;
+  const hasContent = (text: string | undefined) => text && text.trim().length > 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
@@ -406,18 +363,8 @@ export function CharacterPage() {
         <div className="flex items-center justify-between gap-4">
           <h1 className="text-2xl font-bold">{t("title")}</h1>
           <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json,.png"
-              onChange={handleImportFile}
-              className="hidden"
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleStartEdit()}
-            >
+            <input ref={fileInputRef} type="file" accept=".json,.png" onChange={handleImportFile} className="hidden" />
+            <Button variant="outline" size="sm" onClick={() => handleStartEdit()}>
               <Plus className="h-3.5 w-3.5 mr-1" />
               {t("newCharacter")}
             </Button>
@@ -431,12 +378,7 @@ export function CharacterPage() {
             >
               <Upload className="h-4 w-4" />
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={() => navigate("/")}
-            >
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => navigate("/")}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
           </div>
@@ -454,17 +396,11 @@ export function CharacterPage() {
         )}
 
         <div className="flex flex-wrap gap-x-6 gap-y-8">
-          {loading && (
-            <p className="text-sm text-muted-foreground p-2">{t("loading")}</p>
-          )}
+          {loading && <p className="text-sm text-muted-foreground p-2">{t("loading")}</p>}
           {!loading && characters.length === 0 && (
             <div className="text-muted-foreground text-sm">
               <p className="mb-3">{t("noCharacters")}</p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => handleStartEdit()}
-              >
+              <Button variant="outline" size="sm" onClick={() => handleStartEdit()}>
                 <Plus className="h-4 w-4 mr-1" />
                 {t("newCharacter")}
               </Button>
@@ -482,9 +418,7 @@ export function CharacterPage() {
                   size="icon"
                   variant="ghost"
                   className="h-6 w-8 rounded-md text-muted-foreground hover:text-foreground"
-                  onClick={(event: React.MouseEvent<HTMLButtonElement>) =>
-                    openCharacterMenuFromButton(event, char)
-                  }
+                  onClick={(event: React.MouseEvent<HTMLButtonElement>) => openCharacterMenuFromButton(event, char)}
                   title={t("characterMenu")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
@@ -525,14 +459,8 @@ export function CharacterPage() {
           {creating || editingId !== null ? (
             <>
               <DialogHeader>
-                <DialogTitle>
-                  {editingId
-                    ? t("dialog.editCharacter")
-                    : t("dialog.newCharacter")}
-                </DialogTitle>
-                <DialogDescription className="sr-only">
-                  Create or edit character details.
-                </DialogDescription>
+                <DialogTitle>{editingId ? t("dialog.editCharacter") : t("dialog.newCharacter")}</DialogTitle>
+                <DialogDescription className="sr-only">Create or edit character details.</DialogDescription>
               </DialogHeader>
 
               <div className="grid gap-4">
@@ -541,9 +469,7 @@ export function CharacterPage() {
                   <Input
                     id="char-name"
                     value={form.name}
-                    onChange={(e: React.ChangeEvent<HTMLInputElement>) =>
-                      updateField("name", e.target.value)
-                    }
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField("name", e.target.value)}
                     placeholder={t("form.namePlaceholder")}
                   />
                 </div>
@@ -552,23 +478,17 @@ export function CharacterPage() {
                   <Textarea
                     id="char-desc"
                     value={form.description}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      updateField("description", e.target.value)
-                    }
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("description", e.target.value)}
                     placeholder={t("form.descriptionPlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-personality">
-                    {t("form.personality")}
-                  </Label>
+                  <Label htmlFor="char-personality">{t("form.personality")}</Label>
                   <Textarea
                     id="char-personality"
                     value={form.personality}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      updateField("personality", e.target.value)
-                    }
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("personality", e.target.value)}
                     placeholder={t("form.personalityPlaceholder")}
                     rows={3}
                   />
@@ -578,17 +498,13 @@ export function CharacterPage() {
                   <Textarea
                     id="char-scenario"
                     value={form.scenario}
-                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-                      updateField("scenario", e.target.value)
-                    }
+                    onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("scenario", e.target.value)}
                     placeholder={t("form.scenarioPlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-firstmsg">
-                    {t("form.firstMessage")}
-                  </Label>
+                  <Label htmlFor="char-firstmsg">{t("form.firstMessage")}</Label>
                   <Textarea
                     id="char-firstmsg"
                     value={form.firstMessage}
@@ -600,9 +516,7 @@ export function CharacterPage() {
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-examples">
-                    {t("form.exampleDialogues")}
-                  </Label>
+                  <Label htmlFor="char-examples">{t("form.exampleDialogues")}</Label>
                   <Textarea
                     id="char-examples"
                     value={form.exampleDialogues ?? ""}
@@ -619,10 +533,7 @@ export function CharacterPage() {
                 <Button variant="outline" onClick={handleCancel}>
                   {tc("actions.cancel")}
                 </Button>
-                <Button
-                  onClick={handleSubmit}
-                  disabled={!form.name.trim() || loading}
-                >
+                <Button onClick={handleSubmit} disabled={!form.name.trim() || loading}>
                   {editingId ? tc("actions.save") : tc("actions.create")}
                 </Button>
               </DialogFooter>
@@ -632,16 +543,10 @@ export function CharacterPage() {
               <div className="flex items-start justify-between gap-4 pr-6">
                 <DialogHeader>
                   <DialogTitle>{selected.name}</DialogTitle>
-                  <DialogDescription className="sr-only">
-                    Character details.
-                  </DialogDescription>
+                  <DialogDescription className="sr-only">Character details.</DialogDescription>
                 </DialogHeader>
                 <div className="flex shrink-0 items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="destructive"
-                    onClick={() => setDeleteTarget(selected)}
-                  >
+                  <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(selected)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" />
                     {tc("actions.delete")}
                   </Button>
@@ -678,9 +583,7 @@ export function CharacterPage() {
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                       {t("sections.description")}
                     </h3>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {selected.description}
-                    </p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.description}</p>
                   </div>
                 )}
 
@@ -689,9 +592,7 @@ export function CharacterPage() {
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                       {t("sections.personality")}
                     </h3>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {selected.personality}
-                    </p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.personality}</p>
                   </div>
                 )}
 
@@ -700,9 +601,7 @@ export function CharacterPage() {
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
                       {t("sections.scenario")}
                     </h3>
-                    <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                      {selected.scenario}
-                    </p>
+                    <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.scenario}</p>
                   </div>
                 )}
 
@@ -712,9 +611,7 @@ export function CharacterPage() {
                       {t("sections.firstMessage")}
                     </h3>
                     <div className="bg-accent/50 border border-border/50 rounded-lg p-4">
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap italic">
-                        {selected.firstMessage}
-                      </p>
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap italic">{selected.firstMessage}</p>
                     </div>
                   </div>
                 )}
@@ -744,9 +641,7 @@ export function CharacterPage() {
               </div>
             </>
           ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">
-              {t("dialog.noCharacterSelected")}
-            </div>
+            <div className="py-8 text-center text-sm text-muted-foreground">{t("dialog.noCharacterSelected")}</div>
           )}
         </DialogContent>
       </Dialog>
@@ -755,9 +650,7 @@ export function CharacterPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("delete.title")}</DialogTitle>
-            <DialogDescription>
-              {t("delete.description", { name: deleteTarget?.name })}
-            </DialogDescription>
+            <DialogDescription>{t("delete.description", { name: deleteTarget?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>

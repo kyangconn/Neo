@@ -2,18 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
-import {
-  ArrowLeft,
-  BookOpen,
-  CheckCircle2,
-  FileText,
-  KeyRound,
-  Plus,
-  Power,
-  Save,
-  Trash2,
-  X,
-} from "lucide-react";
+import { ArrowLeft, BookOpen, CheckCircle2, FileText, KeyRound, Plus, Power, Save, Trash2, X } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -28,11 +17,7 @@ import {
 } from "@neo-tavern/ui";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import type { WorldbookEntry } from "@neo-tavern/shared";
-
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
+import { toast } from "@/utils/toast";
 
 function keywordsFrom(keys: string) {
   return keys
@@ -47,31 +32,19 @@ function isLongEntry(entry: WorldbookEntry) {
 
 function entryModeLabel(entry: WorldbookEntry, t: (key: string) => string) {
   if (entry.type === "always") return t("entryForm.always");
-  return entry.triggerMode === "and"
-    ? `${t("entryForm.trigger")} AND`
-    : `${t("entryForm.trigger")} OR`;
+  return entry.triggerMode === "and" ? `${t("entryForm.trigger")} AND` : `${t("entryForm.trigger")} OR`;
 }
 
 function CountPill({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-md border bg-card/50 px-3 py-2">
       <div className="text-base font-semibold leading-none">{value}</div>
-      <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
+      <div className="mt-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
     </div>
   );
 }
 
-function SwitchButton({
-  checked,
-  onClick,
-  label,
-}: {
-  checked: boolean;
-  onClick: () => void;
-  label: string;
-}) {
+function SwitchButton({ checked, onClick, label }: { checked: boolean; onClick: () => void; label: string }) {
   return (
     <button
       type="button"
@@ -117,9 +90,7 @@ export function WorldbookPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [wbName, setWbName] = useState("");
   const [wbDesc, setWbDesc] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<
-    (typeof worldbooks)[0] | null
-  >(null);
+  const [deleteTarget, setDeleteTarget] = useState<(typeof worldbooks)[0] | null>(null);
 
   const [entryTitle, setEntryTitle] = useState("");
   const [entryKeys, setEntryKeys] = useState("");
@@ -129,9 +100,7 @@ export function WorldbookPage() {
   const [entryTriggerMode, setEntryTriggerMode] = useState<"and" | "or">("or");
   const [entryEnabled, setEntryEnabled] = useState(true);
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
-  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(
-    () => new Set(),
-  );
+  const [expandedEntryIds, setExpandedEntryIds] = useState<Set<string>>(() => new Set());
 
   useEffect(() => {
     loadWorldbooks();
@@ -143,28 +112,19 @@ export function WorldbookPage() {
     }
   }, [worldbooks]);
 
-  const selected =
-    worldbooks.find((worldbook) => worldbook.id === selectedId) ?? null;
+  const selected = worldbooks.find((worldbook) => worldbook.id === selectedId) ?? null;
   const entries = useMemo(
-    () =>
-      selected
-        ? [...selected.entries].sort((a, b) => b.priority - a.priority)
-        : [],
+    () => (selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []),
     [selected],
   );
-  const selectedEntry = editingEntryId
-    ? entries.find((entry) => entry.id === editingEntryId)
-    : null;
+  const selectedEntry = editingEntryId ? entries.find((entry) => entry.id === editingEntryId) : null;
   const stats = useMemo(() => {
     const source = selected?.entries ?? [];
     return {
       total: source.length,
       enabled: source.filter((entry) => entry.enabled).length,
-      always: source.filter((entry) => entry.enabled && entry.type === "always")
-        .length,
-      trigger: source.filter(
-        (entry) => entry.enabled && entry.type === "trigger",
-      ).length,
+      always: source.filter((entry) => entry.enabled && entry.type === "always").length,
+      trigger: source.filter((entry) => entry.enabled && entry.type === "trigger").length,
     };
   }, [selected]);
 
@@ -237,12 +197,7 @@ export function WorldbookPage() {
     if (!selectedId) return;
     const newId = activeWorldbookId === selectedId ? null : selectedId;
     await setActiveWorldbook(newId);
-    toast(
-      "info",
-      newId
-        ? t("toast.activated", { name: selected?.name })
-        : t("toast.deactivated"),
-    );
+    toast("info", newId ? t("toast.activated", { name: selected?.name }) : t("toast.deactivated"));
   };
 
   const startEditEntry = (entry: WorldbookEntry) => {
@@ -256,10 +211,7 @@ export function WorldbookPage() {
     setEntryEnabled(entry.enabled);
   };
 
-  const handleEntryCardKeyDown = (
-    event: KeyboardEvent<HTMLElement>,
-    entry: WorldbookEntry,
-  ) => {
+  const handleEntryCardKeyDown = (event: KeyboardEvent<HTMLElement>, entry: WorldbookEntry) => {
     if (event.currentTarget !== event.target) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -331,43 +283,27 @@ export function WorldbookPage() {
               <ArrowLeft className="h-4 w-4" />
               {tc("actions.back")}
             </button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-8 w-8"
-              onClick={handleCreate}
-              title={t("newBook")}
-            >
+            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCreate} title={t("newBook")}>
               <Plus className="h-4 w-4" />
             </Button>
           </div>
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              {t("title")}
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              {t("booksAvailable", { count: worldbooks.length })}
-            </p>
+            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{t("title")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("booksAvailable", { count: worldbooks.length })}</p>
           </div>
         </div>
 
         <ScrollArea type="always" className="min-h-0 flex-1">
           <div className="space-y-2 p-3 pr-5">
             {loading && (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t("loading")}
-              </p>
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">{t("loading")}</p>
             )}
             {!loading && worldbooks.length === 0 && (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
-                {t("noBooks")}
-              </p>
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">{t("noBooks")}</p>
             )}
             {worldbooks.map((worldbook) => {
               const isSelected = selectedId === worldbook.id;
-              const enabledCount = worldbook.entries.filter(
-                (entry) => entry.enabled,
-              ).length;
+              const enabledCount = worldbook.entries.filter((entry) => entry.enabled).length;
 
               return (
                 <button
@@ -381,9 +317,7 @@ export function WorldbookPage() {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm font-semibold">
-                      {worldbook.name}
-                    </span>
+                    <span className="min-w-0 truncate text-sm font-semibold">{worldbook.name}</span>
                     {activeWorldbookId === worldbook.id && (
                       <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
                     )}
@@ -392,9 +326,7 @@ export function WorldbookPage() {
                     {worldbook.description || t("noDescription")}
                   </p>
                   <div className="mt-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    <span>
-                      {t("entries", { count: worldbook.entries.length })}
-                    </span>
+                    <span>{t("entries", { count: worldbook.entries.length })}</span>
                     <span>
                       {enabledCount} {t("enabledOn")}
                     </span>
@@ -429,17 +361,13 @@ export function WorldbookPage() {
                   </div>
                   <Input
                     value={wbName}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                      setWbName(event.target.value)
-                    }
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWbName(event.target.value)}
                     className="h-auto border-0 border-b bg-transparent px-0 pb-1 text-2xl font-bold shadow-none focus-visible:ring-0"
                     placeholder={t("bookNamePlaceholder")}
                   />
                   <Input
                     value={wbDesc}
-                    onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                      setWbDesc(event.target.value)
-                    }
+                    onChange={(event: ChangeEvent<HTMLInputElement>) => setWbDesc(event.target.value)}
                     className="mt-2 h-auto border-0 border-b bg-transparent px-0 pb-1 text-sm text-muted-foreground shadow-none focus-visible:ring-0"
                     placeholder={t("descPlaceholder")}
                   />
@@ -451,15 +379,11 @@ export function WorldbookPage() {
                   </Button>
                   <Button
                     size="sm"
-                    variant={
-                      activeWorldbookId === selectedId ? "default" : "outline"
-                    }
+                    variant={activeWorldbookId === selectedId ? "default" : "outline"}
                     onClick={handleActivate}
                   >
                     <Power className="mr-1.5 h-3.5 w-3.5" />
-                    {activeWorldbookId === selectedId
-                      ? t("active")
-                      : t("activate")}
+                    {activeWorldbookId === selectedId ? t("active") : t("activate")}
                   </Button>
                   <Button
                     size="icon"
@@ -484,12 +408,8 @@ export function WorldbookPage() {
               <section className="flex min-w-0 flex-col overflow-hidden">
                 <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
                   <div>
-                    <h3 className="text-sm font-semibold">
-                      {t("entriesSection.title")}
-                    </h3>
-                    <p className="text-xs text-muted-foreground">
-                      {t("entriesSection.description")}
-                    </p>
+                    <h3 className="text-sm font-semibold">{t("entriesSection.title")}</h3>
+                    <p className="text-xs text-muted-foreground">{t("entriesSection.description")}</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={resetEntryForm}>
                     <Plus className="mr-1.5 h-3.5 w-3.5" />
@@ -517,13 +437,9 @@ export function WorldbookPage() {
                           role="button"
                           tabIndex={0}
                           onClick={() => startEditEntry(entry)}
-                          onKeyDown={(event) =>
-                            handleEntryCardKeyDown(event, entry)
-                          }
+                          onKeyDown={(event) => handleEntryCardKeyDown(event, entry)}
                           className={`rounded-lg border bg-card/40 p-4 transition-colors ${
-                            isEditing
-                              ? "border-primary/50 bg-accent/35"
-                              : "border-border/80 hover:bg-accent/25"
+                            isEditing ? "border-primary/50 bg-accent/35" : "border-border/80 hover:bg-accent/25"
                           } ${entry.enabled ? "" : "opacity-55"} cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring`}
                         >
                           <div className="flex items-start gap-3">
@@ -580,11 +496,7 @@ export function WorldbookPage() {
 
                               <div
                                 className={`relative rounded-md border bg-background/60 px-3 py-2 text-xs leading-6 text-muted-foreground ${
-                                  isLong
-                                    ? isExpanded
-                                      ? "max-h-80 overflow-y-auto"
-                                      : "max-h-36 overflow-hidden"
-                                    : ""
+                                  isLong ? (isExpanded ? "max-h-80 overflow-y-auto" : "max-h-36 overflow-hidden") : ""
                                 }`}
                               >
                                 <div className="whitespace-pre-wrap break-words">
@@ -604,9 +516,7 @@ export function WorldbookPage() {
                                   }}
                                   className="text-xs font-medium text-primary hover:underline"
                                 >
-                                  {isExpanded
-                                    ? t("entry.collapse")
-                                    : t("entry.expand")}
+                                  {isExpanded ? t("entry.collapse") : t("entry.expand")}
                                 </button>
                               )}
                             </div>
@@ -636,9 +546,7 @@ export function WorldbookPage() {
                 <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
                   <div>
                     <h3 className="text-sm font-semibold">
-                      {editingEntryId
-                        ? t("entryForm.editEntry")
-                        : t("entryForm.newEntry")}
+                      {editingEntryId ? t("entryForm.editEntry") : t("entryForm.newEntry")}
                     </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
                       {selectedEntry
@@ -664,22 +572,16 @@ export function WorldbookPage() {
                 <ScrollArea type="always" className="min-h-0 flex-1">
                   <div className="space-y-4 p-4 pr-6">
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {t("entryForm.title")}
-                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.title")}</span>
                       <Input
                         value={entryTitle}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                          setEntryTitle(event.target.value)
-                        }
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryTitle(event.target.value)}
                         placeholder={t("entryForm.titlePlaceholder")}
                       />
                     </label>
 
                     <div className="space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {t("entryForm.injectionType")}
-                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.injectionType")}</span>
                       <div className="grid grid-cols-2 rounded-md border bg-background p-1">
                         <button
                           type="button"
@@ -708,9 +610,7 @@ export function WorldbookPage() {
 
                     {entryType === "trigger" && (
                       <div className="space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {t("entryForm.triggerMode")}
-                        </span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("entryForm.triggerMode")}</span>
                         <div className="grid grid-cols-2 rounded-md border bg-background p-1">
                           <button
                             type="button"
@@ -739,27 +639,19 @@ export function WorldbookPage() {
                     )}
 
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {t("entryForm.keywords")}
-                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.keywords")}</span>
                       <Input
                         value={entryKeys}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                          setEntryKeys(event.target.value)
-                        }
+                        onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryKeys(event.target.value)}
                         placeholder={t("entryForm.keywordsPlaceholder")}
                       />
                     </label>
 
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">
-                        {t("entryForm.content")}
-                      </span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.content")}</span>
                       <Textarea
                         value={entryContent}
-                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) =>
-                          setEntryContent(event.target.value)
-                        }
+                        onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEntryContent(event.target.value)}
                         placeholder={t("entryForm.contentPlaceholder")}
                         className="min-h-[260px] resize-none text-sm leading-6"
                       />
@@ -767,14 +659,10 @@ export function WorldbookPage() {
 
                     <div className="grid grid-cols-[1fr_auto] gap-3">
                       <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {t("entryForm.priority")}
-                        </span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("entryForm.priority")}</span>
                         <Input
                           value={entryPriority}
-                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                            setEntryPriority(event.target.value)
-                          }
+                          onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryPriority(event.target.value)}
                           type="number"
                           placeholder={t("entryForm.priorityPlaceholder")}
                         />
@@ -797,9 +685,7 @@ export function WorldbookPage() {
 
                 <div className="flex shrink-0 items-center justify-between gap-2 border-t p-4">
                   <Button onClick={handleSaveEntry} className="flex-1">
-                    {editingEntryId
-                      ? t("entryForm.updateEntry")
-                      : t("entryForm.addEntry")}
+                    {editingEntryId ? t("entryForm.updateEntry") : t("entryForm.addEntry")}
                   </Button>
                   {editingEntryId && (
                     <Button variant="outline" onClick={resetEntryForm}>
@@ -817,9 +703,7 @@ export function WorldbookPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("deleteDialog.title")}</DialogTitle>
-            <DialogDescription>
-              {t("deleteDialog.description", { name: deleteTarget?.name })}
-            </DialogDescription>
+            <DialogDescription>{t("deleteDialog.description", { name: deleteTarget?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
