@@ -5,7 +5,6 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
-  ArrowLeft,
   Copy,
   Pencil,
   Check,
@@ -36,7 +35,6 @@ import {
 import { useCharacterStore } from "@/features/character/character.store";
 import { useChatStore } from "@/features/chat/chat.store";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
-import type { GenerationPhase } from "@/features/chat/chat.types";
 import {
   chatRepository,
   chatSavepointRepository,
@@ -45,224 +43,32 @@ import {
   presetRepository,
 } from "@/db/repositories";
 import type { ChatSavepoint } from "@/db/repositories";
-import {
-  getStorageItem,
-  removeStorageItem,
-  setStorageItem,
-} from "@/db/storage";
-import {
-  buildChatPrompt,
-  formatPreview,
-  applyRegexRules,
-  resolveWorldbookEntries,
-} from "@neo-tavern/core";
-import type { DisplayBlock, SideBlock } from "@neo-tavern/core";
+import { getStorageItem, removeStorageItem, setStorageItem } from "@/db/storage";
+import { buildChatPrompt, formatPreview, applyRegexRules, resolveWorldbookEntries } from "@neo-tavern/core";
+import type { DisplayBlock } from "@neo-tavern/core";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import type { BuiltPrompt, Message } from "@neo-tavern/shared";
-
-function Avatar({
-  name,
-  src,
-  isUser,
-}: {
-  name: string;
-  src?: string;
-  isUser?: boolean;
-}) {
-  const initial = name.charAt(0).toUpperCase();
-  const bg = isUser ? "bg-blue-500" : "bg-emerald-500";
-  if (src) {
-    return (
-      <img
-        src={src}
-        alt={name}
-        className="w-8 h-8 rounded-full object-cover border border-border/30 shrink-0"
-      />
-    );
-  }
-  return (
-    <div
-      className={`w-8 h-8 rounded-full ${bg} flex items-center justify-center shrink-0`}
-    >
-      <span className="text-white text-xs font-bold">{initial}</span>
-    </div>
-  );
-}
-
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
-
-const DEEPSEEK_CONTEXT_LIMIT = 1_000_000;
-const CHAT_FONT_SIZE_KEY = "neotavern_chat_font_size";
-const CHAT_DRAFT_KEY_PREFIX = "neotavern_chat_draft";
-const CONTINUE_PROMPT = "继续";
-const CHAT_VISIBLE_TURN_LIMIT = 20;
-const CHAT_FONT_SIZE_MIN = 12;
-const CHAT_FONT_SIZE_MAX = 22;
-
-type PendingSendItem = {
-  chatId: string;
-  content: string;
-  hiddenUserMessage?: boolean;
-  label?: string;
-};
-
-const compactTokenFormatter = new Intl.NumberFormat("en", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
-function formatCompactToken(value: number) {
-  return compactTokenFormatter.format(value);
-}
-
-function getChatDraftKey(chatId: string) {
-  return `${CHAT_DRAFT_KEY_PREFIX}_${chatId}`;
-}
-
-function clampChatFontSize(value: number) {
-  if (!Number.isFinite(value)) return 15;
-  return Math.min(
-    CHAT_FONT_SIZE_MAX,
-    Math.max(CHAT_FONT_SIZE_MIN, Math.round(value)),
-  );
-}
-
-function countUserTurns(messages: Message[]) {
-  return messages.filter((message) => message.role === "user").length;
-}
-
-function getRecentTurnStartIndex(messages: Message[], turnLimit: number) {
-  if (turnLimit <= 0) return messages.length;
-
-  let turns = 0;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role !== "user") continue;
-    turns += 1;
-    if (turns > turnLimit) {
-      let start = i + 1;
-      while (start < messages.length && messages[start].role !== "user") {
-        start += 1;
-      }
-      return start;
-    }
-  }
-
-  return 0;
-}
-
-function formatDuration(ms: number) {
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
-}
-
-function formatSavepointDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function getGenerationStatus(phase: GenerationPhase | null) {
-  if (phase === "writing") {
-    return {
-      label: "正文落笔中",
-      tag: "writing",
-      detail: "正在把这一幕写成角色回复",
-    };
-  }
-
-  return {
-    label: "剧情构思中",
-    tag: "thinking",
-    detail: "正在整理角色动机、场景节奏与下一步推进",
-  };
-}
-
-function parseSafeDetails(content: string): {
-  className: "neo-summary" | "neo-thoughts";
-  open: boolean;
-  summary: string;
-  body: string;
-} | null {
-  const trimmed = content.trim();
-  const match = trimmed.match(
-    /^<details([^>]*)><summary>([\s\S]*?)<\/summary>([\s\S]*?)<\/details>$/,
-  );
-  if (!match) return null;
-
-  const attrs = match[1];
-  const className = attrs.match(/\bclass="([^"]*)"/)?.[1];
-  const unsupportedAttrs = attrs
-    .replace(/\bopen\b/g, "")
-    .replace(/\bclass="(?:neo-summary|neo-thoughts)"/g, "")
-    .trim();
-  if (
-    (className &&
-      className !== "neo-summary" &&
-      className !== "neo-thoughts") ||
-    unsupportedAttrs
-  )
-    return null;
-
-  return {
-    className: className === "neo-thoughts" ? "neo-thoughts" : "neo-summary",
-    open: /\bopen\b/.test(attrs),
-    summary: match[2],
-    body: match[3].trim(),
-  };
-}
-
-function SideBlockView({
-  side,
-  fontSize,
-  onAction,
-}: {
-  side: SideBlock;
-  fontSize: number;
-  onAction: (action: string) => void;
-}) {
-  if (side.actions) {
-    return (
-      <div className="flex flex-wrap gap-2 mt-1">
-        {side.actions.map((action, ai) => (
-          <button
-            key={ai}
-            onClick={() => onAction(action)}
-            className="px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 text-sm hover:bg-primary/10 hover:border-primary/50 transition-colors cursor-pointer"
-            style={{ fontSize: `${fontSize}px` }}
-          >
-            {action}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
-  const details = parseSafeDetails(side.content);
-  if (details) {
-    return (
-      <details className={details.className} open={details.open || undefined}>
-        <summary>{details.summary}</summary>
-        <p className="whitespace-pre-wrap">{details.body}</p>
-      </details>
-    );
-  }
-
-  return (
-    <p className="whitespace-pre-wrap text-muted-foreground mt-1">
-      {side.content}
-    </p>
-  );
-}
+import { toast } from "@/utils/toast";
+import {
+  DEEPSEEK_CONTEXT_LIMIT,
+  CHAT_FONT_SIZE_KEY,
+  CONTINUE_PROMPT,
+  CHAT_VISIBLE_TURN_LIMIT,
+  type PendingSendItem,
+  formatCompactToken,
+  getChatDraftKey,
+  clampChatFontSize,
+  countUserTurns,
+  getRecentTurnStartIndex,
+  formatDuration,
+  formatSavepointDate,
+  getGenerationStatus,
+  Avatar,
+  SideBlockView,
+} from "./chat/utils";
+import { ChatSidebar } from "./chat/ChatSidebar";
+import { ChatHeader } from "./chat/ChatHeader";
 
 export function ChatPage() {
   const { t } = useTranslation("chat");
@@ -276,9 +82,7 @@ export function ChatPage() {
   const initRef = useRef<string | null>(null);
   const lastOpenedChatRef = useRef<string | null>(null);
   const skipNextMessageAutoScrollRef = useRef<string | null>(null);
-  const presetItemsRef = useRef<
-    { role: "system" | "user"; content: string; injectionOrder: number }[]
-  >([]);
+  const presetItemsRef = useRef<{ role: "system" | "user"; content: string; injectionOrder: number }[]>([]);
 
   const { characters, loadCharacters } = useCharacterStore();
   const {
@@ -314,9 +118,7 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState("");
-  const [pendingSendQueue, setPendingSendQueue] = useState<PendingSendItem[]>(
-    [],
-  );
+  const [pendingSendQueue, setPendingSendQueue] = useState<PendingSendItem[]>([]);
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [promptDialogOpen, setPromptDialogOpen] = useState(false);
@@ -332,15 +134,11 @@ export function ChatPage() {
   const [savepoints, setSavepoints] = useState<ChatSavepoint[]>([]);
   const [savingSavepoint, setSavingSavepoint] = useState(false);
   const [loadingSavepoints, setLoadingSavepoints] = useState(false);
-  const [restoringSavepointId, setRestoringSavepointId] = useState<
-    string | null
-  >(null);
+  const [restoringSavepointId, setRestoringSavepointId] = useState<string | null>(null);
   const [showOlderMessages, setShowOlderMessages] = useState(false);
 
   const characterId = searchParams.get("characterId");
-  const character = characters.find(
-    (c) => c.id === (currentChat?.characterId ?? characterId),
-  );
+  const character = characters.find((c) => c.id === (currentChat?.characterId ?? characterId));
 
   const handleFontSizeChange = (value: number) => {
     const next = clampChatFontSize(value);
@@ -410,12 +208,14 @@ export function ChatPage() {
     if (initRef.current === characterId) return;
     initRef.current = characterId;
 
-    const charName =
-      characters.find((c) => c.id === characterId)?.name ?? "Chat";
+    const charName = characters.find((c) => c.id === characterId)?.name ?? "Chat";
     createOrGetChat({ characterId, title: charName }).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only characterId and chat init; adding loadChat/createOrGetChat would loop
   }, [id, characterId, characters.length]);
 
+  // Reset expand-older state when switching chats
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting derived UI state on chat switch is intentional
     setShowOlderMessages(false);
   }, [currentChat?.id]);
 
@@ -435,6 +235,7 @@ export function ChatPage() {
     } else if (lastMsg.role === "user") {
       messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- messages is intentionally excluded to avoid scroll loops
   }, [messages.length, sending, currentChat?.id]);
 
   useLayoutEffect(() => {
@@ -454,36 +255,27 @@ export function ChatPage() {
     if (!character) return;
     const settingsState = useSettingsStore.getState();
     const wbState = useWorldbookStore.getState();
-    if (
-      character.regexPresetId &&
-      character.regexPresetId !== settingsState.activeRegexPresetId
-    ) {
+    if (character.regexPresetId && character.regexPresetId !== settingsState.activeRegexPresetId) {
       settingsState.setActiveRegexPreset(character.regexPresetId);
     }
-    if (
-      character.worldbookId &&
-      character.worldbookId !== wbState.activeWorldbookId
-    ) {
+    if (character.worldbookId && character.worldbookId !== wbState.activeWorldbookId) {
       wbState.setActiveWorldbook(character.worldbookId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- character.id is the trigger we care about
   }, [character?.id]);
 
   const updatePreview = (userInput: string) => {
     if (!character) return;
     const cs = useSettingsStore.getState().contextTokens || 64000;
     const wbState = useWorldbookStore.getState();
-    let contextBlocks: any[] | undefined;
+    let contextBlocks:
+      | Array<{ id: string; source: "worldbook"; title: string; content: string; priority: number }>
+      | undefined;
     if (wbState.activeWorldbookId) {
-      const wb = wbState.worldbooks.find(
-        (w) => w.id === wbState.activeWorldbookId,
-      );
+      const wb = wbState.worldbooks.find((w) => w.id === wbState.activeWorldbookId);
       if (wb && wb.entries.length > 0) {
         const recentText = messages.map((m) => m.content).join("\n");
-        const { matched } = resolveWorldbookEntries(
-          wb.entries,
-          userInput || "",
-          recentText,
-        );
+        const { matched } = resolveWorldbookEntries(wb.entries, userInput || "", recentText);
         contextBlocks = matched.map((e) => ({
           id: e.id,
           source: "worldbook" as const,
@@ -508,6 +300,7 @@ export function ChatPage() {
   useEffect(() => {
     const chatId = currentChat?.id;
     if (!chatId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resetting input when chat changes
       setInput("");
       return;
     }
@@ -522,19 +315,14 @@ export function ChatPage() {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- updatePreview is stable; chatId is the real trigger
   }, [currentChat?.id]);
 
-  const submitContent = async (
-    content: string,
-    options: Pick<PendingSendItem, "hiddenUserMessage" | "label"> = {},
-  ) => {
+  const submitContent = async (content: string, options: Pick<PendingSendItem, "hiddenUserMessage" | "label"> = {}) => {
     if (!content.trim() || !currentChat) return;
     const trimmedContent = content.trim();
     if (sending) {
-      setPendingSendQueue((queue) => [
-        ...queue,
-        { chatId: currentChat.id, content: trimmedContent, ...options },
-      ]);
+      setPendingSendQueue((queue) => [...queue, { chatId: currentChat.id, content: trimmedContent, ...options }]);
       return;
     }
     await sendMessage(trimmedContent, {
@@ -546,8 +334,7 @@ export function ChatPage() {
     if (!input.trim() || !currentChat) return;
     const content = input.trim();
     setInput("");
-    if (currentChat?.id)
-      void removeStorageItem(getChatDraftKey(currentChat.id));
+    if (currentChat?.id) void removeStorageItem(getChatDraftKey(currentChat.id));
     await submitContent(content);
   };
 
@@ -628,30 +415,23 @@ export function ChatPage() {
   };
 
   const displayError = sendError || chatError;
-  const isGeneratingCurrentChat =
-    sending && !!currentChat?.id && sendingChatId === currentChat.id;
+  const isGeneratingCurrentChat = sending && !!currentChat?.id && sendingChatId === currentChat.id;
   const hasStreamingMessage =
-    isGeneratingCurrentChat &&
-    !!streamingMessageId &&
-    messages.some((m) => m.id === streamingMessageId);
+    isGeneratingCurrentChat && !!streamingMessageId && messages.some((m) => m.id === streamingMessageId);
   const generationStatus = getGenerationStatus(generationPhase);
-  const pendingSendCount = currentChat
-    ? pendingSendQueue.filter((item) => item.chatId === currentChat.id).length
-    : 0;
+  const pendingSendCount = currentChat ? pendingSendQueue.filter((item) => item.chatId === currentChat.id).length : 0;
 
   useEffect(() => {
     if (sending || pendingSendQueue.length === 0 || !currentChat) return;
-    const nextIndex = pendingSendQueue.findIndex(
-      (item) => item.chatId === currentChat.id,
-    );
+    const nextIndex = pendingSendQueue.findIndex((item) => item.chatId === currentChat.id);
     if (nextIndex < 0) return;
     const next = pendingSendQueue[nextIndex];
-    setPendingSendQueue((queue) =>
-      queue.filter((_, index) => index !== nextIndex),
-    );
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- dequeue from pending send queue is external state sync
+    setPendingSendQueue((queue) => queue.filter((_, index) => index !== nextIndex));
     void sendMessage(next.content, {
       hiddenUserMessage: next.hiddenUserMessage,
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- currentChat is guarded above; sendMessage is stable
   }, [sending, pendingSendQueue, currentChat?.id, sendMessage]);
 
   const refreshSavepoints = async () => {
@@ -677,9 +457,7 @@ export function ChatPage() {
     if (!currentChat) return;
     setSavingSavepoint(true);
     try {
-      const latestMessages = await messageRepository.listByChatId(
-        currentChat.id,
-      );
+      const latestMessages = await messageRepository.listByChatId(currentChat.id);
       await chatSavepointRepository.create({
         chatId: currentChat.id,
         characterId: currentChat.characterId,
@@ -705,10 +483,7 @@ export function ChatPage() {
     if (!currentChat || isGeneratingCurrentChat) return;
     setRestoringSavepointId(savepoint.id);
     try {
-      await messageRepository.replaceByChatId(
-        currentChat.id,
-        savepoint.messages,
-      );
+      await messageRepository.replaceByChatId(currentChat.id, savepoint.messages);
       await chatRepository.update(currentChat.id, {});
       await loadChat(currentChat.id);
       setLoadDialogOpen(false);
@@ -754,38 +529,18 @@ export function ChatPage() {
     }
   };
 
-  const usageMessages = messages.filter(
-    (m) => m.role === "assistant" && m.usage,
-  );
-  const totalPrompt = usageMessages.reduce(
-    (s, m) => s + (m.usage?.promptTokens || 0),
-    0,
-  );
-  const totalCompletion = usageMessages.reduce(
-    (s, m) => s + (m.usage?.completionTokens || 0),
-    0,
-  );
-  const totalCacheHit = usageMessages.reduce(
-    (s, m) => s + (m.usage?.cacheHitTokens || 0),
-    0,
-  );
-  const totalCacheMiss = usageMessages.reduce(
-    (s, m) => s + (m.usage?.cacheMissTokens || 0),
-    0,
-  );
-  const cacheRate =
-    totalPrompt > 0 ? ((totalCacheHit / totalPrompt) * 100).toFixed(1) : "-";
+  const usageMessages = messages.filter((m) => m.role === "assistant" && m.usage);
+  const totalPrompt = usageMessages.reduce((s, m) => s + (m.usage?.promptTokens || 0), 0);
+  const totalCompletion = usageMessages.reduce((s, m) => s + (m.usage?.completionTokens || 0), 0);
+  const totalCacheHit = usageMessages.reduce((s, m) => s + (m.usage?.cacheHitTokens || 0), 0);
+  const cacheRate = totalPrompt > 0 ? ((totalCacheHit / totalPrompt) * 100).toFixed(1) : "-";
   const latestUsage = usageMessages[usageMessages.length - 1]?.usage;
   const currentContextTokens = latestUsage
-    ? latestUsage.totalTokens ||
-      (latestUsage.promptTokens || 0) + (latestUsage.completionTokens || 0)
+    ? latestUsage.totalTokens || (latestUsage.promptTokens || 0) + (latestUsage.completionTokens || 0)
     : 0;
   const contextUsageRate =
-    currentContextTokens > 0
-      ? ((currentContextTokens / DEEPSEEK_CONTEXT_LIMIT) * 100).toFixed(1)
-      : "-";
-  const contextUsageDisplay =
-    contextUsageRate === "-" ? "-" : `${contextUsageRate}%`;
+    currentContextTokens > 0 ? ((currentContextTokens / DEEPSEEK_CONTEXT_LIMIT) * 100).toFixed(1) : "-";
+  const contextUsageDisplay = contextUsageRate === "-" ? "-" : `${contextUsageRate}%`;
   const contextUsageTone =
     currentContextTokens >= 900_000
       ? "text-orange-500"
@@ -799,121 +554,54 @@ export function ChatPage() {
         ? "bg-yellow-500"
         : "bg-emerald-500";
   const contextUsagePercent =
-    currentContextTokens > 0
-      ? Math.min((currentContextTokens / DEEPSEEK_CONTEXT_LIMIT) * 100, 100)
-      : 0;
+    currentContextTokens > 0 ? Math.min((currentContextTokens / DEEPSEEK_CONTEXT_LIMIT) * 100, 100) : 0;
   const contextUsageTitle =
     currentContextTokens > 0
       ? `${currentContextTokens.toLocaleString()} / ${DEEPSEEK_CONTEXT_LIMIT.toLocaleString()} current conversation context tokens`
       : "No context usage data yet";
-  const recentMessageStartIndex = getRecentTurnStartIndex(
-    messages,
-    CHAT_VISIBLE_TURN_LIMIT,
-  );
+  const recentMessageStartIndex = getRecentTurnStartIndex(messages, CHAT_VISIBLE_TURN_LIMIT);
   const hasOlderMessages = recentMessageStartIndex > 0;
-  const visibleMessages =
-    hasOlderMessages && !showOlderMessages
-      ? messages.slice(recentMessageStartIndex)
-      : messages;
-  const hiddenMessages = hasOlderMessages
-    ? messages.slice(0, recentMessageStartIndex)
-    : [];
+  const visibleMessages = hasOlderMessages && !showOlderMessages ? messages.slice(recentMessageStartIndex) : messages;
+  const hiddenMessages = hasOlderMessages ? messages.slice(0, recentMessageStartIndex) : [];
   const hiddenTurnCount = countUserTurns(hiddenMessages);
 
   return (
     <div className="flex h-full">
-      <div className="w-60 border-r p-4 flex flex-col gap-3 overflow-y-auto shrink-0">
-        <button
-          onClick={() => navigate("/")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {t("back")}
-        </button>
-        {character && (
-          <>
-            <h2 className="text-lg font-semibold truncate">{character.name}</h2>
-            <p className="text-xs text-muted-foreground">
-              {character.description}
-            </p>
-            <div className="text-xs text-muted-foreground">
-              <p className="font-medium">{t("personality")}</p>
-              <p>{character.personality}</p>
-            </div>
-          </>
-        )}
-      </div>
+      <ChatSidebar character={character} onBack={() => navigate("/")} t={t} />
 
       <div className="flex-1 flex flex-col">
-        <div className="flex items-center justify-end gap-2 px-4 py-2 border-b shrink-0">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setTokenDialogOpen(true)}
-            className="text-muted-foreground hover:text-foreground text-xs gap-1"
-          >
-            <BarChart3 className="h-3.5 w-3.5" />
-            {usageMessages.length > 0 ? (
-              <span>
-                P:{totalPrompt} C:{totalCompletion} | 🔥 {cacheRate}%
-              </span>
-            ) : (
-              <span>{t("tokenStats")}</span>
-            )}
-          </Button>
-          {usageMessages.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setTokenDialogOpen(true)}
-              className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-              title={contextUsageTitle}
-            >
-              <span className="text-[10px] font-medium">1M</span>
-              <span className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-                <span
-                  className={`block h-full rounded-full transition-[width] ${contextUsageBarTone}`}
-                  style={{ width: `${contextUsagePercent}%` }}
-                />
-              </span>
-              <span
-                className={`w-10 text-right tabular-nums ${contextUsageTone}`}
-              >
-                {contextUsageDisplay}
-              </span>
-            </button>
-          )}
-        </div>
+        <ChatHeader
+          usageMessages={usageMessages}
+          totalPrompt={totalPrompt}
+          totalCompletion={totalCompletion}
+          cacheRate={cacheRate}
+          contextUsageTitle={contextUsageTitle}
+          contextUsagePercent={contextUsagePercent}
+          contextUsageBarTone={contextUsageBarTone}
+          contextUsageTone={contextUsageTone}
+          contextUsageDisplay={contextUsageDisplay}
+          onTokenDialogOpen={() => setTokenDialogOpen(true)}
+          t={t}
+        />
         <div
           ref={messagesContainerRef}
           className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50"
         >
-          {loading && (
-            <p className="text-sm text-muted-foreground text-center">
-              {t("loading")}
-            </p>
-          )}
+          {loading && <p className="text-sm text-muted-foreground text-center">{t("loading")}</p>}
           {!loading && messages.length === 0 && !isGeneratingCurrentChat && (
             <div className="max-w-4xl mx-auto">
               {character ? (
                 <div>
                   <div className="flex items-center gap-2 mb-1.5 px-1">
                     <Avatar name={character.name} src={character.avatar} />
-                    <span className="text-xs font-medium text-muted-foreground">
-                      {character.name}
-                    </span>
+                    <span className="text-xs font-medium text-muted-foreground">{character.name}</span>
                   </div>
                   <div className="flex gap-3">
                     <div className="max-w-[75%] min-w-0">
                       <Card>
                         <CardContent className="p-3">
-                          <p
-                            className="whitespace-pre-wrap"
-                            style={{ fontSize: `${fontSize}px` }}
-                          >
-                            {(
-                              character.firstMessage ||
-                              `Start a conversation with ${character.name}`
-                            )
+                          <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>
+                            {(character.firstMessage || `Start a conversation with ${character.name}`)
                               .replace(/\{\{user\}\}/gi, personaName)
                               .replace(/<user>/gi, personaName)}
                           </p>
@@ -923,9 +611,7 @@ export function ChatPage() {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-muted-foreground text-center mt-8">
-                  Select a character to start chatting
-                </p>
+                <p className="text-sm text-muted-foreground text-center mt-8">Select a character to start chatting</p>
               )}
             </div>
           )}
@@ -938,11 +624,7 @@ export function ChatPage() {
                   onClick={() => setShowOlderMessages(!showOlderMessages)}
                   className="h-8 gap-1.5 text-xs text-muted-foreground"
                 >
-                  {showOlderMessages ? (
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  ) : (
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  )}
+                  {showOlderMessages ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                   {showOlderMessages
                     ? `收起较早消息，保留最近 ${CHAT_VISIBLE_TURN_LIMIT} 轮`
                     : `显示较早消息：${hiddenTurnCount} 轮 / ${hiddenMessages.length} 条`}
@@ -954,15 +636,9 @@ export function ChatPage() {
               const isFinalAi = !isUser && isLastAi(msg);
               const aiName = character?.name ?? "AI";
               const split =
-                !isUser && activeRegexRules.length > 0
-                  ? applyRegexRules(msg.content, activeRegexRules)
-                  : null;
-              const displayContent =
-                split?.displayContent ?? split?.promptContent ?? msg.content;
-              const isStreamingAi =
-                !isUser &&
-                isGeneratingCurrentChat &&
-                msg.id === streamingMessageId;
+                !isUser && activeRegexRules.length > 0 ? applyRegexRules(msg.content, activeRegexRules) : null;
+              const displayContent = split?.displayContent ?? split?.promptContent ?? msg.content;
+              const isStreamingAi = !isUser && isGeneratingCurrentChat && msg.id === streamingMessageId;
               const hasDisplayContent = displayContent.trim().length > 0;
 
               return (
@@ -971,9 +647,7 @@ export function ChatPage() {
                     <div className="flex items-center justify-between mb-1.5 px-1 group">
                       <div className="flex items-center gap-2">
                         <Avatar name={aiName} src={character?.avatar} />
-                        <span className="text-xs font-medium text-muted-foreground">
-                          {aiName}
-                        </span>
+                        <span className="text-xs font-medium text-muted-foreground">{aiName}</span>
                         {isStreamingAi && (
                           <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-muted-foreground animate-pulse">
                             {generationPhase === "writing" ? (
@@ -988,10 +662,7 @@ export function ChatPage() {
                           </span>
                         )}
                         {msg.thinkingDuration != null && (
-                          <span
-                            className="text-[10px] text-muted-foreground/60 tabular-nums"
-                            title="Thinking time"
-                          >
+                          <span className="text-[10px] text-muted-foreground/60 tabular-nums" title="Thinking time">
                             思考 {formatDuration(msg.thinkingDuration)}
                           </span>
                         )}
@@ -1066,9 +737,7 @@ export function ChatPage() {
                     </div>
                   )}
 
-                  <div
-                    className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}
-                  >
+                  <div className={`flex gap-3 ${isUser ? "flex-row-reverse" : "flex-row"}`}>
                     {isUser && <Avatar name="You" isUser />}
 
                     <div
@@ -1105,28 +774,18 @@ export function ChatPage() {
                         <div className="w-full rounded-lg border bg-card p-3 shadow-sm">
                           <Textarea
                             value={editContent}
-                            onChange={(
-                              e: React.ChangeEvent<HTMLTextAreaElement>,
-                            ) => setEditContent(e.target.value)}
+                            onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditContent(e.target.value)}
                             onKeyDown={handleEditKeyDown}
                             className="min-h-[260px] max-h-[60vh] resize-y overflow-y-auto leading-relaxed"
                             style={{ fontSize: `${fontSize}px` }}
                             autoFocus
                           />
                           <div className="mt-2 flex gap-2 justify-end">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={cancelEdit}
-                            >
+                            <Button variant="outline" size="sm" onClick={cancelEdit}>
                               <X className="h-3.5 w-3.5 mr-1" />
                               Cancel
                             </Button>
-                            <Button
-                              size="sm"
-                              onClick={saveEdit}
-                              disabled={!editContent.trim()}
-                            >
+                            <Button size="sm" onClick={saveEdit} disabled={!editContent.trim()}>
                               <Check className="h-3.5 w-3.5 mr-1" />
                               Save (Ctrl+Enter)
                             </Button>
@@ -1135,45 +794,32 @@ export function ChatPage() {
                       ) : isUser ? (
                         <Card className="bg-primary text-primary-foreground">
                           <CardContent className="p-3">
-                            <p
-                              className="whitespace-pre-wrap"
-                              style={{ fontSize: `${fontSize}px` }}
-                            >
+                            <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>
                               {displayContent}
                             </p>
                           </CardContent>
                         </Card>
-                      ) : split?.displayBlocks &&
-                        split.displayBlocks.length > 0 &&
-                        hasDisplayContent ? (
+                      ) : split?.displayBlocks && split.displayBlocks.length > 0 && hasDisplayContent ? (
                         <Card>
                           <CardContent className="p-3 space-y-2">
-                            {split.displayBlocks.map(
-                              (block: DisplayBlock, bi: number) =>
-                                block.type === "dialogue" ? (
-                                  <div
-                                    key={bi}
-                                    className="bg-accent/60 border border-border/50 rounded-lg p-3 relative mt-3 first:mt-0"
-                                  >
-                                    <span className="absolute -top-2.5 left-3 bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                                      {block.speaker}
-                                    </span>
-                                    <p
-                                      className="whitespace-pre-wrap pt-0.5"
-                                      style={{ fontSize: `${fontSize}px` }}
-                                    >
-                                      {block.content}
-                                    </p>
-                                  </div>
-                                ) : (
-                                  <p
-                                    key={bi}
-                                    className="whitespace-pre-wrap"
-                                    style={{ fontSize: `${fontSize}px` }}
-                                  >
+                            {split.displayBlocks.map((block: DisplayBlock, bi: number) =>
+                              block.type === "dialogue" ? (
+                                <div
+                                  key={bi}
+                                  className="bg-accent/60 border border-border/50 rounded-lg p-3 relative mt-3 first:mt-0"
+                                >
+                                  <span className="absolute -top-2.5 left-3 bg-primary text-primary-foreground text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                                    {block.speaker}
+                                  </span>
+                                  <p className="whitespace-pre-wrap pt-0.5" style={{ fontSize: `${fontSize}px` }}>
                                     {block.content}
                                   </p>
-                                ),
+                                </div>
+                              ) : (
+                                <p key={bi} className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>
+                                  {block.content}
+                                </p>
+                              ),
                             )}
                           </CardContent>
                         </Card>
@@ -1182,13 +828,8 @@ export function ChatPage() {
                           <CardContent className="p-3 space-y-2">
                             {isStreamingAi && !hasDisplayContent ? (
                               <>
-                                <p className="text-sm text-muted-foreground">
-                                  {generationStatus.detail}
-                                </p>
-                                <div
-                                  className="flex gap-1"
-                                  aria-label={generationStatus.label}
-                                >
+                                <p className="text-sm text-muted-foreground">{generationStatus.detail}</p>
+                                <div className="flex gap-1" aria-label={generationStatus.label}>
                                   <span
                                     className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
                                     style={{ animationDelay: "0ms" }}
@@ -1204,10 +845,7 @@ export function ChatPage() {
                                 </div>
                               </>
                             ) : (
-                              <p
-                                className="whitespace-pre-wrap"
-                                style={{ fontSize: `${fontSize}px` }}
-                              >
+                              <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>
                                 {displayContent}
                               </p>
                             )}
@@ -1217,11 +855,7 @@ export function ChatPage() {
 
                       {split?.sideBlocks.map((side, si) => (
                         <div key={si} style={{ fontSize: `${fontSize}px` }}>
-                          <SideBlockView
-                            side={side}
-                            fontSize={fontSize}
-                            onAction={setInput}
-                          />
+                          <SideBlockView side={side} fontSize={fontSize} onAction={setInput} />
                         </div>
                       ))}
                     </div>
@@ -1232,13 +866,8 @@ export function ChatPage() {
             {isGeneratingCurrentChat && !hasStreamingMessage && (
               <div>
                 <div className="flex items-center gap-2 mb-1.5 px-1">
-                  <Avatar
-                    name={character?.name ?? "AI"}
-                    src={character?.avatar}
-                  />
-                  <span className="text-xs font-medium text-muted-foreground">
-                    {character?.name ?? "AI"}
-                  </span>
+                  <Avatar name={character?.name ?? "AI"} src={character?.avatar} />
+                  <span className="text-xs font-medium text-muted-foreground">{character?.name ?? "AI"}</span>
                   <span className="inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/5 px-2 py-0.5 text-xs text-muted-foreground animate-pulse ml-1">
                     {generationPhase === "writing" ? (
                       <Pencil className="h-3 w-3 text-primary" />
@@ -1246,22 +875,15 @@ export function ChatPage() {
                       <Brain className="h-3 w-3 text-primary" />
                     )}
                     <span>{generationStatus.label}</span>
-                    <span className="text-[10px] uppercase text-muted-foreground/60">
-                      {generationStatus.tag}
-                    </span>
+                    <span className="text-[10px] uppercase text-muted-foreground/60">{generationStatus.tag}</span>
                   </span>
                 </div>
                 <div className="flex gap-3">
                   <div className="w-8 shrink-0" />
                   <Card className="max-w-[75%]">
                     <CardContent className="p-3 space-y-2">
-                      <p className="text-sm text-muted-foreground">
-                        {generationStatus.detail}
-                      </p>
-                      <div
-                        className="flex gap-1"
-                        aria-label={generationStatus.label}
-                      >
+                      <p className="text-sm text-muted-foreground">{generationStatus.detail}</p>
+                      <div className="flex gap-1" aria-label={generationStatus.label}>
                         <span
                           className="w-2 h-2 rounded-full bg-primary/50 animate-bounce"
                           style={{ animationDelay: "0ms" }}
@@ -1307,9 +929,7 @@ export function ChatPage() {
             {pendingSendCount > 0 && currentChat && (
               <div className="rounded-md border border-primary/20 bg-primary/5 p-2">
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">
-                    待发送 {pendingSendCount}
-                  </span>
+                  <span className="text-xs font-medium text-muted-foreground">待发送 {pendingSendCount}</span>
                 </div>
                 <div className="max-h-32 space-y-1.5 overflow-y-auto pr-1">
                   {pendingSendQueue
@@ -1329,9 +949,7 @@ export function ChatPage() {
                           className="h-6 w-6 shrink-0 text-muted-foreground hover:text-destructive"
                           title="取消待发送"
                           onClick={() =>
-                            setPendingSendQueue((queue) =>
-                              queue.filter((_, index) => index !== item.index),
-                            )
+                            setPendingSendQueue((queue) => queue.filter((_, index) => index !== item.index))
                           }
                         >
                           <X className="h-3.5 w-3.5" />
@@ -1346,43 +964,30 @@ export function ChatPage() {
               <div className="grid grid-cols-[minmax(0,12rem)_minmax(20rem,1fr)_minmax(0,12rem)] items-center gap-2">
                 <div className="flex min-w-0 items-center justify-end gap-2">
                   <div className="flex h-10 shrink-0 items-center gap-1.5 rounded-md border bg-background/70 px-2">
-                    <span className="text-[10px] text-muted-foreground leading-none">
-                      A
-                    </span>
+                    <span className="text-[10px] text-muted-foreground leading-none">A</span>
                     <input
                       type="range"
                       min="12"
                       max="22"
                       value={fontSize}
-                      onInput={(e) =>
-                        handleFontSizeChange(Number(e.currentTarget.value))
-                      }
-                      onChange={(e) =>
-                        handleFontSizeChange(Number(e.target.value))
-                      }
+                      onInput={(e) => handleFontSizeChange(Number(e.currentTarget.value))}
+                      onChange={(e) => handleFontSizeChange(Number(e.target.value))}
                       className="h-1 w-12 accent-primary cursor-pointer"
                       title={`Font size: ${fontSize}px`}
                     />
-                    <span className="text-[13px] font-bold text-muted-foreground leading-none">
-                      A
-                    </span>
+                    <span className="text-[13px] font-bold text-muted-foreground leading-none">A</span>
                   </div>
                   <Button
                     variant="outline"
                     size="icon"
                     onClick={() => {
                       setPreviewOpen(!previewOpen);
-                      if (!previewOpen && input.trim())
-                        updatePreview(input.trim());
+                      if (!previewOpen && input.trim()) updatePreview(input.trim());
                     }}
                     className="h-10 w-10 shrink-0"
                     title="Preview prompt"
                   >
-                    {previewOpen ? (
-                      <ChevronDown className="h-4 w-4" />
-                    ) : (
-                      <ChevronUp className="h-4 w-4" />
-                    )}
+                    {previewOpen ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
                   </Button>
                   <Button
                     variant="outline"
@@ -1399,11 +1004,7 @@ export function ChatPage() {
                   value={input}
                   onChange={handleInputChange}
                   onKeyDown={handleKeyDown}
-                  placeholder={
-                    character
-                      ? `Message ${character.name}...`
-                      : "Type a message..."
-                  }
+                  placeholder={character ? `Message ${character.name}...` : "Type a message..."}
                   disabled={!currentChat}
                   className="h-10 min-w-0 w-full"
                 />
@@ -1476,10 +1077,7 @@ export function ChatPage() {
             </pre>
           </div>
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setPromptDialogOpen(false)}
-            >
+            <Button variant="outline" onClick={() => setPromptDialogOpen(false)}>
               Close
             </Button>
             <Button
@@ -1496,18 +1094,11 @@ export function ChatPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={saveDialogOpen}
-        onOpenChange={(open) =>
-          open ? setSaveDialogOpen(true) : closeSaveDialog()
-        }
-      >
+      <Dialog open={saveDialogOpen} onOpenChange={(open) => (open ? setSaveDialogOpen(true) : closeSaveDialog())}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("savepointDialog.title")}</DialogTitle>
-            <DialogDescription>
-              {t("savepointDialog.description")}
-            </DialogDescription>
+            <DialogDescription>{t("savepointDialog.description")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Input
@@ -1521,10 +1112,7 @@ export function ChatPage() {
             <Button variant="outline" onClick={closeSaveDialog}>
               Cancel
             </Button>
-            <Button
-              onClick={handleCreateSavepoint}
-              disabled={savingSavepoint || !currentChat}
-            >
+            <Button onClick={handleCreateSavepoint} disabled={savingSavepoint || !currentChat}>
               {savingSavepoint ? t("saving") : tc("actions.save")}
             </Button>
           </DialogFooter>
@@ -1539,25 +1127,16 @@ export function ChatPage() {
           </DialogHeader>
           <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
             {loadingSavepoints && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                {t("loadDialog.loading")}
-              </p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{t("loadDialog.loading")}</p>
             )}
             {!loadingSavepoints && savepoints.length === 0 && (
-              <p className="py-6 text-center text-sm text-muted-foreground">
-                {t("loadDialog.noSavepoints")}
-              </p>
+              <p className="py-6 text-center text-sm text-muted-foreground">{t("loadDialog.noSavepoints")}</p>
             )}
             {!loadingSavepoints &&
               savepoints.map((savepoint) => (
-                <div
-                  key={savepoint.id}
-                  className="flex items-center gap-3 rounded-lg border bg-card/60 p-3"
-                >
+                <div key={savepoint.id} className="flex items-center gap-3 rounded-lg border bg-card/60 p-3">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">
-                      {savepoint.name}
-                    </p>
+                    <p className="truncate text-sm font-medium">{savepoint.name}</p>
                     <p className="text-xs text-muted-foreground">
                       {formatSavepointDate(savepoint.createdAt)} ·{" "}
                       {t("loadDialog.messages", {
@@ -1571,9 +1150,7 @@ export function ChatPage() {
                     onClick={() => handleRestoreSavepoint(savepoint)}
                     disabled={!!restoringSavepointId || isGeneratingCurrentChat}
                   >
-                    {restoringSavepointId === savepoint.id
-                      ? t("loadDialog.loading")
-                      : t("loadDialog.load")}
+                    {restoringSavepointId === savepoint.id ? t("loadDialog.loading") : t("loadDialog.load")}
                   </Button>
                   <Button
                     variant="ghost"
@@ -1592,11 +1169,7 @@ export function ChatPage() {
             <Button variant="outline" onClick={() => setLoadDialogOpen(false)}>
               Close
             </Button>
-            <Button
-              variant="outline"
-              onClick={refreshSavepoints}
-              disabled={loadingSavepoints || !currentChat}
-            >
+            <Button variant="outline" onClick={refreshSavepoints} disabled={loadingSavepoints || !currentChat}>
               Refresh
             </Button>
           </DialogFooter>
@@ -1619,10 +1192,7 @@ export function ChatPage() {
             ) : (
               <>
                 <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
-                  <div
-                    className="min-w-0 bg-accent/50 rounded-lg p-3 text-center"
-                    title={totalPrompt.toLocaleString()}
-                  >
+                  <div className="min-w-0 bg-accent/50 rounded-lg p-3 text-center" title={totalPrompt.toLocaleString()}>
                     <p className="text-lg font-bold tabular-nums leading-tight truncate">
                       {formatCompactToken(totalPrompt)}
                     </p>
@@ -1635,9 +1205,7 @@ export function ChatPage() {
                     <p className="text-lg font-bold tabular-nums leading-tight truncate">
                       {formatCompactToken(totalCompletion)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Completion
-                    </p>
+                    <p className="text-[10px] text-muted-foreground">Completion</p>
                   </div>
                   <div
                     className="min-w-0 bg-accent/50 rounded-lg p-3 text-center"
@@ -1655,40 +1223,23 @@ export function ChatPage() {
                     <p className="text-lg font-bold tabular-nums leading-tight truncate text-emerald-600">
                       {formatCompactToken(totalCacheHit)}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Cache Hit
-                    </p>
+                    <p className="text-[10px] text-muted-foreground">Cache Hit</p>
                   </div>
-                  <div
-                    className="min-w-0 bg-blue-500/10 rounded-lg p-3 text-center"
-                    title={`${cacheRate}%`}
-                  >
-                    <p className="text-lg font-bold tabular-nums leading-tight truncate text-blue-600">
-                      {cacheRate}%
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      Hit Rate
-                    </p>
+                  <div className="min-w-0 bg-blue-500/10 rounded-lg p-3 text-center" title={`${cacheRate}%`}>
+                    <p className="text-lg font-bold tabular-nums leading-tight truncate text-blue-600">{cacheRate}%</p>
+                    <p className="text-[10px] text-muted-foreground">Hit Rate</p>
                   </div>
-                  <div
-                    className="min-w-0 bg-purple-500/10 rounded-lg p-3 text-center"
-                    title={contextUsageTitle}
-                  >
-                    <p
-                      className={`text-lg font-bold tabular-nums leading-tight truncate ${contextUsageTone}`}
-                    >
+                  <div className="min-w-0 bg-purple-500/10 rounded-lg p-3 text-center" title={contextUsageTitle}>
+                    <p className={`text-lg font-bold tabular-nums leading-tight truncate ${contextUsageTone}`}>
                       {contextUsageDisplay}
                     </p>
-                    <p className="text-[10px] text-muted-foreground">
-                      1M Context
-                    </p>
+                    <p className="text-[10px] text-muted-foreground">1M Context</p>
                   </div>
                 </div>
                 {cacheRate === "-" && (
                   <p className="text-xs text-muted-foreground mb-2 px-1">
-                    ⚠ Cache hit data unavailable — your API may not support
-                    prompt caching (Ollama/vLLM most instances do not).
-                    Supported by DeepSeek, OpenAI recent models, Anthropic.
+                    ⚠ Cache hit data unavailable — your API may not support prompt caching (Ollama/vLLM most instances
+                    do not). Supported by DeepSeek, OpenAI recent models, Anthropic.
                   </p>
                 )}
                 <div className="border rounded-lg overflow-hidden">
@@ -1714,24 +1265,12 @@ export function ChatPage() {
                         const r = p > 0 ? ((h / p) * 100).toFixed(1) : "-";
                         return (
                           <tr key={m.id} className="border-t">
-                            <td className="p-2 text-muted-foreground">
-                              {i + 1}
-                            </td>
-                            <td className="p-2 text-right">
-                              {p.toLocaleString()}
-                            </td>
-                            <td className="p-2 text-right">
-                              {c.toLocaleString()}
-                            </td>
-                            <td className="p-2 text-right">
-                              {t.toLocaleString()}
-                            </td>
-                            <td className="p-2 text-right text-emerald-600">
-                              {h > 0 ? h.toLocaleString() : "-"}
-                            </td>
-                            <td className="p-2 text-right text-orange-500">
-                              {ms > 0 ? ms.toLocaleString() : "-"}
-                            </td>
+                            <td className="p-2 text-muted-foreground">{i + 1}</td>
+                            <td className="p-2 text-right">{p.toLocaleString()}</td>
+                            <td className="p-2 text-right">{c.toLocaleString()}</td>
+                            <td className="p-2 text-right">{t.toLocaleString()}</td>
+                            <td className="p-2 text-right text-emerald-600">{h > 0 ? h.toLocaleString() : "-"}</td>
+                            <td className="p-2 text-right text-orange-500">{ms > 0 ? ms.toLocaleString() : "-"}</td>
                             <td className="p-2 text-right">
                               {r}
                               {r !== "-" ? "%" : ""}
@@ -1753,17 +1292,13 @@ export function ChatPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={!!deleteMsgTarget}
-        onOpenChange={() => setDeleteMsgTarget(null)}
-      >
+      <Dialog open={!!deleteMsgTarget} onOpenChange={() => setDeleteMsgTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("deleteMessage.title")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Delete this message? If it's a user message followed by an AI reply,
-            the AI reply will also be deleted.
+            Delete this message? If it's a user message followed by an AI reply, the AI reply will also be deleted.
           </p>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteMsgTarget(null)}>
@@ -1796,9 +1331,7 @@ export function ChatPage() {
             <Button
               variant="outline"
               onClick={() => {
-                navigator.clipboard.writeText(
-                  thinkingMsg?.reasoningContent || "",
-                );
+                navigator.clipboard.writeText(thinkingMsg?.reasoningContent || "");
                 toast("success", "Copied");
               }}
             >
