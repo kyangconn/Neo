@@ -17,47 +17,27 @@ import {
 } from "@neo-tavern/ui";
 import { useCharacterStore } from "@/features/character/character.store";
 import { useChatStore } from "@/features/chat/chat.store";
-import {
-  chatSavepointRepository,
-  createDefaultSavepointName,
-  messageRepository,
-} from "@/db/repositories";
+import { chatSavepointRepository, createDefaultSavepointName, messageRepository } from "@/db/repositories";
 import type { Character, Chat } from "@neo-tavern/shared";
 import { CharacterAvatarTile } from "@/components";
+import { toast } from "@/utils/toast";
 
 type HomeContextMenu =
   | { type: "character"; x: number; y: number; character: Character }
   | { type: "chat"; x: number; y: number; chat: Chat; character?: Character };
 
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
-
 export function HomePage() {
   const navigate = useNavigate();
   const { t } = useTranslation("home");
   const { t: tc } = useTranslation("common");
-  const {
-    characters,
-    loading: charsLoading,
-    loadCharacters,
-  } = useCharacterStore();
-  const {
-    chats,
-    loading: chatsLoading,
-    loadChats,
-    deleteChat,
-  } = useChatStore();
+  const { characters, loading: charsLoading, loadCharacters } = useCharacterStore();
+  const { chats, loading: chatsLoading, loadChats, deleteChat } = useChatStore();
   const [deleteTarget, setDeleteTarget] = useState<Chat | null>(null);
   const [saveTarget, setSaveTarget] = useState<Chat | null>(null);
   const [savepointName, setSavepointName] = useState("");
   const [savingSavepoint, setSavingSavepoint] = useState(false);
   const [contextMenu, setContextMenu] = useState<HomeContextMenu | null>(null);
-  const charactersById = useMemo(
-    () => new Map(characters.map((char) => [char.id, char])),
-    [characters],
-  );
+  const charactersById = useMemo(() => new Map(characters.map((char) => [char.id, char])), [characters]);
 
   useEffect(() => {
     loadCharacters();
@@ -96,10 +76,7 @@ export function HomePage() {
     navigate(`/chat/${chatId}`);
   };
 
-  const openCharacterContextMenu = (
-    event: React.MouseEvent,
-    character: Character,
-  ) => {
+  const openCharacterContextMenu = (event: React.MouseEvent, character: Character) => {
     event.preventDefault();
     setContextMenu({
       type: "character",
@@ -109,11 +86,7 @@ export function HomePage() {
     });
   };
 
-  const openChatContextMenu = (
-    event: React.MouseEvent,
-    chat: Chat,
-    character?: Character,
-  ) => {
+  const openChatContextMenu = (event: React.MouseEvent, chat: Chat, character?: Character) => {
     event.preventDefault();
     setContextMenu({
       type: "chat",
@@ -170,26 +143,16 @@ export function HomePage() {
 
         <div className="mt-5 flex items-center justify-between gap-4">
           <h2 className="text-lg font-semibold">{t("characters")}</h2>
-          <Button
-            size="icon"
-            variant="ghost"
-            onClick={() => navigate("/character")}
-          >
+          <Button size="icon" variant="ghost" onClick={() => navigate("/character")}>
             <Plus className="h-4 w-4" />
           </Button>
         </div>
 
         <div className="mt-3 min-h-[128px] overflow-x-auto pb-2">
           <div className="flex min-w-max gap-4">
-            {charsLoading && (
-              <p className="text-sm text-muted-foreground p-2">
-                {t("loading")}
-              </p>
-            )}
+            {charsLoading && <p className="text-sm text-muted-foreground p-2">{t("loading")}</p>}
             {!charsLoading && characters.length === 0 && (
-              <p className="text-sm text-muted-foreground p-2">
-                {t("noCharacters")}
-              </p>
+              <p className="text-sm text-muted-foreground p-2">{t("noCharacters")}</p>
             )}
             {characters.map((char) => (
               <CharacterAvatarTile
@@ -205,12 +168,8 @@ export function HomePage() {
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
         <h2 className="text-lg font-semibold mb-3">{t("recentChats")}</h2>
-        {chatsLoading && (
-          <p className="text-sm text-muted-foreground">{t("loading")}</p>
-        )}
-        {!chatsLoading && chats.length === 0 && (
-          <p className="text-sm text-muted-foreground">{t("noChats")}</p>
-        )}
+        {chatsLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
+        {!chatsLoading && chats.length === 0 && <p className="text-sm text-muted-foreground">{t("noChats")}</p>}
         <div className="grid gap-3">
           {chats.map((chat) => {
             const character = charactersById.get(chat.characterId);
@@ -222,9 +181,7 @@ export function HomePage() {
                 key={chat.id}
                 className="group cursor-pointer transition-colors hover:bg-accent/50"
                 onClick={() => handleOpenChat(chat.id)}
-                onContextMenu={(event: React.MouseEvent) =>
-                  openChatContextMenu(event, chat, character)
-                }
+                onContextMenu={(event: React.MouseEvent) => openChatContextMenu(event, chat, character)}
               >
                 <CardHeader className="p-4">
                   <div className="flex items-center justify-between gap-3">
@@ -237,9 +194,7 @@ export function HomePage() {
                         />
                       ) : (
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/30 bg-accent/60">
-                          <span className="text-sm font-bold text-muted-foreground">
-                            {displayName.charAt(0)}
-                          </span>
+                          <span className="text-sm font-bold text-muted-foreground">{displayName.charAt(0)}</span>
                         </div>
                       )}
                       <span className="min-w-0 truncate">{chat.title}</span>
@@ -350,9 +305,7 @@ export function HomePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("deleteChat.title")}</DialogTitle>
-            <DialogDescription>
-              {t("deleteChat.description", { title: deleteTarget?.title })}
-            </DialogDescription>
+            <DialogDescription>{t("deleteChat.description", { title: deleteTarget?.title })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
@@ -369,9 +322,7 @@ export function HomePage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("savepoint.title")}</DialogTitle>
-            <DialogDescription>
-              {t("savepoint.description", { title: saveTarget?.title })}
-            </DialogDescription>
+            <DialogDescription>{t("savepoint.description", { title: saveTarget?.title })}</DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
             <Input

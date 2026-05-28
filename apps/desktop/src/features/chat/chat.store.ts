@@ -1,50 +1,50 @@
-import { create } from 'zustand'
-import { chatRepository, chatSavepointRepository, messageRepository } from '@/db/repositories'
-import type { Chat, Message, CreateChatInput, CreateMessageInput } from '@neo-tavern/shared'
-import type { GenerationPhase } from './chat.types'
+import { create } from "zustand";
+import { chatRepository, chatSavepointRepository, messageRepository } from "@/db/repositories";
+import type { Chat, Message, CreateChatInput, CreateMessageInput } from "@neo-tavern/shared";
+import type { GenerationPhase } from "./chat.types";
 
 interface ChatState {
-  chats: Chat[]
-  currentChat: Chat | null
-  messages: Message[]
-  loading: boolean
-  sending: boolean
-  sendingChatId: string | null
-  streamingMessageId: string | null
-  generationPhase: GenerationPhase | null
-  error: string | null
+  chats: Chat[];
+  currentChat: Chat | null;
+  messages: Message[];
+  loading: boolean;
+  sending: boolean;
+  sendingChatId: string | null;
+  streamingMessageId: string | null;
+  generationPhase: GenerationPhase | null;
+  error: string | null;
 
-  loadChats: () => Promise<void>
-  loadChat: (id: string) => Promise<void>
-  createOrGetChat: (input: CreateChatInput) => Promise<Chat>
-  deleteChat: (id: string) => Promise<void>
-  loadMessages: (chatId: string) => Promise<void>
-  addMessage: (input: CreateMessageInput) => Promise<Message>
-  updateMessage: (id: string, content: string) => Promise<void>
+  loadChats: () => Promise<void>;
+  loadChat: (id: string) => Promise<void>;
+  createOrGetChat: (input: CreateChatInput) => Promise<Chat>;
+  deleteChat: (id: string) => Promise<void>;
+  loadMessages: (chatId: string) => Promise<void>;
+  addMessage: (input: CreateMessageInput) => Promise<Message>;
+  updateMessage: (id: string, content: string) => Promise<void>;
   patchMessage: (
     id: string,
-    patch: Partial<Pick<Message, 'content' | 'reasoningContent' | 'generateDuration' | 'thinkingDuration' | 'usage'>>,
+    patch: Partial<Pick<Message, "content" | "reasoningContent" | "generateDuration" | "thinkingDuration" | "usage">>,
     options?: { persist?: boolean },
-  ) => Promise<void>
-  deleteMessage: (id: string) => Promise<void>
-  deleteMessages: (ids: string[]) => Promise<void>
-  beginSending: (chatId: string) => void
-  setStreamingMessageId: (id: string | null) => void
-  setGenerationPhase: (phase: GenerationPhase) => void
-  finishSending: (chatId?: string) => void
-  setSending: (sending: boolean) => void
-  clearError: () => void
+  ) => Promise<void>;
+  deleteMessage: (id: string) => Promise<void>;
+  deleteMessages: (ids: string[]) => Promise<void>;
+  beginSending: (chatId: string) => void;
+  setStreamingMessageId: (id: string | null) => void;
+  setGenerationPhase: (phase: GenerationPhase) => void;
+  finishSending: (chatId?: string) => void;
+  setSending: (sending: boolean) => void;
+  clearError: () => void;
 }
 
 function sortChats(chats: Chat[]): Chat[] {
-  return [...chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  return [...chats].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-function applyTouchedChat(state: Pick<ChatState, 'chats' | 'currentChat'>, chat: Chat) {
+function applyTouchedChat(state: Pick<ChatState, "chats" | "currentChat">, chat: Chat) {
   return {
     chats: sortChats(state.chats.map((c) => (c.id === chat.id ? chat : c))),
     currentChat: state.currentChat?.id === chat.id ? chat : state.currentChat,
-  }
+  };
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -59,67 +59,67 @@ export const useChatStore = create<ChatState>((set, get) => ({
   error: null,
 
   loadChats: async () => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null });
     try {
-      const chats = await chatRepository.list()
-      set({ chats, loading: false })
+      const chats = await chatRepository.list();
+      set({ chats, loading: false });
     } catch (err) {
-      set({ error: (err as Error).message, loading: false })
+      set({ error: (err as Error).message, loading: false });
     }
   },
 
   loadChat: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null });
     try {
-      const chat = await chatRepository.getById(id)
+      const chat = await chatRepository.getById(id);
       if (chat) {
-        const messages = await messageRepository.listByChatId(chat.id)
-        set({ currentChat: chat, messages, loading: false })
+        const messages = await messageRepository.listByChatId(chat.id);
+        set({ currentChat: chat, messages, loading: false });
       } else {
-        set({ loading: false })
+        set({ loading: false });
       }
     } catch (err) {
-      set({ error: (err as Error).message, loading: false })
+      set({ error: (err as Error).message, loading: false });
     }
   },
 
   createOrGetChat: async (input: CreateChatInput) => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null });
     try {
-      const inMemory = get().chats.find((c) => c.characterId === input.characterId)
+      const inMemory = get().chats.find((c) => c.characterId === input.characterId);
       if (inMemory) {
-        const messages = await messageRepository.listByChatId(inMemory.id)
-        set({ currentChat: inMemory, messages, loading: false })
-        return inMemory
+        const messages = await messageRepository.listByChatId(inMemory.id);
+        set({ currentChat: inMemory, messages, loading: false });
+        return inMemory;
       }
-      const existing = await chatRepository.getByCharacterId(input.characterId)
+      const existing = await chatRepository.getByCharacterId(input.characterId);
       if (existing.length > 0) {
-        const chat = existing[0]
-        const messages = await messageRepository.listByChatId(chat.id)
-        const state = get()
-        set({ currentChat: chat, messages, chats: state.chats, loading: false })
-        return chat
+        const chat = existing[0];
+        const messages = await messageRepository.listByChatId(chat.id);
+        const state = get();
+        set({ currentChat: chat, messages, chats: state.chats, loading: false });
+        return chat;
       }
-      const chat = await chatRepository.create(input)
+      const chat = await chatRepository.create(input);
       set((state) => ({
         chats: [chat, ...state.chats],
         currentChat: chat,
         messages: [],
         loading: false,
-      }))
-      return chat
+      }));
+      return chat;
     } catch (err) {
-      set({ error: (err as Error).message, loading: false })
-      throw err
+      set({ error: (err as Error).message, loading: false });
+      throw err;
     }
   },
 
   deleteChat: async (id: string) => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null });
     try {
-      await chatRepository.delete(id)
-      await messageRepository.deleteByChatId(id)
-      await chatSavepointRepository.deleteByChatId(id)
+      await chatRepository.delete(id);
+      await messageRepository.deleteByChatId(id);
+      await chatSavepointRepository.deleteByChatId(id);
       set((state) => ({
         chats: state.chats.filter((c) => c.id !== id),
         currentChat: state.currentChat?.id === id ? null : state.currentChat,
@@ -129,122 +129,121 @@ export const useChatStore = create<ChatState>((set, get) => ({
         streamingMessageId: state.sendingChatId === id ? null : state.streamingMessageId,
         generationPhase: state.sendingChatId === id ? null : state.generationPhase,
         loading: false,
-      }))
+      }));
     } catch (err) {
-      set({ error: (err as Error).message, loading: false })
-      throw err
+      set({ error: (err as Error).message, loading: false });
+      throw err;
     }
   },
 
   loadMessages: async (chatId: string) => {
     try {
-      const messages = await messageRepository.listByChatId(chatId)
-      set({ messages })
+      const messages = await messageRepository.listByChatId(chatId);
+      set({ messages });
     } catch (err) {
-      set({ error: (err as Error).message })
+      set({ error: (err as Error).message });
     }
   },
 
   addMessage: async (input: CreateMessageInput) => {
     try {
-      const message = await messageRepository.create(input)
-      const chat = await chatRepository.update(input.chatId, {})
+      const message = await messageRepository.create(input);
+      const chat = await chatRepository.update(input.chatId, {});
       set((state) => ({
-        messages: state.currentChat?.id === input.chatId
-          ? [...state.messages, message]
-          : state.messages,
+        messages: state.currentChat?.id === input.chatId ? [...state.messages, message] : state.messages,
         ...applyTouchedChat(state, chat),
-      }))
-      return message
+      }));
+      return message;
     } catch (err) {
-      set({ error: (err as Error).message })
-      throw err
+      set({ error: (err as Error).message });
+      throw err;
     }
   },
 
   clearError: () => set({ error: null }),
 
-  beginSending: (chatId: string) => set({ sending: true, sendingChatId: chatId, streamingMessageId: null, generationPhase: 'thinking' }),
+  beginSending: (chatId: string) =>
+    set({ sending: true, sendingChatId: chatId, streamingMessageId: null, generationPhase: "thinking" }),
 
   setStreamingMessageId: (id: string | null) => set({ streamingMessageId: id }),
 
-  setGenerationPhase: (phase: GenerationPhase) => set((state) => (
-    state.sending ? { generationPhase: phase } : {}
-  )),
+  setGenerationPhase: (phase: GenerationPhase) => set((state) => (state.sending ? { generationPhase: phase } : {})),
 
-  finishSending: (chatId?: string) => set((state) => {
-    if (chatId && state.sendingChatId && state.sendingChatId !== chatId) return {}
-    return { sending: false, sendingChatId: null, streamingMessageId: null, generationPhase: null }
-  }),
+  finishSending: (chatId?: string) =>
+    set((state) => {
+      if (chatId && state.sendingChatId && state.sendingChatId !== chatId) return {};
+      return { sending: false, sendingChatId: null, streamingMessageId: null, generationPhase: null };
+    }),
 
-  setSending: (sending: boolean) => set((state) => ({
-    sending,
-    sendingChatId: sending ? (state.sendingChatId ?? state.currentChat?.id ?? null) : null,
-    streamingMessageId: sending ? state.streamingMessageId : null,
-    generationPhase: sending ? (state.generationPhase ?? 'thinking') : null,
-  })),
+  setSending: (sending: boolean) =>
+    set((state) => ({
+      sending,
+      sendingChatId: sending ? (state.sendingChatId ?? state.currentChat?.id ?? null) : null,
+      streamingMessageId: sending ? state.streamingMessageId : null,
+      generationPhase: sending ? (state.generationPhase ?? "thinking") : null,
+    })),
 
   updateMessage: async (id: string, content: string) => {
     try {
-      const updated = await messageRepository.update(id, content)
-      const chat = await chatRepository.update(updated.chatId, {})
+      const updated = await messageRepository.update(id, content);
+      const chat = await chatRepository.update(updated.chatId, {});
       set((state) => ({
         messages: state.messages.map((m) => (m.id === id ? updated : m)),
         ...applyTouchedChat(state, chat),
-      }))
+      }));
     } catch (err) {
-      set({ error: (err as Error).message })
-      throw err
+      set({ error: (err as Error).message });
+      throw err;
     }
   },
 
   patchMessage: async (id, patch, options = {}) => {
-    const persist = options.persist ?? true
+    const persist = options.persist ?? true;
     set((state) => ({
       messages: state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)),
-    }))
-    if (!persist) return
+    }));
+    if (!persist) return;
     try {
-      const updated = await messageRepository.patch(id, patch)
+      const updated = await messageRepository.patch(id, patch);
       set((state) => ({
         messages: state.messages.map((m) => (m.id === id ? updated : m)),
-      }))
+      }));
     } catch (err) {
-      set({ error: (err as Error).message })
-      throw err
+      set({ error: (err as Error).message });
+      throw err;
     }
   },
 
   deleteMessage: async (id: string) => {
     try {
-      const target = get().messages.find((m) => m.id === id)
-      await messageRepository.deleteMessage(id)
-      const chat = target ? await chatRepository.update(target.chatId, {}) : null
+      const target = get().messages.find((m) => m.id === id);
+      await messageRepository.deleteMessage(id);
+      const chat = target ? await chatRepository.update(target.chatId, {}) : null;
       set((state) => ({
         messages: state.messages.filter((m) => m.id !== id),
         ...(chat ? applyTouchedChat(state, chat) : {}),
-      }))
+      }));
     } catch (err) {
-      set({ error: (err as Error).message })
-      throw err
+      set({ error: (err as Error).message });
+      throw err;
     }
   },
 
   deleteMessages: async (ids: string[]) => {
-    if (ids.length === 0) return
+    if (ids.length === 0) return;
     try {
-      const idSet = new Set(ids)
-      const targets = get().messages.filter((m) => idSet.has(m.id))
-      await messageRepository.deleteMessages(ids)
-      const chatId = targets[0]?.chatId
-      const chat = chatId ? await chatRepository.update(chatId, {}) : null
+      const idSet = new Set(ids);
+      const targets = get().messages.filter((m) => idSet.has(m.id));
+      await messageRepository.deleteMessages(ids);
+      const chatId = targets[0]?.chatId;
+      const chat = chatId ? await chatRepository.update(chatId, {}) : null;
       set((state) => ({
         messages: state.messages.filter((m) => !idSet.has(m.id)),
         ...(chat ? applyTouchedChat(state, chat) : {}),
-      }))
+      }));
     } catch (err) {
-      set({ error: (err as Error).message })
-      throw err
+      set({ error: (err as Error).message });
+      throw err;
     }
   },
-}))
+}));

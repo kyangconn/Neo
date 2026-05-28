@@ -14,11 +14,7 @@ import {
   CardDescription,
 } from "@neo-tavern/ui";
 import { useSettingsStore } from "@/features/settings/settings.store";
-
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
+import { toast } from "@/utils/toast";
 
 export function PersonaPage() {
   const { t } = useTranslation("persona");

@@ -1,14 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet } from "react-router-dom";
-import {
-  MessageSquare,
-  User,
-  Settings,
-  Home,
-  LayoutTemplate,
-  BookOpen,
-  Sparkles,
-} from "lucide-react";
+import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles } from "lucide-react";
 import { cn } from "@neo-tavern/ui";
 
 export function Layout() {
@@ -42,9 +34,7 @@ export function Layout() {
           </NavLink>
         ))}
         <div className="flex-1" />
-        <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap mb-4">
-          NEO
-        </div>
+        <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap mb-4">NEO</div>
       </aside>
       <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet />
