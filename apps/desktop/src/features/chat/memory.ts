@@ -1,11 +1,18 @@
 import type { ContextBlock, Message } from '@neo-tavern/shared'
 
+export const DEFAULT_LIGHTWEIGHT_MEMORY_ENABLED = true
 export const DEFAULT_PROMPT_RECENT_TURNS = 12
 export const DEFAULT_MEMORY_SUMMARY_MAX_CHARS = 4500
 
 export interface PromptMemorySettings {
+  lightweightMemoryEnabled: boolean
   promptRecentTurns: number
   memorySummaryMaxChars: number
+}
+
+export interface MemorySummarySegmentView {
+  index: number
+  summary: string
 }
 
 function normalizeText(content: string) {
@@ -86,14 +93,52 @@ export function buildLightweightMemorySummary(messages: Message[], maxChars: num
   })
 
   const header = '以下是较早剧情的轻量记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
-  const kept: string[] = []
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const next = [lines[i], ...kept]
+  const kept: Array<{ index: number; line: string }> = []
+  let start = 0
+  let end = lines.length - 1
+  let takeFromStart = true
+
+  while (start <= end) {
+    const index = takeFromStart ? start++ : end--
+    const line = lines[index]
+    const next = [...kept, { index, line }]
+      .sort((a, b) => a.index - b.index)
+      .map((item) => item.line)
     if (`${header}\n${next.join('\n')}`.length > maxChars && kept.length > 0) break
-    kept.unshift(lines[i])
+    kept.push({ index, line })
+    takeFromStart = !takeFromStart
   }
 
-  return `${header}\n${kept.join('\n')}`
+  return `${header}\n${kept
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.line)
+    .join('\n')}`
+}
+
+export function stripMemorySummaryHeader(summary: string) {
+  return summary
+    .replace(/^以下是较早剧情的(?:轻量|智能|稳定|长期)记忆摘要[^\n]*\n?/u, '')
+    .trim()
+}
+
+export function formatMemorySegmentsForPrompt(segments: MemorySummarySegmentView[]) {
+  const valid = segments
+    .filter((segment) => segment.summary.trim())
+    .sort((a, b) => a.index - b.index)
+
+  if (valid.length === 0) return ''
+
+  const lines = [
+    '以下是从开局至今逐段提炼的长期剧情记忆。每个记忆段都是此前剧情的一次稳定摘要；最近完整对话仍以后续消息为准。',
+  ]
+
+  for (const segment of valid) {
+    lines.push('')
+    lines.push(`【长期记忆段 ${segment.index}】`)
+    lines.push(stripMemorySummaryHeader(segment.summary))
+  }
+
+  return lines.join('\n')
 }
 
 export function createMemoryContextBlock(summary: string): ContextBlock | null {
@@ -101,7 +146,7 @@ export function createMemoryContextBlock(summary: string): ContextBlock | null {
   return {
     id: 'chat-memory-summary',
     source: 'memory',
-    title: 'Scene Memory Summary',
+    title: 'Long-Term Memory Segments',
     content: summary,
     priority: 10_000,
     role: 'system',

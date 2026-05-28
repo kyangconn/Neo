@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { settingsRepository } from '@/db/repositories'
-import { DEFAULT_MEMORY_SUMMARY_MAX_CHARS, DEFAULT_PROMPT_RECENT_TURNS } from '@/features/chat/memory'
+import { DEFAULT_LIGHTWEIGHT_MEMORY_ENABLED, DEFAULT_MEMORY_SUMMARY_MAX_CHARS, DEFAULT_PROMPT_RECENT_TURNS } from '@/features/chat/memory'
 import { generateId } from '@neo-tavern/shared'
 import type { ModelConfig, CreateModelConfigInput, UpdateModelConfigInput, RegexPreset, RegexRule, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexRuleInput, UpdateRegexRuleInput } from '@neo-tavern/shared'
 
@@ -20,6 +20,7 @@ interface SettingsState {
   regexPresets: RegexPreset[]
   activeRegexPresetId: string | null
   contextTokens: number
+  lightweightMemoryEnabled: boolean
   promptRecentTurns: number
   memorySummaryMaxChars: number
   memoryCompressorConfigId: string | null
@@ -45,6 +46,7 @@ interface SettingsState {
   getActiveRegexRules: () => RegexRule[]
   setContextTokens: (tokens: number) => void
   loadMemorySettings: () => Promise<void>
+  setLightweightMemoryEnabled: (enabled: boolean) => void
   setPromptRecentTurns: (turns: number) => void
   setMemorySummaryMaxChars: (chars: number) => void
   setMemoryCompressorConfigId: (id: string | null) => void
@@ -64,6 +66,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   regexPresets: [],
   activeRegexPresetId: null,
   contextTokens: 0,
+  lightweightMemoryEnabled: DEFAULT_LIGHTWEIGHT_MEMORY_ENABLED,
   promptRecentTurns: DEFAULT_PROMPT_RECENT_TURNS,
   memorySummaryMaxChars: DEFAULT_MEMORY_SUMMARY_MAX_CHARS,
   memoryCompressorConfigId: null,
@@ -227,12 +230,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   loadMemorySettings: async () => {
-    const [recentTurnsRaw, summaryMaxCharsRaw, compressorConfigIdRaw] = await Promise.all([
+    const [enabledRaw, recentTurnsRaw, summaryMaxCharsRaw, compressorConfigIdRaw] = await Promise.all([
+      settingsRepository.get('lightweightMemoryEnabled'),
       settingsRepository.get('promptRecentTurns'),
       settingsRepository.get('memorySummaryMaxChars'),
       settingsRepository.get('memoryCompressorConfigId'),
     ])
     set({
+      lightweightMemoryEnabled: enabledRaw == null ? DEFAULT_LIGHTWEIGHT_MEMORY_ENABLED : enabledRaw !== '0',
       promptRecentTurns: recentTurnsRaw ? Math.max(1, parseInt(recentTurnsRaw) || DEFAULT_PROMPT_RECENT_TURNS) : DEFAULT_PROMPT_RECENT_TURNS,
       memorySummaryMaxChars: summaryMaxCharsRaw ? Math.max(1000, parseInt(summaryMaxCharsRaw) || DEFAULT_MEMORY_SUMMARY_MAX_CHARS) : DEFAULT_MEMORY_SUMMARY_MAX_CHARS,
       memoryCompressorConfigId: compressorConfigIdRaw?.trim() || null,
@@ -351,6 +356,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setContextTokens: (tokens: number) => {
     void settingsRepository.set('contextTokens', String(tokens))
     set({ contextTokens: tokens })
+  },
+
+  setLightweightMemoryEnabled: (enabled: boolean) => {
+    void settingsRepository.set('lightweightMemoryEnabled', enabled ? '1' : '0')
+    set({ lightweightMemoryEnabled: enabled })
   },
 
   setPromptRecentTurns: (turns: number) => {

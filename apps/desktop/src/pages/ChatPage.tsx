@@ -316,9 +316,15 @@ export function ChatPage() {
     if (!character) return
     const settingsState = useSettingsStore.getState()
     const cs = settingsState.contextTokens || 64000
-    const memorySplit = splitMessagesByRecentTurns(messages, settingsState.promptRecentTurns)
-    const memorySummary = buildLightweightMemorySummary(memorySplit.memoryMessages, settingsState.memorySummaryMaxChars)
-    const memoryBlock = createMemoryContextBlock(memorySummary)
+    const memorySplit = settingsState.lightweightMemoryEnabled
+      ? splitMessagesByRecentTurns(messages, settingsState.promptRecentTurns)
+      : { memoryMessages: [] as Message[], recentMessages: messages }
+    const memorySummary = settingsState.lightweightMemoryEnabled
+      ? buildLightweightMemorySummary(memorySplit.memoryMessages, settingsState.memorySummaryMaxChars)
+      : ''
+    const memoryBlock = settingsState.lightweightMemoryEnabled
+      ? createMemoryContextBlock(memorySummary)
+      : null
     const wbState = useWorldbookStore.getState()
     let contextBlocks: ContextBlock[] | undefined
     if (wbState.activeWorldbookId) {

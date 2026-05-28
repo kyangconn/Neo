@@ -129,10 +129,12 @@ export function SettingsPage() {
   const toggleRegexRule = useSettingsStore((s) => s.toggleRegexRule)
   const contextTokens = useSettingsStore((s) => s.contextTokens)
   const setContextTokens = useSettingsStore((s) => s.setContextTokens)
+  const lightweightMemoryEnabled = useSettingsStore((s) => s.lightweightMemoryEnabled)
   const promptRecentTurns = useSettingsStore((s) => s.promptRecentTurns)
   const memorySummaryMaxChars = useSettingsStore((s) => s.memorySummaryMaxChars)
   const memoryCompressorConfigId = useSettingsStore((s) => s.memoryCompressorConfigId)
   const loadMemorySettings = useSettingsStore((s) => s.loadMemorySettings)
+  const setLightweightMemoryEnabled = useSettingsStore((s) => s.setLightweightMemoryEnabled)
   const setPromptRecentTurns = useSettingsStore((s) => s.setPromptRecentTurns)
   const setMemorySummaryMaxChars = useSettingsStore((s) => s.setMemorySummaryMaxChars)
   const setMemoryCompressorConfigId = useSettingsStore((s) => s.setMemoryCompressorConfigId)
@@ -765,13 +767,20 @@ export function SettingsPage() {
               </p>
 
               <div className="rounded-lg border bg-card/40 p-4">
-                <div className="mb-4">
-                  <h3 className="text-sm font-semibold">Lightweight Memory</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Older turns are compacted into a stable memory block; only recent turns stay as full chat history.
-                  </p>
+                <div className="mb-4 flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-sm font-semibold">Lightweight Memory</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Older turns are compacted into incremental long-term memory segments; only recent turns stay as full chat history.
+                    </p>
+                  </div>
+                  <SwitchButton
+                    checked={lightweightMemoryEnabled}
+                    onClick={() => setLightweightMemoryEnabled(!lightweightMemoryEnabled)}
+                    label="Toggle lightweight memory"
+                  />
                 </div>
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className={`grid gap-4 md:grid-cols-2 ${lightweightMemoryEnabled ? '' : 'opacity-45'}`}>
                   <label className="space-y-2">
                     <div className="flex items-center justify-between gap-3">
                       <span className="text-xs font-medium text-muted-foreground">Recent full turns</span>
@@ -779,6 +788,7 @@ export function SettingsPage() {
                     </div>
                     <input
                       type="range"
+                      disabled={!lightweightMemoryEnabled}
                       min="4"
                       max="40"
                       step="1"
@@ -795,6 +805,7 @@ export function SettingsPage() {
                     </div>
                     <input
                       type="range"
+                      disabled={!lightweightMemoryEnabled}
                       min="1000"
                       max="12000"
                       step="500"
@@ -810,6 +821,7 @@ export function SettingsPage() {
                   <select
                     value={compressorSelectValue}
                     onChange={(e) => setMemoryCompressorConfigId(e.target.value || null)}
+                    disabled={!lightweightMemoryEnabled}
                     className="h-10 w-full rounded-md border bg-background px-3 text-sm"
                   >
                     <option value="">Local fast compression</option>

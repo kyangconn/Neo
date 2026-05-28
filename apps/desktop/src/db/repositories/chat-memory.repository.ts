@@ -7,11 +7,25 @@ export interface ChatMemory {
   summary: string
   sourceHash: string
   sourceMessageCount: number
+  segments?: ChatMemorySegment[]
   compressorConfigId?: string | null
   compressorKey?: string
   compressionMode?: 'local' | 'model' | 'fallback'
   memorySummaryMaxChars?: number
   updatedAt: string
+}
+
+export interface ChatMemorySegment {
+  id: string
+  index: number
+  summary: string
+  sourceHash: string
+  sourceMessageCount: number
+  compressorConfigId?: string | null
+  compressorKey?: string
+  compressionMode?: 'local' | 'model' | 'fallback'
+  memorySummaryMaxChars?: number
+  createdAt: string
 }
 
 async function loadAll(): Promise<ChatMemory[]> {

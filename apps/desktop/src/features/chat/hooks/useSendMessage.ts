@@ -2,9 +2,10 @@ import { useState, useCallback } from 'react'
 import { useChatStore } from '../chat.store'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { chatMemoryRepository, presetRepository, settingsRepository } from '@/db/repositories'
-import { buildLightweightMemorySummary, countMemoryTurns, createMemoryContextBlock, hashMessages, splitMessagesByRecentTurns } from '../memory'
+import { buildLightweightMemorySummary, countMemoryTurns, createMemoryContextBlock, formatMemorySegmentsForPrompt, hashMessages, splitMessagesByRecentTurns } from '../memory'
 import { buildChatPrompt, createModelProvider, stripPromptContent, WorldbookContributor } from '@neo-tavern/core'
 import type { Character, BuiltPrompt, ContextBlock, Message, ModelConfig } from '@neo-tavern/shared'
+import type { ChatMemory, ChatMemorySegment } from '@/db/repositories'
 import type { GenerationPhase } from '../chat.types'
 import { useWorldbookStore } from '@/features/settings/worldbook.store'
 
@@ -68,12 +69,6 @@ function shouldCompactMemoryBuffer(messages: Message[], maxChars: number) {
     || countMessageChars(messages) >= Math.max(MEMORY_COMPACTION_BATCH_MIN_CHARS, Math.floor(maxChars * 1.5))
 }
 
-function stripMemorySummaryHeader(summary: string) {
-  return summary
-    .replace(/^以下是较早剧情的(?:轻量|智能|稳定)记忆摘要[^\n]*\n?/u, '')
-    .trim()
-}
-
 function clampMemorySummary(summary: string, maxChars: number) {
   const normalized = summary.trim()
   if (normalized.length <= maxChars) return normalized
@@ -83,18 +78,6 @@ function clampMemorySummary(summary: string, maxChars: number) {
   const marker = '\n…\n'
   const budget = Math.max(200, maxChars - header.length - marker.length)
   return `${header}${marker}${body.slice(-budget).trimStart()}`
-}
-
-function buildIncrementalLocalMemorySummary(previousSummary: string, newMessages: Message[], maxChars: number) {
-  if (!previousSummary.trim()) return buildLightweightMemorySummary(newMessages, maxChars)
-  const header = '以下是较早剧情的稳定记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
-  const previousBody = stripMemorySummaryHeader(previousSummary)
-  const newBody = stripMemorySummaryHeader(buildLightweightMemorySummary(newMessages, Math.max(1000, maxChars)))
-  return clampMemorySummary([
-    header,
-    previousBody,
-    newBody,
-  ].filter(Boolean).join('\n'), maxChars)
 }
 
 function getMemoryCompressorKey(config: ModelConfig | null) {
@@ -115,12 +98,58 @@ async function resolveMemoryCompressorConfig(configId: string | null) {
   return stateConfig ?? settingsRepository.getModelConfig(configId)
 }
 
+function normalizeMemorySegments(memory: ChatMemory | null): ChatMemorySegment[] {
+  if (!memory) return []
+  if (Array.isArray(memory.segments) && memory.segments.length > 0) {
+    return memory.segments
+      .filter((segment) => segment.summary?.trim())
+      .sort((a, b) => a.index - b.index)
+  }
+  if (!memory.summary?.trim()) return []
+  return [{
+    id: `${memory.chatId}-legacy-memory`,
+    index: 1,
+    summary: memory.summary,
+    sourceHash: memory.sourceHash,
+    sourceMessageCount: memory.sourceMessageCount,
+    compressorConfigId: memory.compressorConfigId,
+    compressorKey: memory.compressorKey,
+    compressionMode: memory.compressionMode,
+    memorySummaryMaxChars: memory.memorySummaryMaxChars,
+    createdAt: memory.updatedAt,
+  }]
+}
+
+function createMemorySegment(
+  summary: string,
+  sourceMessages: Message[],
+  index: number,
+  options: {
+    compressorConfigId?: string | null
+    compressorKey: string
+    compressionMode: 'local' | 'model' | 'fallback'
+    memorySummaryMaxChars: number
+  },
+): ChatMemorySegment {
+  return {
+    id: `memory-segment-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    index,
+    summary,
+    sourceHash: hashMessages(sourceMessages),
+    sourceMessageCount: sourceMessages.length,
+    compressorConfigId: options.compressorConfigId,
+    compressorKey: options.compressorKey,
+    compressionMode: options.compressionMode,
+    memorySummaryMaxChars: options.memorySummaryMaxChars,
+    createdAt: new Date().toISOString(),
+  }
+}
+
 async function buildModelMemorySummary(
   messages: Message[],
   maxChars: number,
   compressorConfig: ModelConfig,
-  signal?: AbortSignal,
-  previousSummary?: string
+  signal?: AbortSignal
 ) {
   const provider = createModelProvider(compressorConfig)
   const source = formatMessagesForCompression(messages, maxChars)
@@ -130,23 +159,21 @@ async function buildModelMemorySummary(
         role: 'system',
         content: [
           '你是 NeoTavern 的剧情记忆压缩器。',
-          '你的任务是把较早对话压缩成稳定记忆，用于后续角色扮演保持连续性。',
+          '你的任务是把这一批较早对话提炼成一个稳定的长期记忆段，用于后续角色扮演保持连续性。',
           '只记录已经发生或已经明确设定的事实，不续写剧情，不新增设定，不评价内容。',
-          '如果提供了现有稳定摘要，请把新增旧剧情合并进去，输出一份完整的新摘要。',
           '优先保留：角色关系、地点、物品、承诺、目标、伤势/状态、未解决事件、用户角色已经做过的事。',
         ].join('\n'),
       },
       {
         role: 'user',
         content: [
-          `请把以下较早对话压缩到 ${maxChars} 字符以内。`,
-          '使用简洁中文分点；最近完整对话会单独提供，所以这里只需要旧剧情记忆。',
+          `请把以下较早对话提炼成一个长期记忆段，控制在 ${maxChars} 字符以内。`,
+          '使用简洁中文分点；不要复述每轮原文，只提炼可长期沿用的事实、关系、状态和伏笔。',
           '不要输出解释，不要说“好的”，直接输出摘要。',
           '',
-          previousSummary?.trim() ? `【现有稳定摘要】\n${previousSummary.trim()}\n` : '',
-          previousSummary?.trim() ? '【新增旧剧情】' : '【较早对话】',
+          '【本批旧剧情】',
           source,
-        ].filter(Boolean).join('\n'),
+        ].join('\n'),
       },
     ],
     model: compressorConfig.model,
@@ -162,7 +189,7 @@ async function buildModelMemorySummary(
 
   const summary = result.content.trim()
   if (!summary) throw new Error('Compression API returned an empty summary.')
-  const header = '以下是较早剧情的稳定记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
+  const header = '以下是较早剧情的长期记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
   return clampMemorySummary(summary.startsWith(header) ? summary : `${header}\n${summary}`, maxChars)
 }
 
@@ -238,6 +265,10 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
 
   const getMemoryPromptPlan = async (historyMessages: Message[], signal?: AbortSignal): Promise<{ recentMessages: Message[]; memoryBlock: ContextBlock | null }> => {
     const settings = useSettingsStore.getState()
+    if (!settings.lightweightMemoryEnabled) {
+      return { recentMessages: historyMessages, memoryBlock: null }
+    }
+
     const { memoryMessages, recentMessages } = splitMessagesByRecentTurns(historyMessages, settings.promptRecentTurns)
     if (memoryMessages.length === 0) {
       return { recentMessages, memoryBlock: null }
@@ -259,7 +290,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
 
     let compressionMode: 'local' | 'model' | 'fallback' = compressorConfig ? 'fallback' : 'local'
     let summarizedMessageCount = cacheReusable ? cachedMessageCount : 0
-    let summary = cacheReusable ? cached!.summary : ''
+    let segments = cacheReusable ? normalizeMemorySegments(cached) : []
     let overflowMemoryMessages = cacheReusable
       ? memorySourceMessages.slice(cachedMessageCount)
       : [] as Message[]
@@ -269,26 +300,31 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
       const messagesToSummarize = cacheReusable
         ? overflowMemoryMessages
         : memorySourceMessages
-      const previousSummary = cacheReusable ? summary : undefined
+      let segmentSummary = ''
 
       if (compressorConfig) {
         try {
-          summary = await buildModelMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars, compressorConfig, signal, previousSummary)
+          segmentSummary = await buildModelMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars, compressorConfig, signal)
           compressionMode = 'model'
         } catch (err) {
           if ((err as Error).name === 'AbortError') throw err
-          summary = cacheReusable
-            ? buildIncrementalLocalMemorySummary(summary, messagesToSummarize, settings.memorySummaryMaxChars)
-            : buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
+          segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
           compressionMode = 'fallback'
         }
       } else {
-        summary = cacheReusable
-          ? buildIncrementalLocalMemorySummary(summary, messagesToSummarize, settings.memorySummaryMaxChars)
-          : buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
+        segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
         compressionMode = 'local'
       }
 
+      segments = [
+        ...segments,
+        createMemorySegment(segmentSummary, messagesToSummarize, segments.length + 1, {
+          compressorConfigId: compressorConfig?.id ?? null,
+          compressorKey,
+          compressionMode,
+          memorySummaryMaxChars: settings.memorySummaryMaxChars,
+        }),
+      ]
       summarizedMessageCount = memorySourceMessages.length
       overflowMemoryMessages = []
       shouldPersistMemory = true
@@ -296,6 +332,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
 
     if (chatId && shouldPersistMemory) {
       const summarizedSourceMessages = memorySourceMessages.slice(0, summarizedMessageCount)
+      const summary = formatMemorySegmentsForPrompt(segments)
       await chatMemoryRepository.upsert({
         chatId,
         summary,
@@ -305,12 +342,14 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         compressorKey,
         compressionMode,
         memorySummaryMaxChars: settings.memorySummaryMaxChars,
+        segments,
       })
     }
 
+    const memorySummary = formatMemorySegmentsForPrompt(segments)
     return {
       recentMessages: [...overflowMemoryMessages, ...recentMessages],
-      memoryBlock: createMemoryContextBlock(summary),
+      memoryBlock: createMemoryContextBlock(memorySummary),
     }
   }
 
