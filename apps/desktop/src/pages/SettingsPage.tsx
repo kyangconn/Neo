@@ -1,22 +1,28 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2, Globe, Download, KeyRound, Server, Zap, BookOpen } from 'lucide-react'
-import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle, CardDescription, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@neo-tavern/ui'
+import { ArrowLeft, Save, Plug, Sun, Moon, Monitor, Palette, Trash2, Plus, Regex, SlidersHorizontal, CheckCircle2, Globe, KeyRound, Server, Zap, BookOpen, Image as ImageIcon, Upload, Bug, Wallet, Bell } from 'lucide-react'
+import { Button, Input, Label, Card, CardContent, CardHeader, CardTitle, CardDescription, ScrollArea, Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, Textarea } from '@neo-tavern/ui'
 import { useSettingsStore } from '@/features/settings/settings.store'
 import { useTheme } from '@/app/theme'
 import { getStorageItem, setStorageItem } from '@/db/storage'
+import { generateComfyImage, IMAGE_GENERATION_PARAMETER_PRESETS, IMAGE_RESOLUTION_OPTIONS, IMAGE_SAMPLER_OPTIONS, IMAGE_SCHEDULER_OPTIONS, normalizeImageSettings, testComfyConnection } from '@/features/image-generation/image-generation'
+import { fetchDeepSeekBalance, formatCnyCost, formatCnyExact, type DeepSeekBalanceResult } from '@/features/billing/deepseek-billing'
+import { DAILY_COST_WARNING_RATIO } from '@/features/billing/daily-cost'
+import { isDeepSeekProModel } from '@/features/settings/model-capabilities'
 
 function toast(type: 'success' | 'error' | 'info', message: string) {
   const fn = (window as any).__toast
   if (fn) fn(type, message)
 }
 
-type Section = 'api' | 'appearance' | 'regex' | 'context'
+type Section = 'general' | 'api' | 'appearance' | 'regex' | 'context' | 'image'
 
 const sections: { key: Section; icon: typeof Plug; label: string }[] = [
+  { key: 'general', icon: Bug, label: 'General' },
   { key: 'api', icon: Plug, label: 'DeepSeek API' },
   { key: 'appearance', icon: Palette, label: 'Appearance' },
   { key: 'context', icon: SlidersHorizontal, label: 'Context' },
+  { key: 'image', icon: ImageIcon, label: 'Image Gen' },
   { key: 'regex', icon: Regex, label: 'Regex Rules' },
 ]
 
@@ -36,14 +42,14 @@ const DEEPSEEK_MODEL_OPTIONS = [
   {
     id: 'deepseek-v4-flash',
     label: 'DeepSeek V4 Flash',
-    badge: 'Fast',
-    description: 'Default choice for responsive chats and roleplay.',
+    badge: 'Recommended',
+    description: 'Best first choice for daily chat and roleplay. Lower cost.',
   },
   {
     id: 'deepseek-v4-pro',
     label: 'DeepSeek V4 Pro',
     badge: 'Pro',
-    description: 'Use for heavier reasoning, coding, and complex writing.',
+    description: 'Use for deeper reasoning and complex writing. Higher cost.',
   },
 ] as const
 
@@ -138,6 +144,18 @@ export function SettingsPage() {
   const setPromptRecentTurns = useSettingsStore((s) => s.setPromptRecentTurns)
   const setMemorySummaryMaxChars = useSettingsStore((s) => s.setMemorySummaryMaxChars)
   const setMemoryCompressorConfigId = useSettingsStore((s) => s.setMemoryCompressorConfigId)
+  const imageGeneration = useSettingsStore((s) => s.imageGeneration)
+  const loadImageGenerationSettings = useSettingsStore((s) => s.loadImageGenerationSettings)
+  const updateImageGenerationSettings = useSettingsStore((s) => s.updateImageGenerationSettings)
+  const debugMode = useSettingsStore((s) => s.debugMode)
+  const setDebugMode = useSettingsStore((s) => s.setDebugMode)
+  const dailyCostWarningEnabled = useSettingsStore((s) => s.dailyCostWarningEnabled)
+  const dailyCostWarningLimitCny = useSettingsStore((s) => s.dailyCostWarningLimitCny)
+  const dailyCostSpentCny = useSettingsStore((s) => s.dailyCostSpentCny)
+  const loadDailyCostWarningSettings = useSettingsStore((s) => s.loadDailyCostWarningSettings)
+  const loadDailyCostSpent = useSettingsStore((s) => s.loadDailyCostSpent)
+  const setDailyCostWarningEnabled = useSettingsStore((s) => s.setDailyCostWarningEnabled)
+  const setDailyCostWarningLimitCny = useSettingsStore((s) => s.setDailyCostWarningLimitCny)
 
   const [name, setName] = useState('')
   const [baseUrl, setBaseUrl] = useState('')
@@ -150,10 +168,15 @@ export function SettingsPage() {
   const [loaded, setLoaded] = useState(false)
   const [selectedId, setSelectedId] = useState<string>('__new__')
 
-  const [fetchingModels, setFetchingModels] = useState(false)
-  const [availableModels, setAvailableModels] = useState<string[]>([])
+  const [checkingBalance, setCheckingBalance] = useState(false)
+  const [deepSeekBalance, setDeepSeekBalance] = useState<DeepSeekBalanceResult | null>(null)
   const [easterEggClicks, setEasterEggClicks] = useState(0)
   const [secretUnlocked, setSecretUnlocked] = useState(false)
+  const workflowFileInputRef = useRef<HTMLInputElement>(null)
+  const [testingComfyConnection, setTestingComfyConnection] = useState(false)
+  const [testingComfyImage, setTestingComfyImage] = useState(false)
+  const [comfyTestMessage, setComfyTestMessage] = useState('')
+  const [comfyTestImage, setComfyTestImage] = useState<string | null>(null)
 
   setFormName = setName
   setFormBaseUrl = setBaseUrl
@@ -185,7 +208,85 @@ export function SettingsPage() {
     setMaxTokens('4096')
     setReasoningEffort('')
     setStreamingEnabled(true)
-    setAvailableModels([])
+    setDeepSeekBalance(null)
+  }
+
+  const handleWorkflowFileImport = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      updateImageGenerationSettings({ comfyWorkflowJson: JSON.stringify(parsed, null, 2) })
+      toast('success', `Imported workflow "${file.name}"`)
+    } catch {
+      toast('error', 'Invalid ComfyUI workflow JSON')
+    }
+  }
+
+  const applyImageParameterPreset = (presetId: string) => {
+    const preset = IMAGE_GENERATION_PARAMETER_PRESETS.find((item) => item.id === presetId)
+    if (!preset) return
+    updateImageGenerationSettings({
+      generationPreset: preset.id,
+      ...preset.settings,
+    })
+  }
+
+  const resolutionSelectValue = IMAGE_RESOLUTION_OPTIONS.some((option) => (
+    option.width === imageGeneration.width && option.height === imageGeneration.height
+  ))
+    ? `${imageGeneration.width}x${imageGeneration.height}`
+    : 'custom'
+
+  const handleImageResolutionChange = (value: string) => {
+    const option = IMAGE_RESOLUTION_OPTIONS.find((item) => `${item.width}x${item.height}` === value)
+    if (!option) return
+    updateImageGenerationSettings({
+      width: option.width,
+      height: option.height,
+      generationPreset: 'custom',
+    })
+  }
+
+  const handleTestComfyConnection = async () => {
+    setTestingComfyConnection(true)
+    setComfyTestMessage('')
+    try {
+      const result = await testComfyConnection(normalizeImageSettings(imageGeneration))
+      const deviceText = result.devices > 0 ? `${result.devices} device${result.devices === 1 ? '' : 's'}` : 'no device info'
+      setComfyTestMessage(`Connected: ${result.system}, ${deviceText}`)
+      toast('success', 'ComfyUI connected')
+    } catch (err) {
+      const message = (err as Error).message || 'ComfyUI connection failed'
+      setComfyTestMessage(message)
+      toast('error', message)
+    } finally {
+      setTestingComfyConnection(false)
+    }
+  }
+
+  const handleTestComfyImage = async () => {
+    setTestingComfyImage(true)
+    setComfyTestImage(null)
+    setComfyTestMessage('Generating test image...')
+    try {
+      const image = await generateComfyImage(
+        'masterpiece, cozy fantasy tavern library, warm lantern light, open book on wooden table, cinematic composition, highly detailed',
+        normalizeImageSettings(imageGeneration)
+      )
+      setComfyTestImage(image)
+      setComfyTestMessage('Test image generated successfully.')
+      toast('success', 'ComfyUI image generated')
+    } catch (err) {
+      const message = (err as Error).message || 'ComfyUI image test failed'
+      setComfyTestMessage(message)
+      toast('error', message)
+    } finally {
+      setTestingComfyImage(false)
+    }
   }
 
   useEffect(() => {
@@ -207,6 +308,9 @@ export function SettingsPage() {
     load()
     loadRegexRules()
     loadMemorySettings()
+    loadImageGenerationSettings()
+    loadDailyCostWarningSettings()
+    loadDailyCostSpent()
     getStorageItem('neotavern_secret_unlocked').then((value) => {
       if (!cancelled) setSecretUnlocked(value === '1')
     })
@@ -223,6 +327,7 @@ export function SettingsPage() {
     if (cfg) {
       selectConfig(id)
       fillForm(cfg)
+      setDeepSeekBalance(null)
     }
   }
 
@@ -296,7 +401,7 @@ export function SettingsPage() {
     else toast('error', result.message)
   }
 
-  const handleFetchModels = async () => {
+  const handleFetchBalance = async () => {
     const nextBaseUrl = baseUrl.trim() || DEEPSEEK_BASE_URL
     const nextApiKey = apiKey.trim()
     if (!nextApiKey) {
@@ -304,24 +409,16 @@ export function SettingsPage() {
       return
     }
     setBaseUrl(nextBaseUrl)
-    setFetchingModels(true)
+    setCheckingBalance(true)
     try {
-      const response = await fetch(`${nextBaseUrl.replace(/\/$/, '')}/models`, {
-        headers: { Authorization: `Bearer ${nextApiKey}` },
-      })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      const data = await response.json() as { data?: Array<{ id: string }> }
-      const models = (data.data || []).map((m) => m.id).sort((a, b) => a.localeCompare(b))
-      if (models.length === 0) { toast('error', 'No DeepSeek models returned from API'); return }
-      setAvailableModels(models)
-      if (!model || !models.includes(model)) {
-        setModel(models.includes(DEFAULT_DEEPSEEK_MODEL) ? DEFAULT_DEEPSEEK_MODEL : models[0])
-      }
-      toast('success', `Loaded ${models.length} DeepSeek models`)
+      const result = await fetchDeepSeekBalance({ baseUrl: nextBaseUrl, apiKey: nextApiKey })
+      setDeepSeekBalance(result)
+      const cny = result.balances.find((item) => item.currency === 'CNY')
+      toast('success', cny ? `DeepSeek balance: ${formatCnyCost(cny.totalBalance)}` : 'DeepSeek balance loaded')
     } catch (err) {
-      toast('error', `Failed: ${(err as Error).message}`)
+      toast('error', `Balance failed: ${(err as Error).message}`)
     } finally {
-      setFetchingModels(false)
+      setCheckingBalance(false)
     }
   }
 
@@ -340,21 +437,20 @@ export function SettingsPage() {
 
   const selectedRegexPreset = regexPresets.find((p) => p.id === selectedRegexPresetId) ?? null
   const selectedRules = selectedRegexPreset ? [...selectedRegexPreset.rules] : []
-  const fetchedModelOptions = availableModels.map((id) => ({
-    id,
-    label: id,
-    badge: 'Fetched',
-    description: 'Returned by DeepSeek /models.',
-  }))
-  const baseModelOptions = availableModels.length > 0 ? fetchedModelOptions : [...DEEPSEEK_MODEL_OPTIONS]
-  const modelSelectOptions = model && !baseModelOptions.some((option) => option.id === model)
-    ? [{ id: model, label: model, badge: 'Saved', description: 'Saved custom model id.' }, ...baseModelOptions]
-    : baseModelOptions
-  const selectedModelMeta = DEEPSEEK_MODEL_OPTIONS.find((option) => option.id === model)
   const isLegacyDeepSeekModel = DEEPSEEK_LEGACY_MODELS.includes(model)
+  const dailyWarningAtCny = dailyCostWarningLimitCny * DAILY_COST_WARNING_RATIO
+  const dailyCostRate = dailyCostWarningLimitCny > 0
+    ? Math.min(999, (dailyCostSpentCny / dailyCostWarningLimitCny) * 100)
+    : 0
   const compressorSelectValue = memoryCompressorConfigId && modelConfigs.some((c) => c.id === memoryCompressorConfigId)
     ? memoryCompressorConfigId
     : ''
+  const selectedProfile = selectedId === '__new__'
+    ? null
+    : modelConfigs.find((c) => c.id === selectedId) ?? null
+  const selectedProfileName = selectedProfile?.name || selectedProfile?.model || 'New profile'
+  const displayBaseUrl = baseUrl.trim() || DEEPSEEK_BASE_URL
+  const temperatureLocked = isDeepSeekProModel(model)
 
   const handleSelectRegexPreset = (id: string) => {
     setSelectedRegexPresetId(id)
@@ -479,31 +575,94 @@ export function SettingsPage() {
       </div>
 
       <div className="flex-1 p-6 overflow-auto">
+        {section === 'general' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><Bug className="h-5 w-5" />General</CardTitle>
+              <CardDescription>Debug and development settings.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Debug Mode</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Save every round&apos;s full prompt as a JSON file under the app data debug_prompts folder. Each file includes the built messages array, context blocks, and metadata.
+                  </p>
+                </div>
+                <SwitchButton
+                  checked={debugMode}
+                  onClick={() => setDebugMode(!debugMode)}
+                  label="Toggle debug prompt saving"
+                />
+              </div>
+              {debugMode && (
+                <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                  Each chat creates a subfolder named after the character and chat id. Prompt files include the usage round, trigger, attempt, and assistant id, for example <code className="rounded bg-muted px-1 py-0.5 text-[11px]">round_0003_continue_attempt_1_xxxxxxxx.json</code>.
+                </p>
+              )}
+              <div className="space-y-3 rounded-md border px-3 py-3">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-2 text-sm font-medium">
+                      <Bell className="h-4 w-4" />Daily Cost Warning
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Warn once when today&apos;s DeepSeek spend reaches 80% of the daily yuan limit.
+                    </p>
+                  </div>
+                  <SwitchButton
+                    checked={dailyCostWarningEnabled}
+                    onClick={() => setDailyCostWarningEnabled(!dailyCostWarningEnabled)}
+                    label="Toggle daily cost warning"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <Label htmlFor="daily-cost-limit">Daily limit (元/天)</Label>
+                    <Input
+                      id="daily-cost-limit"
+                      type="number"
+                      min="0.01"
+                      step="0.1"
+                      value={dailyCostWarningLimitCny}
+                      onChange={(e: React.ChangeEvent<HTMLInputElement>) => setDailyCostWarningLimitCny(parseFloat(e.target.value))}
+                    />
+                  </div>
+                  <div className="rounded-md border bg-accent/30 px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Today spent</p>
+                    <p className="mt-1 text-sm font-semibold tabular-nums" title={formatCnyExact(dailyCostSpentCny)}>{formatCnyCost(dailyCostSpentCny)}</p>
+                  </div>
+                  <div className="rounded-md border bg-accent/30 px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Warning at</p>
+                    <p className="mt-1 text-sm font-semibold tabular-nums" title={formatCnyExact(dailyWarningAtCny)}>{formatCnyCost(dailyWarningAtCny)}</p>
+                  </div>
+                </div>
+                <div className="h-2 overflow-hidden rounded-full bg-muted">
+                  <div
+                    className={`h-full rounded-full transition-all ${dailyCostRate >= 80 ? 'bg-destructive' : 'bg-primary'}`}
+                    style={{ width: `${Math.min(100, dailyCostRate)}%` }}
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {section === 'api' && (
           <div className="max-w-5xl space-y-4">
-            <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="border-b pb-5">
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary">
                   <span className="h-2 w-2 rounded-full bg-primary" />
-                  DeepSeek dedicated
+                  Official DeepSeek
                 </div>
                 <div>
                   <h1 className="flex items-center gap-2 text-2xl font-bold tracking-normal">
-                    <Plug className="h-6 w-6" />DeepSeek Connection
+                    <Plug className="h-6 w-6" />DeepSeek API
                   </h1>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Optimized for DeepSeek&apos;s OpenAI-compatible chat endpoint and current V4 models.
+                    Paste your API key, choose a model, then save. The official endpoint is already filled in.
                   </p>
-                </div>
-              </div>
-              <div className="grid gap-2 text-xs sm:grid-cols-2 lg:min-w-[340px]">
-                <div className="rounded-md border px-3 py-2">
-                  <p className="text-muted-foreground">Official base</p>
-                  <p className="mt-1 truncate font-mono text-foreground">{DEEPSEEK_BASE_URL}</p>
-                </div>
-                <div className="rounded-md border px-3 py-2">
-                  <p className="text-muted-foreground">Current default</p>
-                  <p className="mt-1 truncate font-mono text-foreground">{DEFAULT_DEEPSEEK_MODEL}</p>
                 </div>
               </div>
             </div>
@@ -513,182 +672,203 @@ export function SettingsPage() {
             <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" />Connection Profile</CardTitle>
-                  <CardDescription>Save one or more DeepSeek keys and switch the active profile used by chats.</CardDescription>
+                  <CardTitle className="flex items-center gap-2"><KeyRound className="h-5 w-5" />Quick Setup</CardTitle>
+                  <CardDescription>For the default setup, only the API key and model choice need attention.</CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <Label htmlFor="config-select">DeepSeek Profiles</Label>
-                    <div className="flex gap-2">
-                      <select id="config-select" value={selectedId} onChange={(e) => applyConfigSelection(e.target.value)}
-                        className="flex-1 h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        <option value="__new__">+ New DeepSeek Profile</option>
-                        {modelConfigs.map((c) => (
-                          <option key={c.id} value={c.id}>{c.name || c.model || c.id.slice(0, 8)}</option>
-                        ))}
-                      </select>
-                      {selectedId !== '__new__' && (
-                        <Button variant="ghost" size="icon" onClick={handleDelete} className="text-destructive hover:text-destructive shrink-0">
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                <CardContent className="space-y-5">
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+                    <div className="space-y-2">
+                      <Label htmlFor="api-key">API Key</Label>
+                      <Input
+                        id="api-key"
+                        type="password"
+                        value={apiKey}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)}
+                        placeholder="sk-..."
+                        className="font-mono"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="config-select">Profile</Label>
+                      <div className="flex gap-2">
+                        <select
+                          id="config-select"
+                          value={selectedId}
+                          onChange={(e) => applyConfigSelection(e.target.value)}
+                          className="min-w-0 flex-1 h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        >
+                          <option value="__new__">New profile</option>
+                          {modelConfigs.map((c) => (
+                            <option key={c.id} value={c.id}>{c.name || c.model || c.id.slice(0, 8)}</option>
+                          ))}
+                        </select>
+                        {selectedId !== '__new__' && (
+                          <Button variant="ghost" size="icon" onClick={handleDelete} className="text-destructive hover:text-destructive shrink-0">
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                      {selectedId !== '__new__' && activeConfigId === selectedId && (
+                        <p className="text-xs text-green-600 dark:text-green-400">Active in chats</p>
                       )}
                     </div>
-                    {selectedId !== '__new__' && activeConfigId === selectedId && (
-                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">Active — used in chats</p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Model</Label>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {DEEPSEEK_MODEL_OPTIONS.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => {
+                            setModel(option.id)
+                            if (!name.trim() || name.startsWith('DeepSeek')) setName(option.label)
+                          }}
+                          className={`rounded-md border p-3 text-left transition-colors ${model === option.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border hover:bg-accent/50'}`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-sm font-medium">{option.label}</span>
+                            <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${model === option.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{option.badge}</span>
+                          </div>
+                          <p className="mt-1 font-mono text-[11px] text-muted-foreground">{option.id}</p>
+                          <p className="mt-2 text-xs text-muted-foreground">{option.description}</p>
+                        </button>
+                      ))}
+                    </div>
+                    {isLegacyDeepSeekModel && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">Legacy alias. Switch to a V4 model before July 24, 2026.</p>
                     )}
                   </div>
 
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <div>
-                      <Label htmlFor="config-name">Profile Name</Label>
-                      <Input id="config-name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} placeholder={DEFAULT_DEEPSEEK_CONFIG_NAME} />
-                    </div>
-                    <div>
-                      <Label htmlFor="api-key">DeepSeek API Key</Label>
-                      <Input id="api-key" type="password" value={apiKey} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setApiKey(e.target.value)} placeholder="sk-..." />
-                    </div>
-                  </div>
+                  <details className="rounded-md border">
+                    <summary className="cursor-pointer px-3 py-3 text-sm font-medium">Advanced options</summary>
+                    <div className="space-y-4 border-t p-3">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div>
+                          <Label htmlFor="config-name">Profile name</Label>
+                          <Input id="config-name" value={name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)} placeholder={DEFAULT_DEEPSEEK_CONFIG_NAME} />
+                        </div>
+                        <div>
+                          <Label htmlFor="model">Exact model ID</Label>
+                          <Input id="model" value={model} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setModel(e.target.value)} placeholder={DEFAULT_DEEPSEEK_MODEL} className="font-mono text-xs" />
+                        </div>
+                      </div>
 
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <Label htmlFor="base-url">DeepSeek Base URL</Label>
-                      <Button variant="ghost" size="sm" onClick={() => setBaseUrl(DEEPSEEK_BASE_URL)}>Use Official</Button>
+                      <div>
+                        <Label htmlFor="base-url">Base URL</Label>
+                        <div className="relative">
+                          <Server className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                          <Input id="base-url" value={baseUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)} placeholder={DEEPSEEK_BASE_URL} className="pl-9 font-mono text-xs" />
+                        </div>
+                      </div>
+
+                      <div className={`grid gap-4 ${temperatureLocked ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
+                        {!temperatureLocked && (
+                          <div>
+                            <Label htmlFor="temperature">Temperature</Label>
+                            <Input id="temperature" value={temperature} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemperature(e.target.value)} placeholder="0.8" type="number" step="0.1" min="0" max="2" />
+                          </div>
+                        )}
+                        <div>
+                          <Label htmlFor="max-tokens">Max output</Label>
+                          <Input id="max-tokens" value={maxTokens} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxTokens(e.target.value)} placeholder="4096" type="number" min="1" max="384000" />
+                        </div>
+                        <div>
+                          <Label htmlFor="reasoning-effort">Reasoning</Label>
+                          <select
+                            id="reasoning-effort"
+                            value={reasoningEffort}
+                            onChange={(e) => setReasoningEffort(e.target.value)}
+                            className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                          >
+                            <option value="">Default</option>
+                            <option value="low">Low</option>
+                            <option value="medium">Medium</option>
+                            <option value="high">High</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">Live text</p>
+                          <p className="mt-1 text-xs text-muted-foreground">Show output while it is generating.</p>
+                        </div>
+                        <SwitchButton
+                          checked={streamingEnabled}
+                          onClick={() => setStreamingEnabled(!streamingEnabled)}
+                          label="Toggle live text display"
+                        />
+                      </div>
                     </div>
-                    <div className="relative">
-                      <Server className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                      <Input id="base-url" value={baseUrl} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBaseUrl(e.target.value)} placeholder={DEEPSEEK_BASE_URL} className="pl-9 font-mono text-xs" />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">Chat requests are sent to /chat/completions.</p>
+                  </details>
+
+                  <div className="flex flex-col gap-2 rounded-md border bg-accent/30 p-3 sm:flex-row">
+                    <Button onClick={handleSave} disabled={saving} className="flex-1">
+                      <Save className="h-4 w-4 mr-2" />{saving ? 'Saving...' : 'Save'}
+                    </Button>
+                    <Button variant="outline" onClick={handleTestConnection} disabled={testing} className="sm:min-w-[120px]">
+                      <Plug className="h-4 w-4 mr-2" />{testing ? 'Testing...' : 'Test'}
+                    </Button>
+                    <Button variant="outline" onClick={handleFetchBalance} disabled={checkingBalance} className="sm:min-w-[120px]">
+                      <Wallet className="h-4 w-4 mr-2" />{checkingBalance ? 'Checking...' : 'Balance'}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
 
               <Card>
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><Zap className="h-5 w-5" />DeepSeek Model</CardTitle>
-                  <CardDescription>Choose the hosted model for chat generation.</CardDescription>
+                  <CardTitle className="flex items-center gap-2"><Zap className="h-5 w-5" />Current Setup</CardTitle>
                 </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid gap-2">
-                    {DEEPSEEK_MODEL_OPTIONS.map((option) => (
-                      <button
-                        key={option.id}
-                        type="button"
-                        onClick={() => {
-                          setModel(option.id)
-                          if (!name.trim() || name.startsWith('DeepSeek')) setName(option.label)
-                        }}
-                        className={`rounded-md border p-3 text-left transition-colors ${model === option.id ? 'border-primary bg-primary/10 text-foreground' : 'border-border hover:bg-accent/50'}`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-medium">{option.label}</span>
-                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${model === option.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}>{option.badge}</span>
-                        </div>
-                        <p className="mt-1 font-mono text-[11px] text-muted-foreground">{option.id}</p>
-                        <p className="mt-2 text-xs text-muted-foreground">{option.description}</p>
-                      </button>
-                    ))}
+                <CardContent className="space-y-3 text-sm">
+                  <div className="rounded-md border px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Profile</p>
+                    <p className="mt-1 truncate font-medium">{selectedId === '__new__' ? 'New profile' : selectedProfileName}</p>
                   </div>
-
-                  <div>
-                    <Label htmlFor="model">Model ID</Label>
-                    <div className="flex gap-2">
-                      <select id="model" value={model} onChange={(e) => setModel(e.target.value)}
-                        className="min-w-0 flex-1 h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                      >
-                        {modelSelectOptions.map((option) => (
-                          <option key={option.id} value={option.id}>{option.id}</option>
+                  <div className="rounded-md border px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Model</p>
+                    <p className="mt-1 truncate font-mono text-xs">{model || DEFAULT_DEEPSEEK_MODEL}</p>
+                  </div>
+                  <div className="rounded-md border px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Endpoint</p>
+                    <p className="mt-1 truncate font-mono text-xs">{displayBaseUrl}</p>
+                  </div>
+                  <div className="rounded-md border px-3 py-2">
+                    <p className="text-xs text-muted-foreground">Balance</p>
+                    {deepSeekBalance ? (
+                      <div className="mt-1 space-y-1">
+                        {deepSeekBalance.balances.map((balance) => (
+                          <p key={balance.currency} className="tabular-nums">
+                            <span className="font-medium">{balance.currency}</span>{' '}
+                            {balance.currency === 'CNY' ? formatCnyCost(balance.totalBalance) : balance.totalBalance.toFixed(4)}
+                          </p>
                         ))}
-                      </select>
-                      <Button variant="outline" size="sm" onClick={handleFetchModels} disabled={fetchingModels} className="shrink-0">
-                        <Download className="h-3.5 w-3.5 mr-1" />{fetchingModels ? 'Loading...' : 'Fetch'}
-                      </Button>
-                    </div>
-                    {selectedModelMeta && (
-                      <p className="text-xs text-muted-foreground mt-1">{selectedModelMeta.description}</p>
-                    )}
-                    {availableModels.length > 0 && (
-                      <p className="text-xs text-muted-foreground mt-1">{availableModels.length} DeepSeek models available</p>
-                    )}
-                    {isLegacyDeepSeekModel && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Legacy alias — switch to deepseek-v4-flash or deepseek-v4-pro before July 24, 2026.</p>
+                      </div>
+                    ) : (
+                      <p className="mt-1 text-muted-foreground">Not checked</p>
                     )}
                   </div>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div className="rounded-md border px-3 py-2">
+                      <p className="text-muted-foreground">Context</p>
+                      <p className="mt-1 font-semibold">1M</p>
+                    </div>
+                    <div className="rounded-md border px-3 py-2">
+                      <p className="text-muted-foreground">Output</p>
+                      <p className="mt-1 font-semibold">384K</p>
+                    </div>
+                  </div>
+                  {deepSeekBalance && !deepSeekBalance.isAvailable && (
+                    <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive">
+                      Balance is unavailable for API calls.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             </div>
 
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2"><SlidersHorizontal className="h-5 w-5" />Generation Defaults</CardTitle>
-                <CardDescription>DeepSeek V4 supports long context and optional reasoning effort.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-4 md:grid-cols-3">
-                  <div>
-                    <Label htmlFor="temperature">Temperature</Label>
-                    <Input id="temperature" value={temperature} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setTemperature(e.target.value)} placeholder="0.8" type="number" step="0.1" min="0" max="2" />
-                  </div>
-                  <div>
-                    <Label htmlFor="max-tokens">Max Output Tokens</Label>
-                    <Input id="max-tokens" value={maxTokens} onChange={(e: React.ChangeEvent<HTMLInputElement>) => setMaxTokens(e.target.value)} placeholder="4096" type="number" min="1" max="384000" />
-                  </div>
-                  <div>
-                    <Label htmlFor="reasoning-effort">Reasoning Effort</Label>
-                    <select
-                      id="reasoning-effort"
-                      value={reasoningEffort}
-                      onChange={(e) => setReasoningEffort(e.target.value)}
-                      className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="">Default</option>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="grid gap-2 text-xs md:grid-cols-3">
-                  <div className="rounded-md border px-3 py-2">
-                    <p className="text-muted-foreground">Context length</p>
-                    <p className="mt-1 text-sm font-semibold">1M tokens</p>
-                  </div>
-                  <div className="rounded-md border px-3 py-2">
-                    <p className="text-muted-foreground">Max output</p>
-                    <p className="mt-1 text-sm font-semibold">384K tokens</p>
-                  </div>
-                  <div className="rounded-md border px-3 py-2">
-                    <p className="text-muted-foreground">Format</p>
-                    <p className="mt-1 text-sm font-semibold">OpenAI Chat</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium">Live Text Display</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Keep DeepSeek streaming internally; show text chunk by chunk, or reveal it after the draft is finished.
-                    </p>
-                  </div>
-                  <SwitchButton
-                    checked={streamingEnabled}
-                    onClick={() => setStreamingEnabled(!streamingEnabled)}
-                    label="Toggle live text display"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button onClick={handleSave} disabled={saving} className="flex-1">
-                    <Save className="h-4 w-4 mr-2" />{saving ? 'Saving...' : 'Save DeepSeek Profile'}
-                  </Button>
-                  <Button variant="outline" onClick={handleTestConnection} disabled={testing} className="sm:min-w-[160px]">
-                    <Plug className="h-4 w-4 mr-2" />{testing ? 'Testing...' : 'Test Connection'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
           </div>
         )}
 
@@ -838,6 +1018,351 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {section === 'image' && (
+          <div className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><ImageIcon className="h-5 w-5" />Image Generation</CardTitle>
+                    <CardDescription>Generate roleplay scene images with local ComfyUI. Planning is handled by a secondary API profile.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium">Enable Image Generation</p>
+                        <p className="mt-1 text-xs text-muted-foreground">Choose manual buttons or automatic generation after every AI reply.</p>
+                      </div>
+                      <SwitchButton
+                        checked={imageGeneration.enabled}
+                        onClick={() => updateImageGenerationSettings({ enabled: !imageGeneration.enabled })}
+                        label="Toggle image generation"
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div>
+                        <Label>Trigger Mode</Label>
+                        <div className="mt-2 grid gap-2 md:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => updateImageGenerationSettings({ mode: 'manual' })}
+                            className={`rounded-md border p-3 text-left transition-colors ${imageGeneration.mode === 'manual' ? 'border-primary bg-primary/10' : 'hover:bg-accent/50'}`}
+                          >
+                            <p className="text-sm font-medium">Manual Trigger</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Show an image button on each AI reply. Click only when you want pictures.</p>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateImageGenerationSettings({ mode: 'auto' })}
+                            className={`rounded-md border p-3 text-left transition-colors ${imageGeneration.mode === 'auto' ? 'border-primary bg-primary/10' : 'hover:bg-accent/50'}`}
+                          >
+                            <p className="text-sm font-medium">Auto Trigger</p>
+                            <p className="mt-1 text-xs text-muted-foreground">After every AI reply, ask the secondary API to plan images and send them to ComfyUI.</p>
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <Label htmlFor="planner-config">Secondary API for Image Planning</Label>
+                        <select
+                          id="planner-config"
+                          value={imageGeneration.plannerConfigId ?? ''}
+                          onChange={(e) => updateImageGenerationSettings({ plannerConfigId: e.target.value || null })}
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                          <option value="">Select a profile before generating images</option>
+                          {modelConfigs.map((cfg) => (
+                            <option key={cfg.id} value={cfg.id}>{cfg.name || cfg.model} · {cfg.model}</option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-xs text-muted-foreground">This profile writes image prompts. ComfyUI handles the final image generation.</p>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">World Book Reference</p>
+                          <p className="mt-1 text-xs text-muted-foreground">When reply text matches world book keywords, send those entries to the secondary API for visual details.</p>
+                        </div>
+                        <SwitchButton
+                          checked={imageGeneration.worldbookReferenceEnabled}
+                          onClick={() => updateImageGenerationSettings({ worldbookReferenceEnabled: !imageGeneration.worldbookReferenceEnabled })}
+                          label="Toggle world book references for image planning"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Generation Parameters</CardTitle>
+                    <CardDescription>These values fill common ComfyUI KSampler and latent size inputs, and can also be used as workflow placeholders.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label>Parameter Preset</Label>
+                      <div className="mt-2 grid gap-2 md:grid-cols-3">
+                        {IMAGE_GENERATION_PARAMETER_PRESETS.map((preset) => (
+                          <button
+                            key={preset.id}
+                            type="button"
+                            onClick={() => applyImageParameterPreset(preset.id)}
+                            className={`rounded-md border p-3 text-left transition-colors ${imageGeneration.generationPreset === preset.id ? 'border-primary bg-primary/10' : 'hover:bg-accent/50'}`}
+                          >
+                            <p className="text-sm font-medium">{preset.label}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">{preset.description}</p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-4">
+                      <div className="md:col-span-2">
+                        <Label htmlFor="image-resolution">Resolution</Label>
+                        <select
+                          id="image-resolution"
+                          value={resolutionSelectValue}
+                          onChange={(e) => handleImageResolutionChange(e.target.value)}
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                          {resolutionSelectValue === 'custom' && (
+                            <option value="custom">Custom {imageGeneration.width}x{imageGeneration.height}</option>
+                          )}
+                          {IMAGE_RESOLUTION_OPTIONS.map((option) => (
+                            <option key={`${option.width}x${option.height}`} value={`${option.width}x${option.height}`}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="image-steps">Steps</Label>
+                        <Input
+                          id="image-steps"
+                          type="number"
+                          min="1"
+                          max="150"
+                          value={imageGeneration.steps}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ steps: Number(e.target.value), generationPreset: 'custom' })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="image-cfg">CFG</Label>
+                        <Input
+                          id="image-cfg"
+                          type="number"
+                          min="0"
+                          max="30"
+                          step="0.1"
+                          value={imageGeneration.cfgScale}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ cfgScale: Number(e.target.value), generationPreset: 'custom' })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-4">
+                      <div>
+                        <Label htmlFor="image-sampler">Sampler</Label>
+                        <select
+                          id="image-sampler"
+                          value={imageGeneration.samplerName}
+                          onChange={(e) => updateImageGenerationSettings({ samplerName: e.target.value, generationPreset: 'custom' })}
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                          {IMAGE_SAMPLER_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="image-scheduler">Scheduler</Label>
+                        <select
+                          id="image-scheduler"
+                          value={imageGeneration.scheduler}
+                          onChange={(e) => updateImageGenerationSettings({ scheduler: e.target.value, generationPreset: 'custom' })}
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                          {IMAGE_SCHEDULER_OPTIONS.map((option) => (
+                            <option key={option} value={option}>{option}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="image-denoise">Denoise</Label>
+                        <Input
+                          id="image-denoise"
+                          type="number"
+                          min="0"
+                          max="1"
+                          step="0.01"
+                          value={imageGeneration.denoise}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ denoise: Number(e.target.value), generationPreset: 'custom' })}
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="image-max">Images / Trigger</Label>
+                        <Input
+                          id="image-max"
+                          type="number"
+                          min="0"
+                          max="6"
+                          value={imageGeneration.maxImages}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ maxImages: Number(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid gap-4 md:grid-cols-[180px_minmax(0,1fr)]">
+                      <div>
+                        <Label htmlFor="image-seed-mode">Seed Mode</Label>
+                        <select
+                          id="image-seed-mode"
+                          value={imageGeneration.seedMode}
+                          onChange={(e) => updateImageGenerationSettings({ seedMode: e.target.value === 'fixed' ? 'fixed' : 'random' })}
+                          className="h-10 w-full rounded-md border bg-background px-3 text-sm"
+                        >
+                          <option value="random">Random</option>
+                          <option value="fixed">Fixed</option>
+                        </select>
+                      </div>
+                      <div>
+                        <Label htmlFor="image-fixed-seed">Fixed Seed</Label>
+                        <Input
+                          id="image-fixed-seed"
+                          type="number"
+                          min="0"
+                          max="4294967295"
+                          value={imageGeneration.fixedSeed}
+                          disabled={imageGeneration.seedMode !== 'fixed'}
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ fixedSeed: Number(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Prompt Rules</CardTitle>
+                    <CardDescription>Instructions sent to the secondary image-planning API.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label htmlFor="image-instruction">Planner Instruction</Label>
+                      <Textarea
+                        id="image-instruction"
+                        value={imageGeneration.promptInstruction}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateImageGenerationSettings({ promptInstruction: e.target.value })}
+                        rows={6}
+                        className="font-mono text-xs"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">This is sent only to the secondary image planner in manual and auto modes.</p>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="negative-prompt">Negative Prompt</Label>
+                      <Textarea
+                        id="negative-prompt"
+                        value={imageGeneration.negativePrompt}
+                        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateImageGenerationSettings({ negativePrompt: e.target.value })}
+                        rows={3}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="space-y-4">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>ComfyUI Connection</CardTitle>
+                    <CardDescription>Local server and workflow used for every image.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <div>
+                      <Label htmlFor="comfy-url">ComfyUI URL</Label>
+                      <Input
+                        id="comfy-url"
+                        value={imageGeneration.comfyUrl}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateImageGenerationSettings({ comfyUrl: e.target.value })}
+                        placeholder="http://127.0.0.1:8188"
+                        className="font-mono text-xs"
+                      />
+                      <p className="mt-1 text-xs text-muted-foreground">Uses /prompt, /history/&lt;prompt_id&gt;, and /view.</p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={handleTestComfyConnection}
+                        disabled={testingComfyConnection || testingComfyImage}
+                      >
+                        <Plug className="mr-2 h-4 w-4" />{testingComfyConnection ? 'Testing...' : 'Test Connection'}
+                      </Button>
+                      <Button
+                        onClick={handleTestComfyImage}
+                        disabled={testingComfyConnection || testingComfyImage || !imageGeneration.comfyWorkflowJson.trim()}
+                      >
+                        <ImageIcon className="mr-2 h-4 w-4" />{testingComfyImage ? 'Generating...' : 'Test Image'}
+                      </Button>
+                    </div>
+                    {comfyTestMessage && (
+                      <div className="rounded-md border bg-background/70 px-3 py-2 text-xs text-muted-foreground">
+                        {comfyTestMessage}
+                      </div>
+                    )}
+                    {comfyTestImage && (
+                      <img
+                        src={comfyTestImage}
+                        alt="ComfyUI test output"
+                        className="max-h-72 w-full rounded-md border object-contain bg-background"
+                      />
+                    )}
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <CardTitle>Workflow</CardTitle>
+                        <CardDescription>Paste or import a ComfyUI API workflow JSON.</CardDescription>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => workflowFileInputRef.current?.click()}
+                        className="shrink-0"
+                      >
+                        <Upload className="mr-1 h-3.5 w-3.5" />JSON
+                      </Button>
+                    </div>
+                    <input
+                      ref={workflowFileInputRef}
+                      type="file"
+                      accept=".json,application/json"
+                      onChange={handleWorkflowFileImport}
+                      className="hidden"
+                    />
+                  </CardHeader>
+                  <CardContent>
+                    <Textarea
+                      value={imageGeneration.comfyWorkflowJson}
+                      onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateImageGenerationSettings({ comfyWorkflowJson: e.target.value })}
+                      rows={18}
+                      placeholder='{"1":{"class_type":"CLIPTextEncode","inputs":{"text":"{{prompt}}"}}}'
+                      className="font-mono text-xs"
+                    />
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Placeholders: {'{{prompt}}'}, {'{{negativePrompt}}'}, {'{{seed}}'}, {'{{width}}'}, {'{{height}}'}, {'{{steps}}'}, {'{{cfg}}'}, {'{{samplerName}}'}, {'{{scheduler}}'}, {'{{denoise}}'}.
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          </div>
         )}
 
         {section === 'regex' && (

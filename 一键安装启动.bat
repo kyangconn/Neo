@@ -1,5 +1,5 @@
 @echo off
-title NeoTavern Setup
+title Whale Play Setup
 pushd "%~dp0"
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 pause

@@ -1,6 +1,15 @@
 import { create } from 'zustand'
 import { settingsRepository } from '@/db/repositories'
 import { DEFAULT_LIGHTWEIGHT_MEMORY_ENABLED, DEFAULT_MEMORY_SUMMARY_MAX_CHARS, DEFAULT_PROMPT_RECENT_TURNS } from '@/features/chat/memory'
+import { DEFAULT_IMAGE_GENERATION_SETTINGS, normalizeImageSettings } from '@/features/image-generation/image-generation'
+import type { ImageGenerationSettings } from '@/features/image-generation/image-generation'
+import {
+  DEFAULT_DAILY_COST_WARNING_LIMIT_CNY,
+  loadDailyCostWarningSettings as loadDailyCostWarningSettingsFromStorage,
+  loadTodayCostCny,
+  saveDailyCostWarningEnabled,
+  saveDailyCostWarningLimitCny,
+} from '@/features/billing/daily-cost'
 import { generateId } from '@neo-tavern/shared'
 import type { ModelConfig, CreateModelConfigInput, UpdateModelConfigInput, RegexPreset, RegexRule, CreateRegexPresetInput, UpdateRegexPresetInput, CreateRegexRuleInput, UpdateRegexRuleInput } from '@neo-tavern/shared'
 
@@ -24,8 +33,13 @@ interface SettingsState {
   promptRecentTurns: number
   memorySummaryMaxChars: number
   memoryCompressorConfigId: string | null
+  imageGeneration: ImageGenerationSettings
   personaName: string
   personaDesc: string
+  debugMode: boolean
+  dailyCostWarningEnabled: boolean
+  dailyCostWarningLimitCny: number
+  dailyCostSpentCny: number
 
   loadAllConfigs: () => Promise<void>
   selectConfig: (id: string) => Promise<void>
@@ -50,8 +64,16 @@ interface SettingsState {
   setPromptRecentTurns: (turns: number) => void
   setMemorySummaryMaxChars: (chars: number) => void
   setMemoryCompressorConfigId: (id: string | null) => void
+  loadImageGenerationSettings: () => Promise<void>
+  updateImageGenerationSettings: (patch: Partial<ImageGenerationSettings>) => void
   loadPersona: () => Promise<void>
   savePersona: (name: string, desc: string) => void
+  loadDebugMode: () => Promise<void>
+  setDebugMode: (enabled: boolean) => void
+  loadDailyCostWarningSettings: () => Promise<void>
+  loadDailyCostSpent: () => Promise<void>
+  setDailyCostWarningEnabled: (enabled: boolean) => void
+  setDailyCostWarningLimitCny: (limitCny: number) => void
   clearError: () => void
 }
 
@@ -70,8 +92,13 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   promptRecentTurns: DEFAULT_PROMPT_RECENT_TURNS,
   memorySummaryMaxChars: DEFAULT_MEMORY_SUMMARY_MAX_CHARS,
   memoryCompressorConfigId: null,
+  imageGeneration: DEFAULT_IMAGE_GENERATION_SETTINGS,
   personaName: 'User',
   personaDesc: '',
+  debugMode: false,
+  dailyCostWarningEnabled: false,
+  dailyCostWarningLimitCny: DEFAULT_DAILY_COST_WARNING_LIMIT_CNY,
+  dailyCostSpentCny: 0,
 
   loadAllConfigs: async () => {
     set({ loading: true, error: null })
@@ -163,6 +190,11 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         await settingsRepository.set('memoryCompressorConfigId', '')
         set({ memoryCompressorConfigId: null })
       }
+      if (get().imageGeneration.plannerConfigId === id) {
+        const next = { ...get().imageGeneration, plannerConfigId: null }
+        await settingsRepository.set('imageGeneration', JSON.stringify(next))
+        set({ imageGeneration: next })
+      }
     } catch (err) {
       set({ error: (err as Error).message, loading: false })
       throw err
@@ -197,6 +229,41 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       set({ testing: false })
       return { ok: false, message: `Connection failed: ${msg}` }
     }
+  },
+
+  loadDebugMode: async () => {
+    const raw = await settingsRepository.get('debugMode')
+    if (raw !== null && raw !== undefined) set({ debugMode: raw === '1' })
+  },
+
+  setDebugMode: (enabled: boolean) => {
+    void settingsRepository.set('debugMode', enabled ? '1' : '0')
+    set({ debugMode: enabled })
+  },
+
+  loadDailyCostWarningSettings: async () => {
+    const settings = await loadDailyCostWarningSettingsFromStorage()
+    set({
+      dailyCostWarningEnabled: settings.enabled,
+      dailyCostWarningLimitCny: settings.limitCny,
+    })
+  },
+
+  loadDailyCostSpent: async () => {
+    set({ dailyCostSpentCny: await loadTodayCostCny() })
+  },
+
+  setDailyCostWarningEnabled: (enabled: boolean) => {
+    void saveDailyCostWarningEnabled(enabled)
+    set({ dailyCostWarningEnabled: enabled })
+  },
+
+  setDailyCostWarningLimitCny: (limitCny: number) => {
+    const next = Number.isFinite(limitCny)
+      ? Math.max(0.01, Math.round(limitCny * 100) / 100)
+      : DEFAULT_DAILY_COST_WARNING_LIMIT_CNY
+    void saveDailyCostWarningLimitCny(next)
+    set({ dailyCostWarningLimitCny: next })
   },
 
   clearError: () => set({ error: null }),
@@ -379,6 +446,25 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const next = id?.trim() || null
     void settingsRepository.set('memoryCompressorConfigId', next ?? '')
     set({ memoryCompressorConfigId: next })
+  },
+
+  loadImageGenerationSettings: async () => {
+    const raw = await settingsRepository.get('imageGeneration')
+    if (!raw) {
+      set({ imageGeneration: DEFAULT_IMAGE_GENERATION_SETTINGS })
+      return
+    }
+    try {
+      set({ imageGeneration: normalizeImageSettings(JSON.parse(raw)) })
+    } catch {
+      set({ imageGeneration: DEFAULT_IMAGE_GENERATION_SETTINGS })
+    }
+  },
+
+  updateImageGenerationSettings: (patch: Partial<ImageGenerationSettings>) => {
+    const next = normalizeImageSettings({ ...get().imageGeneration, ...patch })
+    void settingsRepository.set('imageGeneration', JSON.stringify(next))
+    set({ imageGeneration: next })
   },
 
   loadPersona: async () => {

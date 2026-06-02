@@ -333,7 +333,7 @@ export function WorldbookPage() {
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
-      <aside className="flex w-64 shrink-0 flex-col overflow-hidden border-r bg-card/30">
+      <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-r bg-card/30">
         <div className="shrink-0 space-y-4 border-b p-4">
           <div className="flex items-center justify-between">
             <button
@@ -354,7 +354,7 @@ export function WorldbookPage() {
         </div>
 
         <ScrollArea type="always" className="min-h-0 flex-1">
-          <div className="space-y-2 p-3 pr-5">
+          <div className="space-y-2 p-3 pr-8">
             {loading && <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Loading...</p>}
             {!loading && worldbooks.length === 0 && (
               <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No world books</p>
@@ -375,7 +375,7 @@ export function WorldbookPage() {
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <span className="min-w-0 truncate text-sm font-semibold">{worldbook.name}</span>
+                    <span className="min-w-0 break-words text-sm font-semibold leading-5">{worldbook.name}</span>
                     {activeWorldbookId === worldbook.id && <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />}
                   </div>
                   <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
@@ -527,8 +527,8 @@ export function WorldbookPage() {
                                   </span>
                                 ) : (
                                   <>
-                                    {keywords.slice(0, 8).map((keyword) => (
-                                      <span key={keyword} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                                    {keywords.slice(0, 8).map((keyword, keywordIndex) => (
+                                      <span key={`${keyword}-${keywordIndex}`} className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
                                         {keyword}
                                       </span>
                                     ))}

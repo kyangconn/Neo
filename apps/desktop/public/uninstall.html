@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Neo Tavern 卸载</title>
+<title>Whale Play 卸载</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -68,7 +68,7 @@ function renderStats() {
   document.getElementById('count').textContent = countKeys()
   document.getElementById('rows').innerHTML = rows.map(r =>
     `<div class="row"><span class="key">${r.key}</span><span class="val">${(r.len/1024).toFixed(1)} KB</span></div>`
-  ).join('') || '<div class="row"><span style="color:#7d7f8e">没有找到 Neo Tavern 数据</span></div>'
+  ).join('') || '<div class="row"><span style="color:#7d7f8e">没有找到 Whale Play 数据</span></div>'
 }
 
 function clearAll() {
@@ -78,7 +78,7 @@ function clearAll() {
     if (k.startsWith(NEO_PREFIX)) localStorage.removeItem(k)
   }
   document.getElementById('msg').className = 'msg msg-success'
-  document.getElementById('msg').textContent = `已清除 ${n} 条数据，Neo Tavern 已卸载完毕。`
+  document.getElementById('msg').textContent = `已清除 ${n} 条数据，Whale Play 已卸载完毕。`
   document.getElementById('count').textContent = '0'
   document.getElementById('rows').innerHTML = '<div class="row"><span style="color:#68d391">所有数据已清除</span></div>'
   document.getElementById('btn-clear').disabled = true
@@ -92,9 +92,9 @@ function back() {
 </script>
 
 <div class="card">
-  <h1>Neo Tavern 卸载程序</h1>
+  <h1>Whale Play 卸载程序</h1>
   <p class="desc">
-    这会删除 Neo Tavern 保存在你浏览器中的所有数据，
+    这会删除 Whale Play 保存在你浏览器中的所有数据，
     包括角色、聊天记录、世界书、预设和各项设置。
     此操作<b>不可撤销</b>。
   </p>

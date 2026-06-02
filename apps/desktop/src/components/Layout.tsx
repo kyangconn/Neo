@@ -1,10 +1,11 @@
 import { NavLink, Outlet } from 'react-router-dom'
-import { MessageSquare, User, Settings, Home, LayoutTemplate, BookOpen, Sparkles } from 'lucide-react'
+import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles, PenTool } from 'lucide-react'
 import { cn } from '@neo-tavern/ui'
 
 const navItems = [
   { to: '/', icon: Home, label: 'Home' },
   { to: '/character', icon: User, label: 'Characters' },
+  { to: '/character-builder', icon: PenTool, label: 'Builder' },
   { to: '/preset', icon: LayoutTemplate, label: 'Presets' },
   { to: '/worldbook', icon: BookOpen, label: 'World Book' },
   { to: '/persona', icon: Sparkles, label: 'Persona' },
@@ -32,7 +33,7 @@ export function Layout() {
         ))}
         <div className="flex-1" />
         <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap mb-4">
-          NEO
+          WHALE
         </div>
       </aside>
       <main className="flex-1 flex flex-col overflow-hidden">

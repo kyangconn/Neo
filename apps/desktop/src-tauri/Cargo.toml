@@ -1,8 +1,8 @@
 [package]
 name = "neo-tavern-desktop"
 version = "0.1.0"
-description = "NeoTavern Demo"
-authors = ["NeoTavern"]
+description = "Whale Play"
+authors = ["Whale Play"]
 edition = "2021"
 
 [lib]
@@ -15,8 +15,13 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+rfd = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+base64 = "0.22"
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [features]
 default = ["custom-protocol"]

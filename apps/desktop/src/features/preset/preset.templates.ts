@@ -8,6 +8,27 @@ export interface PresetItemTemplate {
 
 export const EXTRA_PRESET_ITEM_TEMPLATES: PresetItemTemplate[] = [
   {
+    id: 'runtime-chat-history',
+    name: 'chat history',
+    description: 'Runtime slot: inserts the current trimmed chat history as one Extra Preset Entry.',
+    role: 'system',
+    content: '<extra_preset_slot name="chat history" />',
+  },
+  {
+    id: 'runtime-static-worldbook',
+    name: '前置世界书',
+    description: 'Runtime slot: inserts always/static worldbook entries as one Extra Preset Entry.',
+    role: 'system',
+    content: '<extra_preset_slot name="前置世界书" />',
+  },
+  {
+    id: 'runtime-recalled-worldbook',
+    name: '召回世界书',
+    description: 'Runtime slot: inserts keyword-recalled worldbook entries as one Extra Preset Entry.',
+    role: 'system',
+    content: '<extra_preset_slot name="召回世界书" />',
+  },
+  {
     id: 'critical-format-rules',
     name: '关键格式规则',
     description: 'Enforces dialogue line format and keeps narration separate from spoken lines.',

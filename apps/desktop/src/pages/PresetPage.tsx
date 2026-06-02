@@ -6,6 +6,7 @@ import { usePresetStore } from '@/features/preset/preset.store'
 import { EXTRA_PRESET_ITEM_TEMPLATES } from '@/features/preset/preset.templates'
 import type { Preset, PresetItem } from '@neo-tavern/shared'
 import { getStorageItem } from '@/db/storage'
+import { invoke } from '@tauri-apps/api/core'
 
 function toast(type: 'success' | 'error' | 'info', message: string) {
   const fn = (window as any).__toast
@@ -18,6 +19,21 @@ function sortPresetItems(items: PresetItem[]) {
     || a.createdAt.localeCompare(b.createdAt)
     || a.id.localeCompare(b.id)
   )
+}
+
+function presetExportFilename(name: string) {
+  const safeName = name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_').replace(/^_+|_+$/g, '')
+  return `${safeName || 'preset'}.json`
+}
+
+function downloadPresetJson(json: string, filename: string) {
+  const blob = new Blob([json], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 export function PresetPage() {
@@ -286,14 +302,21 @@ export function PresetPage() {
     if (!selected) return
     try {
       const json = await store.exportPreset(selected.id)
-      const blob = new Blob([json], { type: 'application/json' })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `${selected.name.replace(/[^a-zA-Z0-9\u4e00-\u9fff]/g, '_')}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast('success', 'Exported')
+      const filename = presetExportFilename(selected.name)
+      try {
+        const savedPath = await invoke<string | null>('save_text_file', {
+          defaultFilename: filename,
+          content: json,
+        })
+        if (!savedPath) {
+          toast('info', 'Export cancelled')
+          return
+        }
+        toast('success', `Exported to ${savedPath}`)
+      } catch {
+        downloadPresetJson(json, filename)
+        toast('success', 'Exported')
+      }
     } catch { toast('error', store.error || 'Failed') }
   }
 
@@ -643,7 +666,7 @@ export function PresetPage() {
           <DialogHeader>
             <DialogTitle>Import Preset</DialogTitle>
             <DialogDescription>
-              Select a preset JSON file. Supports NeoTavern and SillyTavern preset formats.
+              Select a preset JSON file. Supports Whale Play and SillyTavern preset formats.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">

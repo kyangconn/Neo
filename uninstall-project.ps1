@@ -8,10 +8,11 @@ $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRootFull = [System.IO.Path]::GetFullPath($ProjectRoot).TrimEnd('\')
 $AppIdentifier = 'com.neotavern.demo'
-$ProductName = 'NeoTavern Demo'
+$ProductName = 'Whale Play'
+$LegacyProductName = 'NeoTavern Demo'
 
 function Write-Info($Message) {
-  Write-Host "[Neo cleanup] $Message"
+  Write-Host "[Whale Play cleanup] $Message"
 }
 
 function Get-FullPathOrNull($Path) {
@@ -147,10 +148,12 @@ $appDataCandidates = @()
 if ($env:APPDATA) {
   $appDataCandidates += Join-Path $env:APPDATA $AppIdentifier
   $appDataCandidates += Join-Path $env:APPDATA $ProductName
+  $appDataCandidates += Join-Path $env:APPDATA $LegacyProductName
 }
 if ($env:LOCALAPPDATA) {
   $appDataCandidates += Join-Path $env:LOCALAPPDATA $AppIdentifier
   $appDataCandidates += Join-Path $env:LOCALAPPDATA $ProductName
+  $appDataCandidates += Join-Path $env:LOCALAPPDATA $LegacyProductName
 }
 
 foreach ($path in $appDataCandidates | Select-Object -Unique) {
@@ -158,7 +161,7 @@ foreach ($path in $appDataCandidates | Select-Object -Unique) {
 }
 
 Write-Host ''
-Write-Host 'NeoTavern project cleanup'
+Write-Host 'Whale Play project cleanup'
 Write-Host 'This removes local app data and generated environment files.'
 Write-Host 'It does not remove source files or Git history.'
 Write-Host ''

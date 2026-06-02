@@ -29,8 +29,10 @@ async function saveAll(wbs: Worldbook[]) {
 }
 
 export const worldbookRepository = {
-  async list(): Promise<Worldbook[]> {
-    return (await loadAll()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  async list(includeHidden = false): Promise<Worldbook[]> {
+    return (await loadAll())
+      .filter((w) => includeHidden || !w.hidden)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   },
 
   async getById(id: string): Promise<Worldbook | null> {
@@ -40,8 +42,9 @@ export const worldbookRepository = {
   async create(input: CreateWorldbookInput): Promise<Worldbook> {
     const now = new Date().toISOString()
     const wb: Worldbook = {
-      id: generateId(),
+      id: input.id ?? generateId(),
       name: input.name,
+      hidden: input.hidden,
       description: input.description,
       entries: [],
       createdAt: now,
@@ -59,6 +62,7 @@ export const worldbookRepository = {
     if (idx === -1) throw new Error(`Worldbook not found: ${id}`)
     const existing = all[idx]
     if (input.name !== undefined) existing.name = input.name
+    if (input.hidden !== undefined) existing.hidden = input.hidden
     if (input.description !== undefined) existing.description = input.description
     existing.updatedAt = new Date().toISOString()
     all[idx] = existing
@@ -160,7 +164,12 @@ export const worldbookRepository = {
     else await removeStorageItem(ACTIVE_KEY)
   },
 
-  async save(wbs: Worldbook[]): Promise<void> {
-    await saveAll(wbs)
+  async save(wbs: Worldbook[], includeHidden = false): Promise<void> {
+    if (includeHidden) {
+      await saveAll(wbs)
+      return
+    }
+    const hidden = (await loadAll()).filter((w) => w.hidden && !wbs.some((visible) => visible.id === w.id))
+    await saveAll([...wbs, ...hidden])
   },
 }

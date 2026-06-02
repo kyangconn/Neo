@@ -15,8 +15,10 @@ async function saveAll(chars: Character[]) {
 }
 
 export const characterRepository = {
-  async list(): Promise<Character[]> {
-    return (await loadAll()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  async list(includeHidden = false): Promise<Character[]> {
+    return (await loadAll())
+      .filter((c) => includeHidden || !c.hidden)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   },
 
   async getById(id: string): Promise<Character | null> {
@@ -26,8 +28,9 @@ export const characterRepository = {
   async create(input: CreateCharacterInput): Promise<Character> {
     const now = new Date().toISOString()
     const char: Character = {
-      id: generateId(),
+      id: input.id ?? generateId(),
       name: input.name,
+      hidden: input.hidden,
       avatar: input.avatar,
       description: input.description,
       personality: input.personality,
@@ -52,6 +55,7 @@ export const characterRepository = {
     if (idx === -1) throw new Error(`Character not found: ${id}`)
     const existing = all[idx]
     if (input.name !== undefined) existing.name = input.name
+    if (input.hidden !== undefined) existing.hidden = input.hidden
     if (input.avatar !== undefined) existing.avatar = input.avatar
     if (input.description !== undefined) existing.description = input.description
     if (input.personality !== undefined) existing.personality = input.personality

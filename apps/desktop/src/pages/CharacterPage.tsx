@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, Edit, ArrowLeft, Upload, MoreHorizontal } from 'lucide-react'
+import { Plus, Trash2, Edit, ArrowLeft, Upload, MoreHorizontal, Sparkles } from 'lucide-react'
 import { Button, Input, Textarea, Label, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@neo-tavern/ui'
 import { useCharacterStore } from '@/features/character/character.store'
 import { useSettingsStore } from '@/features/settings/settings.store'
@@ -126,6 +126,10 @@ export function CharacterPage() {
       y: rect.bottom + 6,
       character: char,
     })
+  }
+
+  const openBuilderPage = (charId?: string | null) => {
+    navigate(charId ? `/character-builder?characterId=${encodeURIComponent(charId)}` : '/character-builder')
   }
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -329,6 +333,9 @@ export function CharacterPage() {
           <h1 className="text-2xl font-bold">Characters</h1>
           <div className="flex items-center gap-2">
             <input ref={fileInputRef} type="file" accept=".json,.png" onChange={handleImportFile} className="hidden" />
+            <Button variant="outline" size="sm" onClick={() => openBuilderPage()}>
+              <Sparkles className="h-3.5 w-3.5 mr-1" />Whale Builder
+            </Button>
             <Button variant="outline" size="sm" onClick={() => handleStartEdit()}>
               <Plus className="h-3.5 w-3.5 mr-1" />New Character
             </Button>
@@ -453,6 +460,9 @@ export function CharacterPage() {
                   <DialogDescription className="sr-only">Character details.</DialogDescription>
                 </DialogHeader>
                 <div className="flex shrink-0 items-center gap-2">
+                  <Button size="sm" variant="outline" onClick={() => openBuilderPage(selected.id)}>
+                    <Sparkles className="h-3.5 w-3.5 mr-1" />Builder
+                  </Button>
                   <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(selected)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" />Delete
                   </Button>

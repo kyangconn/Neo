@@ -112,7 +112,7 @@ export function HomePage() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b px-6 py-5">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">NeoTavern Demo</h1>
+          <h1 className="text-2xl font-bold">Whale Play</h1>
           <Button variant="outline" onClick={() => navigate('/settings')}>
             <Settings className="h-4 w-4 mr-2" />
             Settings

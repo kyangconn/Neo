@@ -6,6 +6,30 @@ export interface MessageUsage {
   totalTokens?: number
   cacheHitTokens?: number
   cacheMissTokens?: number
+  costCny?: number
+  costCurrency?: 'CNY'
+  costInputCacheHitCny?: number
+  costInputCacheMissCny?: number
+  costOutputCny?: number
+  costModel?: string
+  costPricingName?: string
+  debugRound?: number
+  debugAttempt?: number
+  debugTrigger?: 'send' | 'continue' | 'regenerate' | 'retry'
+  debugBaseTrigger?: 'send' | 'continue' | 'regenerate'
+  debugPromptFolder?: string
+  debugPromptFilename?: string
+  debugPromptPath?: string
+}
+
+export interface MessageImage {
+  id: string
+  prompt: string
+  status: 'generating' | 'done' | 'error' | 'deleted'
+  src?: string
+  error?: string
+  createdAt: string
+  updatedAt?: string
 }
 
 export interface Message {
@@ -17,6 +41,7 @@ export interface Message {
   generateDuration?: number
   thinkingDuration?: number
   usage?: MessageUsage
+  images?: MessageImage[]
   createdAt: string
 }
 
@@ -28,4 +53,5 @@ export interface CreateMessageInput {
   generateDuration?: number
   thinkingDuration?: number
   usage?: MessageUsage
+  images?: MessageImage[]
 }

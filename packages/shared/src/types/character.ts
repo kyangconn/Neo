@@ -1,6 +1,7 @@
 export interface Character {
   id: string
   name: string
+  hidden?: boolean
   avatar?: string
   description: string
   personality: string
@@ -15,7 +16,9 @@ export interface Character {
 }
 
 export interface CreateCharacterInput {
+  id?: string
   name: string
+  hidden?: boolean
   avatar?: string
   description: string
   personality: string
@@ -29,6 +32,7 @@ export interface CreateCharacterInput {
 
 export interface UpdateCharacterInput {
   name?: string
+  hidden?: boolean
   avatar?: string
   description?: string
   personality?: string

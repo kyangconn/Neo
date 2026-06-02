@@ -41,6 +41,87 @@ function contextBlockToMessage(block: ContextBlock, safeReplace: (value: string)
   }
 }
 
+function contextBlockToText(block: ContextBlock): string {
+  return [`### ${block.title}`, block.content].filter(Boolean).join('\n')
+}
+
+function formatExtraPresetEntry(name: string, content: string): string | null {
+  const trimmed = content.trim()
+  if (!trimmed) return null
+  return [
+    `<extra_preset_entry name="${name}">`,
+    trimmed,
+    '</extra_preset_entry>',
+  ].join('\n')
+}
+
+function extraPresetEntryToMessage(name: string, content: string, safeReplace: (value: string) => string): GenerateMessage | null {
+  const entry = formatExtraPresetEntry(name, content)
+  if (!entry) return null
+  return {
+    role: 'system',
+    content: safeReplace(entry),
+  }
+}
+
+function chatHistoryToExtraPresetEntryMessage(content: string): GenerateMessage | null {
+  const entry = formatExtraPresetEntry('chat history', content)
+  return entry ? { role: 'system', content: entry } : null
+}
+
+const EXTRA_PRESET_SLOT_PATTERN = /<extra_preset_slot\s+name="([^"]+)"\s*\/>/g
+
+function hasPresetSlot(items: { content: string }[], name: string): boolean {
+  return items.some((item) => {
+    EXTRA_PRESET_SLOT_PATTERN.lastIndex = 0
+    return Array.from(item.content.matchAll(EXTRA_PRESET_SLOT_PATTERN)).some((match) => match[1] === name)
+  })
+}
+
+function resolvePresetItemContent(
+  content: string,
+  safeReplace: (value: string) => string,
+  runtimeEntries: Record<string, string | undefined>,
+): string {
+  let resolved = ''
+  let lastIndex = 0
+  for (const match of content.matchAll(EXTRA_PRESET_SLOT_PATTERN)) {
+    resolved += safeReplace(content.slice(lastIndex, match.index))
+    resolved += runtimeEntries[match[1]] ?? ''
+    lastIndex = (match.index ?? 0) + match[0].length
+  }
+  resolved += safeReplace(content.slice(lastIndex))
+  return resolved
+}
+
+function buildPresetContent(
+  items: { content: string }[],
+  safeReplace: (value: string) => string,
+  runtimeEntries: Record<string, string | undefined>,
+): string {
+  return items
+    .map((item) => resolvePresetItemContent(item.content, safeReplace, runtimeEntries))
+    .filter((content) => content.trim().length > 0)
+    .join('\n\n')
+}
+
+function contextBlocksToExtraPresetEntry(name: string, blocks: ContextBlock[], safeReplace: (value: string) => string): GenerateMessage | null {
+  return extraPresetEntryToMessage(
+    name,
+    blocks.map(contextBlockToText).join('\n\n'),
+    safeReplace,
+  )
+}
+
+function historyMessagesToText(messages: GenerateMessage[]): string {
+  return messages
+    .map((message, index) => [
+      `### ${index + 1}. ${message.role}`,
+      message.content,
+    ].join('\n'))
+    .join('\n\n')
+}
+
 function insertDepthBlocks(history: GenerateMessage[], blocks: ContextBlock[], safeReplace: (value: string) => string) {
   const next = [...history]
   for (const block of blocks) {
@@ -73,16 +154,10 @@ export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
     .sort((a, b) => a.injectionOrder - b.injectionOrder)
 
   const hasSystemPreset = sortedPresetItems.some(p => p.role === 'system')
-  const presetContent = sortedPresetItems
-    .map((item) => safeReplace(item.content))
-    .filter((content) => content.trim().length > 0)
-    .join('\n\n')
-  const presetMessage: GenerateMessage | null = presetContent
-    ? {
-        role: hasSystemPreset ? 'system' : sortedPresetItems[0]?.role ?? 'system',
-        content: presetContent,
-      }
-    : null
+  const hasStaticWorldbookSlot = hasPresetSlot(sortedPresetItems, '前置世界书')
+  const hasChatHistorySlot = hasPresetSlot(sortedPresetItems, 'chat history')
+  const hasRecalledWorldbookSlot = hasPresetSlot(sortedPresetItems, '召回世界书')
+  const presetOverheadContent = buildPresetContent(sortedPresetItems, safeReplace, {})
 
   const sortedContextBlocks = [...(input.contextBlocks ?? [])].sort(
     (a, b) => b.priority - a.priority || a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
@@ -90,25 +165,13 @@ export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
   const beforeHistoryBlocks = sortedContextBlocks.filter((block) => (block.position ?? 'beforeHistory') === 'beforeHistory')
   const atDepthBlocks = sortedContextBlocks.filter((block) => block.position === 'atDepth')
   const afterHistoryBlocks = sortedContextBlocks.filter((block) => block.position === 'afterHistory')
-
-  if (!hasSystemPreset) {
-    messages.push({
-      role: 'system',
-      content: safeReplace(systemRules + DIALOGUE_FORMAT_RULES),
-    })
-  }
-
-  if (presetMessage) messages.push(presetMessage)
-
-  messages.push({ role: 'system', content: characterBlock })
-
-  if (input.userPersona) {
-    messages.push({ role: 'system', content: safeReplace(`User Persona:\n${input.userPersona}`) })
-  }
-
-  for (const block of beforeHistoryBlocks) {
-    messages.push(contextBlockToMessage(block, safeReplace))
-  }
+  const beforeHistoryWorldbookBlocks = beforeHistoryBlocks.filter((block) => block.source === 'worldbook')
+  const atDepthWorldbookBlocks = atDepthBlocks.filter((block) => block.source === 'worldbook')
+  const recalledWorldbookBlocks = afterHistoryBlocks.filter((block) => block.source === 'worldbook')
+  const stableWorldbookBlocks = [...beforeHistoryWorldbookBlocks, ...atDepthWorldbookBlocks]
+  const nonWorldbookBeforeHistoryBlocks = beforeHistoryBlocks.filter((block) => block.source !== 'worldbook')
+  const nonWorldbookAtDepthBlocks = atDepthBlocks.filter((block) => block.source !== 'worldbook')
+  const nonWorldbookAfterHistoryBlocks = afterHistoryBlocks.filter((block) => block.source !== 'worldbook')
 
   const userInputMsg: GenerateMessage = { role: 'user', content: input.userInput }
 
@@ -122,7 +185,7 @@ export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
   if (maxTokens > 0) {
     let overhead = estTokens(DIALOGUE_FORMAT_RULES)
     if (!hasSystemPreset) overhead += estTokens(safeReplace(systemRules))
-    if (presetMessage) overhead += estTokens(presetMessage.content)
+    if (presetOverheadContent) overhead += estTokens(presetOverheadContent)
     overhead += estTokens(characterBlock)
     if (input.userPersona) overhead += estTokens(safeReplace(`User Persona:\n${input.userPersona}`))
     overhead += estTokens(input.userInput)
@@ -141,11 +204,58 @@ export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
 
   if (firstMessage) historyMessages.push(firstMessage)
 
-  for (const message of insertDepthBlocks(historyMessages, atDepthBlocks, safeReplace)) {
-    messages.push(message)
+  const historyWithDepthBlocks = insertDepthBlocks(historyMessages, nonWorldbookAtDepthBlocks, safeReplace)
+  const historyEntryText = formatExtraPresetEntry('chat history', historyMessagesToText(historyWithDepthBlocks)) ?? ''
+  const stableWorldbookEntryText = formatExtraPresetEntry(
+    '前置世界书',
+    stableWorldbookBlocks.map(contextBlockToText).join('\n\n'),
+  )
+  const recalledWorldbookEntryText = formatExtraPresetEntry(
+    '召回世界书',
+    recalledWorldbookBlocks.map(contextBlockToText).join('\n\n'),
+  )
+  const runtimePresetEntries = {
+    'chat history': historyEntryText,
+    '前置世界书': stableWorldbookEntryText ? safeReplace(stableWorldbookEntryText) : '',
+    '召回世界书': recalledWorldbookEntryText ? safeReplace(recalledWorldbookEntryText) : '',
+  }
+  const presetContent = buildPresetContent(sortedPresetItems, safeReplace, runtimePresetEntries)
+  const presetMessage: GenerateMessage | null = presetContent
+    ? {
+        role: hasSystemPreset ? 'system' : sortedPresetItems[0]?.role ?? 'system',
+        content: presetContent,
+      }
+    : null
+
+  if (!hasSystemPreset) {
+    messages.push({
+      role: 'system',
+      content: safeReplace(systemRules + DIALOGUE_FORMAT_RULES),
+    })
   }
 
-  for (const block of afterHistoryBlocks) {
+  if (presetMessage) messages.push(presetMessage)
+
+  messages.push({ role: 'system', content: characterBlock })
+
+  if (input.userPersona) {
+    messages.push({ role: 'system', content: safeReplace(`User Persona:\n${input.userPersona}`) })
+  }
+
+  for (const block of nonWorldbookBeforeHistoryBlocks) {
+    messages.push(contextBlockToMessage(block, safeReplace))
+  }
+
+  const stableWorldbookMessage = contextBlocksToExtraPresetEntry('前置世界书', stableWorldbookBlocks, safeReplace)
+  if (!hasStaticWorldbookSlot && stableWorldbookMessage) messages.push(stableWorldbookMessage)
+
+  const historyMessage = chatHistoryToExtraPresetEntryMessage(historyMessagesToText(historyWithDepthBlocks))
+  if (!hasChatHistorySlot && historyMessage) messages.push(historyMessage)
+
+  const recalledWorldbookMessage = contextBlocksToExtraPresetEntry('召回世界书', recalledWorldbookBlocks, safeReplace)
+  if (!hasRecalledWorldbookSlot && recalledWorldbookMessage) messages.push(recalledWorldbookMessage)
+
+  for (const block of nonWorldbookAfterHistoryBlocks) {
     messages.push(contextBlockToMessage(block, safeReplace))
   }
 

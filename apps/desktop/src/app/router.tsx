@@ -7,6 +7,7 @@ import { SettingsPage } from '@/pages/SettingsPage'
 import { PresetPage } from '@/pages/PresetPage'
 import { WorldbookPage } from '@/pages/WorldbookPage'
 import { PersonaPage } from '@/pages/PersonaPage'
+import { NeoBuilderPage } from '@/pages/NeoBuilderPage'
 
 export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
@@ -15,6 +16,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
     children: [
       { index: true, element: <HomePage /> },
       { path: 'character', element: <CharacterPage /> },
+      { path: 'character-builder', element: <NeoBuilderPage /> },
       { path: 'chat/:id', element: <ChatPage /> },
       { path: 'settings', element: <SettingsPage /> },
       { path: 'preset', element: <PresetPage /> },

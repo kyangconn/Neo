@@ -1,4 +1,4 @@
-import type { ModelProvider, GenerateInput, GenerateResult, GenerateChunk } from '@neo-tavern/shared'
+import type { ModelProvider, GenerateInput, GenerateMessage, GenerateResult, GenerateChunk } from '@neo-tavern/shared'
 
 export interface OpenAICompatibleProviderOptions {
   id: string
@@ -52,20 +52,46 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
   }
 
+  private mapMessages(messages: GenerateMessage[]) {
+    return messages.map((message) => {
+      if (message.role === 'assistant') {
+        return {
+          role: message.role,
+          content: message.content,
+          ...(message.toolCalls ? { tool_calls: message.toolCalls } : {}),
+        }
+      }
+      if (message.role === 'tool') {
+        return {
+          role: message.role,
+          content: message.content,
+          tool_call_id: message.toolCallId,
+          ...(message.name ? { name: message.name } : {}),
+        }
+      }
+      return message
+    })
+  }
+
   async generate(input: GenerateInput): Promise<GenerateResult> {
+    const body: Record<string, unknown> = {
+      model: input.model,
+      messages: this.mapMessages(input.messages),
+      max_tokens: input.maxTokens ?? 800,
+      ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
+      ...(input.tools?.length ? { tools: input.tools } : {}),
+      ...(input.toolChoice ? { tool_choice: input.toolChoice } : {}),
+      ...(input.userId ? { user_id: input.userId } : {}),
+    }
+    if (!input.omitTemperature) body.temperature = input.temperature ?? 0.8
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
       },
-      body: JSON.stringify({
-        model: input.model,
-        messages: input.messages,
-        temperature: input.temperature ?? 0.8,
-        max_tokens: input.maxTokens ?? 800,
-        ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
-      }),
+      body: JSON.stringify(body),
       signal: input.signal,
     })
 
@@ -75,33 +101,41 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
 
     const data = await response.json()
-    const content = data?.choices?.[0]?.message?.content ?? ''
-    const reasoningContent = data?.choices?.[0]?.message?.reasoning_content ?? ''
+    const message = data?.choices?.[0]?.message ?? {}
+    const content = message?.content ?? ''
+    const reasoningContent = message?.reasoning_content ?? ''
+    const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : undefined
 
     return {
       content,
       reasoningContent: reasoningContent || undefined,
+      toolCalls,
       raw: data,
       usage: this.mapUsage(data),
     }
   }
 
   async *streamGenerate(input: GenerateInput): AsyncIterable<GenerateChunk> {
+    const body: Record<string, unknown> = {
+      model: input.model,
+      messages: this.mapMessages(input.messages),
+      max_tokens: input.maxTokens ?? 800,
+      ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
+      ...(input.tools?.length ? { tools: input.tools } : {}),
+      ...(input.toolChoice ? { tool_choice: input.toolChoice } : {}),
+      ...(input.userId ? { user_id: input.userId } : {}),
+      stream: true,
+      stream_options: { include_usage: true },
+    }
+    if (!input.omitTemperature) body.temperature = input.temperature ?? 0.8
+
     const response = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
       },
-      body: JSON.stringify({
-        model: input.model,
-        messages: input.messages,
-        temperature: input.temperature ?? 0.8,
-        max_tokens: input.maxTokens ?? 800,
-        ...(input.reasoningEffort ? { reasoning_effort: input.reasoningEffort } : {}),
-        stream: true,
-        stream_options: { include_usage: true },
-      }),
+      body: JSON.stringify(body),
       signal: input.signal,
     })
 
@@ -135,11 +169,26 @@ export class OpenAICompatibleProvider implements ModelProvider {
           try {
             const parsed = JSON.parse(dataStr)
             const delta = parsed?.choices?.[0]?.delta ?? {}
+            const choice = parsed?.choices?.[0] ?? {}
             const contentDelta = delta?.content ?? ''
             const reasoningContentDelta = delta?.reasoning_content ?? delta?.reasoningContent ?? ''
+            const toolCallDeltas = Array.isArray(delta?.tool_calls)
+              ? delta.tool_calls.map((toolCall: any) => ({
+                index: typeof toolCall.index === 'number' ? toolCall.index : 0,
+                id: toolCall.id,
+                type: toolCall.type,
+                function: toolCall.function
+                  ? {
+                    name: toolCall.function.name,
+                    arguments: toolCall.function.arguments,
+                  }
+                  : undefined,
+              }))
+              : undefined
+            const finishReason = choice?.finish_reason ?? undefined
             const usage = parsed?.usage ? this.mapUsage(parsed) : undefined
-            if (contentDelta || reasoningContentDelta || usage) {
-              yield { contentDelta, reasoningContentDelta, usage, raw: parsed }
+            if (contentDelta || reasoningContentDelta || toolCallDeltas?.length || finishReason || usage) {
+              yield { contentDelta, reasoningContentDelta, toolCallDeltas, finishReason, usage, raw: parsed }
             }
           } catch {
             continue

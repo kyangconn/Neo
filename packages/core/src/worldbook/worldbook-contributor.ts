@@ -102,6 +102,11 @@ export function resolveWorldbookEntries(
   return { matched: all }
 }
 
+export function getWorldbookEntryInsertPosition(entry: WorldbookEntry): ContextBlock['position'] {
+  if (entry.type === 'trigger') return 'afterHistory'
+  return entry.position ?? 'beforeHistory'
+}
+
 export class WorldbookContributor implements ContextContributor {
   id = 'worldbook'
   name = 'Worldbook'
@@ -122,7 +127,7 @@ export class WorldbookContributor implements ContextContributor {
       content: e.content,
       priority: e.priority,
       role: e.role ?? 'system',
-      position: e.position ?? 'beforeHistory',
+      position: getWorldbookEntryInsertPosition(e),
       depth: e.depth ?? 0,
     }))
   }

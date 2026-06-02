@@ -33,6 +33,7 @@ export interface WorldbookEntry {
 export interface Worldbook {
   id: string
   name: string
+  hidden?: boolean
   description: string
   entries: WorldbookEntry[]
   createdAt: string
@@ -40,12 +41,15 @@ export interface Worldbook {
 }
 
 export interface CreateWorldbookInput {
+  id?: string
   name: string
+  hidden?: boolean
   description: string
 }
 
 export interface UpdateWorldbookInput {
   name?: string
+  hidden?: boolean
   description?: string
 }
 
