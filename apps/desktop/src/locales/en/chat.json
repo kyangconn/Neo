@@ -76,15 +76,7 @@
       "hitRate": "Hit Rate",
       "context": "1M Context"
     },
-    "tableHeaders": [
-      "#",
-      "Prompt",
-      "Completion",
-      "Total",
-      "🔥 Hit",
-      "📉 Miss",
-      "Rate"
-    ],
+    "tableHeaders": ["#", "Prompt", "Completion", "Total", "🔥 Hit", "📉 Miss", "Rate"],
     "cacheHint": "⚠ Cache hit data unavailable — your API may not support prompt caching (Ollama/vLLM most instances do not). Supported by DeepSeek, OpenAI recent models, Anthropic."
   },
   "generationStatus": {

@@ -1,10 +1,10 @@
-import { SlidersHorizontal } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@neo-tavern/ui"
+import { SlidersHorizontal } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@neo-tavern/ui";
 
 interface ContextSectionProps {
-  contextTokens: number
-  setContextTokens: (v: number) => void
-  t: (key: string, params?: Record<string, string>) => string
+  contextTokens: number;
+  setContextTokens: (v: number) => void;
+  t: (key: string, params?: Record<string, string>) => string;
 }
 
 export function ContextSection({ contextTokens, setContextTokens, t }: ContextSectionProps) {
@@ -13,7 +13,7 @@ export function ContextSection({ contextTokens, setContextTokens, t }: ContextSe
     { label: t("context.presets.short"), value: 8192, desc: t("context.presetDescs.short") },
     { label: t("context.presets.medium"), value: 32768, desc: t("context.presetDescs.medium") },
     { label: t("context.presets.full"), value: 0, desc: t("context.presetDescs.full") },
-  ]
+  ];
 
   return (
     <Card>
@@ -64,5 +64,5 @@ export function ContextSection({ contextTokens, setContextTokens, t }: ContextSe
         <p className="text-xs text-muted-foreground mt-4">{t("context.tokenEstimate")}</p>
       </CardContent>
     </Card>
-  )
+  );
 }

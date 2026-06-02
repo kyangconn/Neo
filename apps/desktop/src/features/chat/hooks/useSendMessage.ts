@@ -1,108 +1,137 @@
-import { useState, useCallback } from 'react'
-import { isPermissionGranted, requestPermission, sendNotification } from '@tauri-apps/plugin-notification'
-import { invoke } from '@tauri-apps/api/core'
-import { useChatStore } from '../chat.store'
-import { useSettingsStore } from '@/features/settings/settings.store'
-import { chatMemoryRepository, presetRepository, secondaryApiUsageRepository, settingsRepository } from '@/db/repositories'
-import { buildLightweightMemorySummary, countMemoryTurns, createMemoryContextBlock, formatMemorySegmentsForPrompt, hashMessages, splitMessagesByRecentTurns } from '../memory'
-import { createGeneratingImages, extractImageMarkers, generateComfyImage, normalizeImageSettings, planImageMarkersWithModel, type ImagePlannerWorldbookReference } from '@/features/image-generation/image-generation'
-import { recordUsageCostAndWarn } from '@/features/billing/usage-cost'
-import { withDeepSeekUsageCost } from '@/features/billing/deepseek-billing'
-import { getChatScopedDeepSeekUserId, shouldOmitTemperatureForModel } from '@/features/settings/model-capabilities'
-import { applyRegexRules, buildChatPrompt, createModelProvider, estimateTokens, stripPromptContent, WorldbookContributor } from '@neo-tavern/core'
-import type { Character, BuiltPrompt, ContextBlock, GenerateMessage, Message, ModelConfig } from '@neo-tavern/shared'
-import type { ChatMemory, ChatMemorySegment } from '@/db/repositories'
-import type { GenerationPhase } from '../chat.types'
-import { useWorldbookStore } from '@/features/settings/worldbook.store'
+import { useState, useCallback } from "react";
+import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
+import { invoke } from "@tauri-apps/api/core";
+import { useChatStore } from "../chat.store";
+import { useSettingsStore } from "@/features/settings/settings.store";
+import {
+  chatMemoryRepository,
+  presetRepository,
+  secondaryApiUsageRepository,
+  settingsRepository,
+} from "@/db/repositories";
+import {
+  buildLightweightMemorySummary,
+  countMemoryTurns,
+  createMemoryContextBlock,
+  formatMemorySegmentsForPrompt,
+  hashMessages,
+  splitMessagesByRecentTurns,
+} from "../memory";
+import {
+  createGeneratingImages,
+  extractImageMarkers,
+  generateComfyImage,
+  normalizeImageSettings,
+  planImageMarkersWithModel,
+  type ImagePlannerWorldbookReference,
+} from "@/features/image-generation/image-generation";
+import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
+import { withDeepSeekUsageCost } from "@/features/billing/deepseek-billing";
+import { getChatScopedDeepSeekUserId, shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
+import {
+  applyRegexRules,
+  buildChatPrompt,
+  createModelProvider,
+  estimateTokens,
+  stripPromptContent,
+  WorldbookContributor,
+} from "@neo-tavern/core";
+import type { Character, BuiltPrompt, ContextBlock, GenerateMessage, Message, ModelConfig } from "@neo-tavern/shared";
+import type { ChatMemory, ChatMemorySegment } from "@/db/repositories";
+import type { GenerationPhase } from "../chat.types";
+import { useWorldbookStore } from "@/features/settings/worldbook.store";
 
 interface UseSendMessageOptions {
-  character: Character | undefined
-  chatId: string | undefined
-  onPromptBuilt?: (built: BuiltPrompt) => void
+  character: Character | undefined;
+  chatId: string | undefined;
+  onPromptBuilt?: (built: BuiltPrompt) => void;
 }
 
 interface SendMessageOptions {
-  hiddenUserMessage?: boolean
+  hiddenUserMessage?: boolean;
 }
 
 interface UseSendMessageReturn {
-  sendMessage: (content: string, options?: SendMessageOptions) => Promise<void>
-  regenerate: () => Promise<void>
-  abort: () => void
-  sending: boolean
-  sendingChatId: string | null
-  streamingMessageId: string | null
-  generationPhase: GenerationPhase | null
-  error: string | null
-  clearError: () => void
+  sendMessage: (content: string, options?: SendMessageOptions) => Promise<void>;
+  regenerate: () => Promise<void>;
+  abort: () => void;
+  sending: boolean;
+  sendingChatId: string | null;
+  streamingMessageId: string | null;
+  generationPhase: GenerationPhase | null;
+  error: string | null;
+  clearError: () => void;
 }
 
-const activeGenerationRuns = new Map<string, { controller: AbortController; generationId: string }>()
-const activeImageGenerations = new Map<string, { controller: AbortController; token: string }>()
+const activeGenerationRuns = new Map<string, { controller: AbortController; generationId: string }>();
+const activeImageGenerations = new Map<string, { controller: AbortController; token: string }>();
 
-const LOCAL_MEMORY_COMPRESSOR_KEY = 'local'
-const MEMORY_COMPACTION_BATCH_TURNS = 4
-const MEMORY_COMPACTION_BATCH_MIN_CHARS = 6000
-const EMPTY_ASSISTANT_RETRY_LIMIT = 1
+const LOCAL_MEMORY_COMPRESSOR_KEY = "local";
+const MEMORY_COMPACTION_BATCH_TURNS = 4;
+const MEMORY_COMPACTION_BATCH_MIN_CHARS = 6000;
+const EMPTY_ASSISTANT_RETRY_LIMIT = 1;
 const EMPTY_ASSISTANT_RETRY_MESSAGE = [
-  '上一轮模型回复没有生成可显示的正文，Whale Play 正在自动重试。',
-  '请重新生成当前这一轮角色回复，必须包含非空正文。',
-  '如果当前预设要求使用 <content></content>，请把完整正文写在这个标签内。',
-  '不要解释重试原因，不要输出道歉，只输出符合当前角色与预设格式的回复。',
-].join('\n')
+  "上一轮模型回复没有生成可显示的正文，Whale Play 正在自动重试。",
+  "请重新生成当前这一轮角色回复，必须包含非空正文。",
+  "如果当前预设要求使用 <content></content>，请把完整正文写在这个标签内。",
+  "不要解释重试原因，不要输出道歉，只输出符合当前角色与预设格式的回复。",
+].join("\n");
 
-type DebugPromptTrigger = 'send' | 'continue' | 'regenerate' | 'retry'
+type DebugPromptTrigger = "send" | "continue" | "regenerate" | "retry";
 
 interface DebugPromptContext {
-  chatId: string
-  characterId: string
-  characterName: string
-  contextTokens: number
-  round: number
-  assistantMessageId: string
-  baseTrigger: Exclude<DebugPromptTrigger, 'retry'>
-  hiddenUserMessage: boolean
+  chatId: string;
+  characterId: string;
+  characterName: string;
+  contextTokens: number;
+  round: number;
+  assistantMessageId: string;
+  baseTrigger: Exclude<DebugPromptTrigger, "retry">;
+  hiddenUserMessage: boolean;
 }
 
 interface SavedDebugPrompt {
-  round: number
-  attempt: number
-  trigger: DebugPromptTrigger
-  baseTrigger: Exclude<DebugPromptTrigger, 'retry'>
-  folder: string
-  filename: string
-  path: string
+  round: number;
+  attempt: number;
+  trigger: DebugPromptTrigger;
+  baseTrigger: Exclude<DebugPromptTrigger, "retry">;
+  folder: string;
+  filename: string;
+  path: string;
 }
 
 function sanitizeDebugPathPart(value: string, fallback: string) {
   const cleaned = value
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_')
-    .replace(/\s+/g, ' ')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
+    .replace(/\s+/g, " ")
     .trim()
-    .replace(/[. ]+$/g, '')
-  return cleaned || fallback
+    .replace(/[. ]+$/g, "");
+  return cleaned || fallback;
 }
 
 function shortDebugId(value: string) {
-  return value.replace(/[^a-z0-9]/gi, '').slice(0, 8) || 'unknown'
+  return value.replace(/[^a-z0-9]/gi, "").slice(0, 8) || "unknown";
 }
 
 function getNextDebugRound(messages: Message[]) {
-  return messages.filter((message) => message.role === 'assistant' && message.usage).length + 1
+  return messages.filter((message) => message.role === "assistant" && message.usage).length + 1;
 }
 
 function notifyDebugPromptSaveFailed(error: unknown) {
-  const toast = typeof window !== 'undefined' ? (window as any).__toast : null
-  const message = (error as Error).message || 'Unknown error'
-  if (toast) toast('error', `Debug prompt save failed: ${message}`)
+  const toast = typeof window !== "undefined" ? (window as any).__toast : null;
+  const message = (error as Error).message || "Unknown error";
+  if (toast) toast("error", `Debug prompt save failed: ${message}`);
 }
 
 function isAbortError(error: unknown) {
-  return (error as Error).name === 'AbortError'
+  return (error as Error).name === "AbortError";
 }
 
-function withDebugUsage(usage: Message['usage'] | undefined, debugPrompt?: SavedDebugPrompt): Message['usage'] | undefined {
-  if (!debugPrompt) return usage
+function withDebugUsage(
+  usage: Message["usage"] | undefined,
+  debugPrompt?: SavedDebugPrompt,
+): Message["usage"] | undefined {
+  if (!debugPrompt) return usage;
   return {
     ...(usage ?? {}),
     debugRound: debugPrompt.round,
@@ -112,147 +141,140 @@ function withDebugUsage(usage: Message['usage'] | undefined, debugPrompt?: Saved
     debugPromptFolder: debugPrompt.folder,
     debugPromptFilename: debugPrompt.filename,
     debugPromptPath: debugPrompt.path,
-  }
+  };
 }
 
 function cancelImageGeneration(messageId: string) {
-  const active = activeImageGenerations.get(messageId)
-  if (!active) return
-  active.controller.abort()
-  activeImageGenerations.delete(messageId)
+  const active = activeImageGenerations.get(messageId);
+  if (!active) return;
+  active.controller.abort();
+  activeImageGenerations.delete(messageId);
 }
 
 function beginImageGeneration(messageId: string) {
-  cancelImageGeneration(messageId)
+  cancelImageGeneration(messageId);
   const run = {
     controller: new AbortController(),
     token: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-  }
-  activeImageGenerations.set(messageId, run)
-  return run
+  };
+  activeImageGenerations.set(messageId, run);
+  return run;
 }
 
 function isCurrentImageGeneration(messageId: string, token: string) {
-  const active = activeImageGenerations.get(messageId)
-  return !!active && active.token === token && !active.controller.signal.aborted
+  const active = activeImageGenerations.get(messageId);
+  return !!active && active.token === token && !active.controller.signal.aborted;
 }
 
 function finishImageGeneration(messageId: string, token: string) {
   if (activeImageGenerations.get(messageId)?.token === token) {
-    activeImageGenerations.delete(messageId)
+    activeImageGenerations.delete(messageId);
   }
 }
 
 async function notifyAssistantOutputComplete(characterName?: string) {
-  const toast = typeof window !== 'undefined' ? (window as any).__toast : null
-  const name = characterName?.trim()
-  const message = name ? `${name} 的回复已生成` : 'AI 回复已生成'
-  const shouldUseSystemNotification = typeof document !== 'undefined'
-    && (document.visibilityState !== 'visible' || !document.hasFocus())
+  const toast = typeof window !== "undefined" ? (window as any).__toast : null;
+  const name = characterName?.trim();
+  const message = name ? `${name} 的回复已生成` : "AI 回复已生成";
+  const shouldUseSystemNotification =
+    typeof document !== "undefined" && (document.visibilityState !== "visible" || !document.hasFocus());
 
   if (shouldUseSystemNotification) {
     try {
-      let permissionGranted = await isPermissionGranted()
+      let permissionGranted = await isPermissionGranted();
       if (!permissionGranted) {
-        const permission = await requestPermission()
-        permissionGranted = permission === 'granted'
+        const permission = await requestPermission();
+        permissionGranted = permission === "granted";
       }
       if (permissionGranted) {
         sendNotification({
-          title: 'Whale Play',
+          title: "Whale Play",
           body: message,
-        })
-        return
+        });
+        return;
       }
     } catch {
       // Fall back to the in-app toast when native notifications are unavailable.
     }
   }
 
-  if (toast) toast('success', message)
+  if (toast) toast("success", message);
 }
 
 function capText(content: string, maxChars: number) {
-  const normalized = content.replace(/\r\n/g, '\n').trim()
-  if (normalized.length <= maxChars) return normalized
-  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`
+  const normalized = content.replace(/\r\n/g, "\n").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
 function formatMessagesForCompression(messages: Message[], maxChars: number) {
-  const sourceLimit = Math.max(60_000, Math.min(240_000, maxChars * 20))
-  const source = messages.map((message, index) => {
-    const role = message.role === 'user'
-      ? '用户'
-      : message.role === 'assistant'
-        ? '角色'
-        : '系统'
-    const createdAt = message.createdAt ? ` · ${message.createdAt}` : ''
-    return `### ${index + 1}. ${role}${createdAt}\n${capText(message.content, 4000)}`
-  }).join('\n\n')
+  const sourceLimit = Math.max(60_000, Math.min(240_000, maxChars * 20));
+  const source = messages
+    .map((message, index) => {
+      const role = message.role === "user" ? "用户" : message.role === "assistant" ? "角色" : "系统";
+      const createdAt = message.createdAt ? ` · ${message.createdAt}` : "";
+      return `### ${index + 1}. ${role}${createdAt}\n${capText(message.content, 4000)}`;
+    })
+    .join("\n\n");
 
-  if (source.length <= sourceLimit) return source
-  return `（来源过长，已优先保留靠后的旧剧情片段。）\n${source.slice(source.length - sourceLimit).trimStart()}`
+  if (source.length <= sourceLimit) return source;
+  return `（来源过长，已优先保留靠后的旧剧情片段。）\n${source.slice(source.length - sourceLimit).trimStart()}`;
 }
 
 function countMessageChars(messages: Message[]) {
-  return messages.reduce((total, message) => total + message.content.length, 0)
+  return messages.reduce((total, message) => total + message.content.length, 0);
 }
 
 function shouldCompactMemoryBuffer(messages: Message[], maxChars: number) {
-  if (messages.length === 0) return false
-  return countMemoryTurns(messages) >= MEMORY_COMPACTION_BATCH_TURNS
-    || countMessageChars(messages) >= Math.max(MEMORY_COMPACTION_BATCH_MIN_CHARS, Math.floor(maxChars * 1.5))
+  if (messages.length === 0) return false;
+  return (
+    countMemoryTurns(messages) >= MEMORY_COMPACTION_BATCH_TURNS ||
+    countMessageChars(messages) >= Math.max(MEMORY_COMPACTION_BATCH_MIN_CHARS, Math.floor(maxChars * 1.5))
+  );
 }
 
 function clampMemorySummary(summary: string, maxChars: number) {
-  const normalized = summary.trim()
-  if (normalized.length <= maxChars) return normalized
-  const firstLineBreak = normalized.indexOf('\n')
-  const header = firstLineBreak >= 0 ? normalized.slice(0, firstLineBreak).trim() : ''
-  const body = firstLineBreak >= 0 ? normalized.slice(firstLineBreak + 1).trim() : normalized
-  const marker = '\n…\n'
-  const budget = Math.max(200, maxChars - header.length - marker.length)
-  return `${header}${marker}${body.slice(-budget).trimStart()}`
+  const normalized = summary.trim();
+  if (normalized.length <= maxChars) return normalized;
+  const firstLineBreak = normalized.indexOf("\n");
+  const header = firstLineBreak >= 0 ? normalized.slice(0, firstLineBreak).trim() : "";
+  const body = firstLineBreak >= 0 ? normalized.slice(firstLineBreak + 1).trim() : normalized;
+  const marker = "\n…\n";
+  const budget = Math.max(200, maxChars - header.length - marker.length);
+  return `${header}${marker}${body.slice(-budget).trimStart()}`;
 }
 
 function getMemoryCompressorKey(config: ModelConfig | null) {
-  if (!config) return LOCAL_MEMORY_COMPRESSOR_KEY
-  return [
-    'model',
-    config.id,
-    config.baseUrl,
-    config.model,
-    config.maxTokens,
-    config.updatedAt,
-  ].join(':')
+  if (!config) return LOCAL_MEMORY_COMPRESSOR_KEY;
+  return ["model", config.id, config.baseUrl, config.model, config.maxTokens, config.updatedAt].join(":");
 }
 
 async function resolveMemoryCompressorConfig(configId: string | null) {
-  if (!configId) return null
-  const stateConfig = useSettingsStore.getState().modelConfigs.find((config) => config.id === configId)
-  return stateConfig ?? settingsRepository.getModelConfig(configId)
+  if (!configId) return null;
+  const stateConfig = useSettingsStore.getState().modelConfigs.find((config) => config.id === configId);
+  return stateConfig ?? settingsRepository.getModelConfig(configId);
 }
 
 function normalizeMemorySegments(memory: ChatMemory | null): ChatMemorySegment[] {
-  if (!memory) return []
+  if (!memory) return [];
   if (Array.isArray(memory.segments) && memory.segments.length > 0) {
-    return memory.segments
-      .filter((segment) => segment.summary?.trim())
-      .sort((a, b) => a.index - b.index)
+    return memory.segments.filter((segment) => segment.summary?.trim()).sort((a, b) => a.index - b.index);
   }
-  if (!memory.summary?.trim()) return []
-  return [{
-    id: `${memory.chatId}-legacy-memory`,
-    index: 1,
-    summary: memory.summary,
-    sourceHash: memory.sourceHash,
-    sourceMessageCount: memory.sourceMessageCount,
-    compressorConfigId: memory.compressorConfigId,
-    compressorKey: memory.compressorKey,
-    compressionMode: memory.compressionMode,
-    memorySummaryMaxChars: memory.memorySummaryMaxChars,
-    createdAt: memory.updatedAt,
-  }]
+  if (!memory.summary?.trim()) return [];
+  return [
+    {
+      id: `${memory.chatId}-legacy-memory`,
+      index: 1,
+      summary: memory.summary,
+      sourceHash: memory.sourceHash,
+      sourceMessageCount: memory.sourceMessageCount,
+      compressorConfigId: memory.compressorConfigId,
+      compressorKey: memory.compressorKey,
+      compressionMode: memory.compressionMode,
+      memorySummaryMaxChars: memory.memorySummaryMaxChars,
+      createdAt: memory.updatedAt,
+    },
+  ];
 }
 
 function createMemorySegment(
@@ -260,10 +282,10 @@ function createMemorySegment(
   sourceMessages: Message[],
   index: number,
   options: {
-    compressorConfigId?: string | null
-    compressorKey: string
-    compressionMode: 'local' | 'model' | 'fallback'
-    memorySummaryMaxChars: number
+    compressorConfigId?: string | null;
+    compressorKey: string;
+    compressionMode: "local" | "model" | "fallback";
+    memorySummaryMaxChars: number;
   },
 ): ChatMemorySegment {
   return {
@@ -277,7 +299,7 @@ function createMemorySegment(
     compressionMode: options.compressionMode,
     memorySummaryMaxChars: options.memorySummaryMaxChars,
     createdAt: new Date().toISOString(),
-  }
+  };
 }
 
 async function buildModelMemorySummary(
@@ -285,42 +307,42 @@ async function buildModelMemorySummary(
   maxChars: number,
   compressorConfig: ModelConfig,
   userId?: string,
-  signal?: AbortSignal
-): Promise<{ summary: string; usage?: Message['usage'] }> {
-  const provider = createModelProvider(compressorConfig)
-  const source = formatMessagesForCompression(messages, maxChars)
+  signal?: AbortSignal,
+): Promise<{ summary: string; usage?: Message["usage"] }> {
+  const provider = createModelProvider(compressorConfig);
+  const source = formatMessagesForCompression(messages, maxChars);
   const result = await provider.generate({
     messages: [
       {
-        role: 'system',
+        role: "system",
         content: [
-          '你是 Whale Play 的剧情记忆压缩器。',
-          '你的任务是把这一批较早对话提炼成一个稳定、完整、可长期复用的剧情记忆段。',
-          '只记录已经发生或已经明确设定的事实，不续写剧情，不新增设定，不评价内容。',
-          '必须从第一条到最后一条顺序扫描，覆盖本批旧剧情的开头、中段、结尾；不要只总结最近片段。',
-          '完整性优先于文采，允许使用密集短句。不要为了简洁丢掉关键因果、名称、位置、物品、约定和伏笔。',
-          '用户角色的信息只记录其已经明确说过、做过、被动经历过或被设定确认过的内容；不要替用户补心理或动机。',
-          '如果内容很多，请合并同类事实，但保留所有会影响后续剧情连续性的状态变化和未解决事项。',
-        ].join('\n'),
+          "你是 Whale Play 的剧情记忆压缩器。",
+          "你的任务是把这一批较早对话提炼成一个稳定、完整、可长期复用的剧情记忆段。",
+          "只记录已经发生或已经明确设定的事实，不续写剧情，不新增设定，不评价内容。",
+          "必须从第一条到最后一条顺序扫描，覆盖本批旧剧情的开头、中段、结尾；不要只总结最近片段。",
+          "完整性优先于文采，允许使用密集短句。不要为了简洁丢掉关键因果、名称、位置、物品、约定和伏笔。",
+          "用户角色的信息只记录其已经明确说过、做过、被动经历过或被设定确认过的内容；不要替用户补心理或动机。",
+          "如果内容很多，请合并同类事实，但保留所有会影响后续剧情连续性的状态变化和未解决事项。",
+        ].join("\n"),
       },
       {
-        role: 'user',
+        role: "user",
         content: [
           `请把以下较早对话提炼成一个长期记忆段，控制在 ${maxChars} 字符以内。`,
-          '请使用下面的结构；没有信息的栏目可以省略，但不要省略有信息的栏目：',
-          '',
-          '【时间线】按发生顺序记录关键事件、因果、转折和当前停留点。',
-          '【角色与关系】记录出场角色、身份、称呼、彼此态度、关系变化、承诺和矛盾。',
-          '【地点与物品】记录重要地点、环境变化、道具、线索、资源、伤痕、服装或特殊状态。',
-          '【用户角色已确认】只记录用户角色已经明确做过/说过/被动遭遇/设定确认的内容。',
-          '【当前状态】记录各角色目标、情绪外显、身体/能力状态、危险、限制条件。',
-          '【未解决事项】记录悬念、伏笔、待兑现约定、未完成行动、需要后续承接的信息。',
-          '',
-          '写法要求：用简洁中文分点；不要复述每轮原文；不要输出分析过程；不要添加原文没有的信息；直接输出摘要。',
-          '',
-          '【本批旧剧情】',
+          "请使用下面的结构；没有信息的栏目可以省略，但不要省略有信息的栏目：",
+          "",
+          "【时间线】按发生顺序记录关键事件、因果、转折和当前停留点。",
+          "【角色与关系】记录出场角色、身份、称呼、彼此态度、关系变化、承诺和矛盾。",
+          "【地点与物品】记录重要地点、环境变化、道具、线索、资源、伤痕、服装或特殊状态。",
+          "【用户角色已确认】只记录用户角色已经明确做过/说过/被动遭遇/设定确认的内容。",
+          "【当前状态】记录各角色目标、情绪外显、身体/能力状态、危险、限制条件。",
+          "【未解决事项】记录悬念、伏笔、待兑现约定、未完成行动、需要后续承接的信息。",
+          "",
+          "写法要求：用简洁中文分点；不要复述每轮原文；不要输出分析过程；不要添加原文没有的信息；直接输出摘要。",
+          "",
+          "【本批旧剧情】",
           source,
-        ].join('\n'),
+        ].join("\n"),
       },
     ],
     model: compressorConfig.model,
@@ -329,20 +351,20 @@ async function buildModelMemorySummary(
     maxTokens: Math.min(
       Math.max(800, Math.ceil(maxChars / 1.6)),
       Math.max(800, compressorConfig.maxTokens || 4096),
-      8192
+      8192,
     ),
     reasoningEffort: compressorConfig.reasoningEffort || undefined,
     userId,
     signal,
-  })
+  });
 
-  const summary = result.content.trim()
-  if (!summary) throw new Error('Compression API returned an empty summary.')
-  const header = '以下是较早剧情的长期记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。'
+  const summary = result.content.trim();
+  if (!summary) throw new Error("Compression API returned an empty summary.");
+  const header = "以下是较早剧情的长期记忆摘要，用于保持连续性；最近完整对话仍以后续消息为准。";
   return {
     summary: clampMemorySummary(summary.startsWith(header) ? summary : `${header}\n${summary}`, maxChars),
     usage: result.usage,
-  }
+  };
 }
 
 async function saveDebugPromptFile(
@@ -353,10 +375,10 @@ async function saveDebugPromptFile(
   attempt: number,
   userId?: string,
 ): Promise<SavedDebugPrompt> {
-  const characterFolder = sanitizeDebugPathPart(debugContext.characterName, 'character')
-  const folder = `${characterFolder}_${shortDebugId(debugContext.chatId)}`
-  const roundStr = String(debugContext.round).padStart(4, '0')
-  const filename = `round_${roundStr}_${trigger}_attempt_${attempt}_${shortDebugId(debugContext.assistantMessageId)}.json`
+  const characterFolder = sanitizeDebugPathPart(debugContext.characterName, "character");
+  const folder = `${characterFolder}_${shortDebugId(debugContext.chatId)}`;
+  const roundStr = String(debugContext.round).padStart(4, "0");
+  const filename = `round_${roundStr}_${trigger}_attempt_${attempt}_${shortDebugId(debugContext.assistantMessageId)}.json`;
 
   const debugPayload = {
     round: debugContext.round,
@@ -385,13 +407,13 @@ async function saveDebugPromptFile(
       contentLength: block.content.length,
     })),
     messages,
-  }
+  };
 
-  const path = await invoke<string>('save_debug_prompt', {
+  const path = await invoke<string>("save_debug_prompt", {
     folder,
     filename,
     content: JSON.stringify(debugPayload, null, 2),
-  })
+  });
 
   return {
     round: debugContext.round,
@@ -401,165 +423,158 @@ async function saveDebugPromptFile(
     folder,
     filename,
     path,
-  }
+  };
 }
 
 export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMessageOptions): UseSendMessageReturn {
-  const [errors, setErrors] = useState<Record<string, string | null>>({})
-  const addMessage = useChatStore((s) => s.addMessage)
-  const patchMessage = useChatStore((s) => s.patchMessage)
-  const deleteMessage = useChatStore((s) => s.deleteMessage)
-  const ensureMessagesHydrated = useChatStore((s) => s.ensureMessagesHydrated)
-  const activeChatGeneration = useChatStore((s) => chatId ? s.activeGenerations[chatId] : undefined)
-  const beginSending = useChatStore((s) => s.beginSending)
-  const setStreamingMessageId = useChatStore((s) => s.setStreamingMessageId)
-  const setGenerationPhase = useChatStore((s) => s.setGenerationPhase)
-  const finishSending = useChatStore((s) => s.finishSending)
-  const sending = !!activeChatGeneration
-  const sendingChatId = sending ? chatId ?? null : null
-  const streamingMessageId = activeChatGeneration?.streamingMessageId ?? null
-  const generationPhase = activeChatGeneration?.generationPhase ?? null
-  const error = chatId ? errors[chatId] ?? null : null
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+  const addMessage = useChatStore((s) => s.addMessage);
+  const patchMessage = useChatStore((s) => s.patchMessage);
+  const deleteMessage = useChatStore((s) => s.deleteMessage);
+  const ensureMessagesHydrated = useChatStore((s) => s.ensureMessagesHydrated);
+  const activeChatGeneration = useChatStore((s) => (chatId ? s.activeGenerations[chatId] : undefined));
+  const beginSending = useChatStore((s) => s.beginSending);
+  const setStreamingMessageId = useChatStore((s) => s.setStreamingMessageId);
+  const setGenerationPhase = useChatStore((s) => s.setGenerationPhase);
+  const finishSending = useChatStore((s) => s.finishSending);
+  const sending = !!activeChatGeneration;
+  const sendingChatId = sending ? (chatId ?? null) : null;
+  const streamingMessageId = activeChatGeneration?.streamingMessageId ?? null;
+  const generationPhase = activeChatGeneration?.generationPhase ?? null;
+  const error = chatId ? (errors[chatId] ?? null) : null;
 
   const setChatError = useCallback((targetChatId: string | null | undefined, message: string | null) => {
-    if (!targetChatId) return
+    if (!targetChatId) return;
     setErrors((prev) => {
-      if ((prev[targetChatId] ?? null) === message) return prev
-      return { ...prev, [targetChatId]: message }
-    })
-  }, [])
+      if ((prev[targetChatId] ?? null) === message) return prev;
+      return { ...prev, [targetChatId]: message };
+    });
+  }, []);
 
   const beginGeneration = (nextChatId: string, controller: AbortController) => {
-    const generationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    activeGenerationRuns.get(nextChatId)?.controller.abort()
-    activeGenerationRuns.set(nextChatId, { controller, generationId })
-    beginSending(nextChatId)
-    setChatError(nextChatId, null)
-    return generationId
-  }
+    const generationId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    activeGenerationRuns.get(nextChatId)?.controller.abort();
+    activeGenerationRuns.set(nextChatId, { controller, generationId });
+    beginSending(nextChatId);
+    setChatError(nextChatId, null);
+    return generationId;
+  };
 
   const finishGeneration = (generationId: string | null, finishedChatId?: string) => {
-    if (!finishedChatId) return
-    const active = activeGenerationRuns.get(finishedChatId)
-    if (active && generationId && active.generationId !== generationId) return
-    activeGenerationRuns.delete(finishedChatId)
-    finishSending(finishedChatId)
-  }
+    if (!finishedChatId) return;
+    const active = activeGenerationRuns.get(finishedChatId);
+    if (active && generationId && active.generationId !== generationId) return;
+    activeGenerationRuns.delete(finishedChatId);
+    finishSending(finishedChatId);
+  };
 
   const abort = useCallback(() => {
-    if (!chatId) return
-    const active = activeGenerationRuns.get(chatId)
+    if (!chatId) return;
+    const active = activeGenerationRuns.get(chatId);
     if (active) {
-      active.controller.abort()
-      activeGenerationRuns.delete(chatId)
-      finishSending(chatId)
+      active.controller.abort();
+      activeGenerationRuns.delete(chatId);
+      finishSending(chatId);
     }
-  }, [chatId, finishSending])
+  }, [chatId, finishSending]);
 
   const isGenerationActive = (targetChatId: string, generationId: string) => {
-    const active = activeGenerationRuns.get(targetChatId)
-    return !!active && active.generationId === generationId && !active.controller.signal.aborted
-  }
+    const active = activeGenerationRuns.get(targetChatId);
+    return !!active && active.generationId === generationId && !active.controller.signal.aborted;
+  };
 
   const stripMessages = (msgs: Message[]): Message[] => {
-    const rules = useSettingsStore.getState().getActiveRegexRules() ?? []
-    return msgs.map((m) =>
-      m.role === 'assistant'
-        ? { ...m, content: stripPromptContent(m.content, rules) }
-        : m
-    )
-  }
+    const rules = useSettingsStore.getState().getActiveRegexRules() ?? [];
+    return msgs.map((m) => (m.role === "assistant" ? { ...m, content: stripPromptContent(m.content, rules) } : m));
+  };
 
   const removeEmptyStreamingDraft = async (draftId: string | null) => {
-    if (!draftId) return
-    const draft = useChatStore.getState().messages.find((m) => m.id === draftId)
+    if (!draftId) return;
+    const draft = useChatStore.getState().messages.find((m) => m.id === draftId);
     if (draft && !draft.content.trim() && !draft.reasoningContent?.trim()) {
-      await deleteMessage(draftId)
-      return
+      await deleteMessage(draftId);
+      return;
     }
     if (!draft) {
-      await deleteMessage(draftId)
+      await deleteMessage(draftId);
     }
-  }
+  };
 
   const getWorldbookContextBlocks = async (userInput: string, recentMessages: Message[]) => {
-    const { worldbooks, activeWorldbookId } = useWorldbookStore.getState()
-    if (!activeWorldbookId || !character) return []
-    const wb = worldbooks.find((w) => w.id === activeWorldbookId)
-    if (!wb || wb.entries.length === 0) return []
-    const contributor = new WorldbookContributor()
-    contributor.setEntries(wb.entries)
+    const { worldbooks, activeWorldbookId } = useWorldbookStore.getState();
+    if (!activeWorldbookId || !character) return [];
+    const wb = worldbooks.find((w) => w.id === activeWorldbookId);
+    if (!wb || wb.entries.length === 0) return [];
+    const contributor = new WorldbookContributor();
+    contributor.setEntries(wb.entries);
     return contributor.contribute({
       character,
       recentMessages,
       userInput,
-    })
-  }
+    });
+  };
 
   const getImagePlannerWorldbookReferences = async (content: string): Promise<ImagePlannerWorldbookReference[]> => {
-    const imageSettings = useSettingsStore.getState().imageGeneration
-    if (!imageSettings.worldbookReferenceEnabled || !character) return []
+    const imageSettings = useSettingsStore.getState().imageGeneration;
+    if (!imageSettings.worldbookReferenceEnabled || !character) return [];
 
-    const { worldbooks, activeWorldbookId } = useWorldbookStore.getState()
-    if (!activeWorldbookId) return []
+    const { worldbooks, activeWorldbookId } = useWorldbookStore.getState();
+    if (!activeWorldbookId) return [];
 
-    const wb = worldbooks.find((w) => w.id === activeWorldbookId)
-    if (!wb || wb.entries.length === 0) return []
+    const wb = worldbooks.find((w) => w.id === activeWorldbookId);
+    if (!wb || wb.entries.length === 0) return [];
 
-    const contributor = new WorldbookContributor()
-    contributor.setEntries(wb.entries)
+    const contributor = new WorldbookContributor();
+    contributor.setEntries(wb.entries);
     const blocks = await contributor.contribute({
       character,
       recentMessages: [],
       userInput: content,
-    })
+    });
 
-    return blocks
-      .slice(0, 8)
-      .map((block) => ({
-        title: block.title,
-        content: capText(block.content, 1200),
-      }))
-  }
+    return blocks.slice(0, 8).map((block) => ({
+      title: block.title,
+      content: capText(block.content, 1200),
+    }));
+  };
 
-  const getMemoryPromptPlan = async (historyMessages: Message[], targetChatId: string, signal?: AbortSignal): Promise<{ recentMessages: Message[]; memoryBlock: ContextBlock | null }> => {
-    const settings = useSettingsStore.getState()
+  const getMemoryPromptPlan = async (
+    historyMessages: Message[],
+    targetChatId: string,
+    signal?: AbortSignal,
+  ): Promise<{ recentMessages: Message[]; memoryBlock: ContextBlock | null }> => {
+    const settings = useSettingsStore.getState();
     if (!settings.lightweightMemoryEnabled) {
-      return { recentMessages: historyMessages, memoryBlock: null }
+      return { recentMessages: historyMessages, memoryBlock: null };
     }
 
-    const { memoryMessages, recentMessages } = splitMessagesByRecentTurns(historyMessages, settings.promptRecentTurns)
+    const { memoryMessages, recentMessages } = splitMessagesByRecentTurns(historyMessages, settings.promptRecentTurns);
     if (memoryMessages.length === 0) {
-      return { recentMessages, memoryBlock: null }
+      return { recentMessages, memoryBlock: null };
     }
 
-    const memorySourceMessages = stripMessages(memoryMessages) as Message[]
-    const compressorConfig = await resolveMemoryCompressorConfig(settings.memoryCompressorConfigId)
-    const compressorKey = getMemoryCompressorKey(compressorConfig)
-    const cached = targetChatId ? await chatMemoryRepository.get(targetChatId) : null
-    const cachedMessageCount = Math.max(0, Math.min(cached?.sourceMessageCount ?? 0, memorySourceMessages.length))
-    const cachedPrefixMessages = cachedMessageCount > 0
-      ? memorySourceMessages.slice(0, cachedMessageCount)
-      : []
-    const cacheReusable = !!cached
-      && cachedMessageCount > 0
-      && cached.sourceHash === hashMessages(cachedPrefixMessages)
-      && cached.compressorKey === compressorKey
-      && cached.memorySummaryMaxChars === settings.memorySummaryMaxChars
+    const memorySourceMessages = stripMessages(memoryMessages) as Message[];
+    const compressorConfig = await resolveMemoryCompressorConfig(settings.memoryCompressorConfigId);
+    const compressorKey = getMemoryCompressorKey(compressorConfig);
+    const cached = targetChatId ? await chatMemoryRepository.get(targetChatId) : null;
+    const cachedMessageCount = Math.max(0, Math.min(cached?.sourceMessageCount ?? 0, memorySourceMessages.length));
+    const cachedPrefixMessages = cachedMessageCount > 0 ? memorySourceMessages.slice(0, cachedMessageCount) : [];
+    const cacheReusable =
+      !!cached &&
+      cachedMessageCount > 0 &&
+      cached.sourceHash === hashMessages(cachedPrefixMessages) &&
+      cached.compressorKey === compressorKey &&
+      cached.memorySummaryMaxChars === settings.memorySummaryMaxChars;
 
-    let compressionMode: 'local' | 'model' | 'fallback' = compressorConfig ? 'fallback' : 'local'
-    let summarizedMessageCount = cacheReusable ? cachedMessageCount : 0
-    let segments = cacheReusable ? normalizeMemorySegments(cached) : []
-    let overflowMemoryMessages = cacheReusable
-      ? memorySourceMessages.slice(cachedMessageCount)
-      : [] as Message[]
-    let shouldPersistMemory = false
+    let compressionMode: "local" | "model" | "fallback" = compressorConfig ? "fallback" : "local";
+    let summarizedMessageCount = cacheReusable ? cachedMessageCount : 0;
+    let segments = cacheReusable ? normalizeMemorySegments(cached) : [];
+    let overflowMemoryMessages = cacheReusable ? memorySourceMessages.slice(cachedMessageCount) : ([] as Message[]);
+    let shouldPersistMemory = false;
 
     if (!cacheReusable || shouldCompactMemoryBuffer(overflowMemoryMessages, settings.memorySummaryMaxChars)) {
-      const messagesToSummarize = cacheReusable
-        ? overflowMemoryMessages
-        : memorySourceMessages
-      let segmentSummary = ''
+      const messagesToSummarize = cacheReusable ? overflowMemoryMessages : memorySourceMessages;
+      let segmentSummary = "";
 
       if (compressorConfig) {
         try {
@@ -569,29 +584,29 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
             compressorConfig,
             getChatScopedDeepSeekUserId(compressorConfig, targetChatId),
             signal,
-          )
-          segmentSummary = compressed.summary
-          const compressedUsage = withDeepSeekUsageCost(compressed.usage, compressorConfig)
+          );
+          segmentSummary = compressed.summary;
+          const compressedUsage = withDeepSeekUsageCost(compressed.usage, compressorConfig);
           if (targetChatId) {
             void secondaryApiUsageRepository.create({
               chatId: targetChatId,
-              source: 'memory-compressor',
-              label: 'Memory Compression',
+              source: "memory-compressor",
+              label: "Memory Compression",
               modelConfigId: compressorConfig.id,
               model: compressorConfig.model,
               usage: compressedUsage,
-            })
-            void recordUsageCostAndWarn(compressedUsage)
+            });
+            void recordUsageCostAndWarn(compressedUsage);
           }
-          compressionMode = 'model'
+          compressionMode = "model";
         } catch (err) {
-          if ((err as Error).name === 'AbortError') throw err
-          segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
-          compressionMode = 'fallback'
+          if ((err as Error).name === "AbortError") throw err;
+          segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars);
+          compressionMode = "fallback";
         }
       } else {
-        segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars)
-        compressionMode = 'local'
+        segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars);
+        compressionMode = "local";
       }
 
       segments = [
@@ -602,15 +617,15 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
           compressionMode,
           memorySummaryMaxChars: settings.memorySummaryMaxChars,
         }),
-      ]
-      summarizedMessageCount = memorySourceMessages.length
-      overflowMemoryMessages = []
-      shouldPersistMemory = true
+      ];
+      summarizedMessageCount = memorySourceMessages.length;
+      overflowMemoryMessages = [];
+      shouldPersistMemory = true;
     }
 
     if (targetChatId && shouldPersistMemory) {
-      const summarizedSourceMessages = memorySourceMessages.slice(0, summarizedMessageCount)
-      const summary = formatMemorySegmentsForPrompt(segments)
+      const summarizedSourceMessages = memorySourceMessages.slice(0, summarizedMessageCount);
+      const summary = formatMemorySegmentsForPrompt(segments);
       await chatMemoryRepository.upsert({
         chatId: targetChatId,
         summary,
@@ -621,40 +636,37 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         compressionMode,
         memorySummaryMaxChars: settings.memorySummaryMaxChars,
         segments,
-      })
+      });
     }
 
-    const memorySummary = formatMemorySegmentsForPrompt(segments)
+    const memorySummary = formatMemorySegmentsForPrompt(segments);
     return {
       recentMessages: [...overflowMemoryMessages, ...recentMessages],
       memoryBlock: createMemoryContextBlock(memorySummary),
-    }
-  }
+    };
+  };
 
   const hasVisibleAssistantBody = (content: string) => {
-    if (!content.trim()) return false
-    const rules = useSettingsStore.getState().getActiveRegexRules()
-    if (!rules || rules.length === 0) return content.trim().length > 0
+    if (!content.trim()) return false;
+    const rules = useSettingsStore.getState().getActiveRegexRules();
+    if (!rules || rules.length === 0) return content.trim().length > 0;
     try {
-      return applyRegexRules(content, rules).displayContent.trim().length > 0
+      return applyRegexRules(content, rules).displayContent.trim().length > 0;
     } catch {
-      return content.trim().length > 0
+      return content.trim().length > 0;
     }
-  }
+  };
 
   const throwGenerationStopped = () => {
-    const err = new Error('Generation stopped')
-    err.name = 'AbortError'
-    throw err
-  }
+    const err = new Error("Generation stopped");
+    err.name = "AbortError";
+    throw err;
+  };
 
   const getAttemptMessages = (built: BuiltPrompt, retrying: boolean) => {
-    if (!retrying) return built.messages
-    return [
-      ...built.messages,
-      { role: 'system' as const, content: EMPTY_ASSISTANT_RETRY_MESSAGE },
-    ]
-  }
+    if (!retrying) return built.messages;
+    return [...built.messages, { role: "system" as const, content: EMPTY_ASSISTANT_RETRY_MESSAGE }];
+  };
 
   const generateAssistantOnce = async (
     targetChatId: string,
@@ -667,22 +679,22 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
     attempt: number,
     debugContext?: DebugPromptContext,
   ): Promise<{
-    content: string
-    reasoningContent: string
-    usage?: Message['usage']
-    generateDuration: number
-    thinkingDuration: number
+    content: string;
+    reasoningContent: string;
+    usage?: Message["usage"];
+    generateDuration: number;
+    thinkingDuration: number;
   }> => {
-    const provider = createModelProvider(modelConfig)
-    const genStart = Date.now()
-    let nextContent = ''
-    let nextReasoningContent = ''
-    let nextUsage: Message['usage'] | undefined
-    let thinkingDuration: number | undefined
-    const showLiveText = modelConfig.streamingEnabled !== false
-    const attemptMessages = getAttemptMessages(built, retrying)
-    const userId = getChatScopedDeepSeekUserId(modelConfig, targetChatId)
-    let debugPrompt: SavedDebugPrompt | undefined
+    const provider = createModelProvider(modelConfig);
+    const genStart = Date.now();
+    let nextContent = "";
+    let nextReasoningContent = "";
+    let nextUsage: Message["usage"] | undefined;
+    let thinkingDuration: number | undefined;
+    const showLiveText = modelConfig.streamingEnabled !== false;
+    const attemptMessages = getAttemptMessages(built, retrying);
+    const userId = getChatScopedDeepSeekUserId(modelConfig, targetChatId);
+    let debugPrompt: SavedDebugPrompt | undefined;
 
     if (debugContext) {
       try {
@@ -690,23 +702,27 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
           debugContext,
           built,
           attemptMessages,
-          retrying ? 'retry' : debugContext.baseTrigger,
+          retrying ? "retry" : debugContext.baseTrigger,
           attempt,
           userId,
-        )
+        );
       } catch (err) {
-        notifyDebugPromptSaveFailed(err)
+        notifyDebugPromptSaveFailed(err);
       }
     }
 
-    setGenerationPhase(targetChatId, retrying ? 'retrying' : 'thinking')
-    await patchMessage(assistantId, {
-      content: '',
-      reasoningContent: undefined,
-      generateDuration: undefined,
-      thinkingDuration: undefined,
-      usage: undefined,
-    }, { persist: false })
+    setGenerationPhase(targetChatId, retrying ? "retrying" : "thinking");
+    await patchMessage(
+      assistantId,
+      {
+        content: "",
+        reasoningContent: undefined,
+        generateDuration: undefined,
+        thinkingDuration: undefined,
+        usage: undefined,
+      },
+      { persist: false },
+    );
 
     if (provider.streamGenerate) {
       for await (const chunk of provider.streamGenerate({
@@ -719,26 +735,30 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         userId,
         signal: controller.signal,
       })) {
-        if (!isGenerationActive(targetChatId, generationId)) throwGenerationStopped()
+        if (!isGenerationActive(targetChatId, generationId)) throwGenerationStopped();
         if (chunk.reasoningContentDelta) {
-          nextReasoningContent += chunk.reasoningContentDelta
-          if (useChatStore.getState().activeGenerations[targetChatId]?.generationPhase !== 'writing') {
-            setGenerationPhase(targetChatId, retrying ? 'retrying' : 'thinking')
+          nextReasoningContent += chunk.reasoningContentDelta;
+          if (useChatStore.getState().activeGenerations[targetChatId]?.generationPhase !== "writing") {
+            setGenerationPhase(targetChatId, retrying ? "retrying" : "thinking");
           }
         }
         if (chunk.contentDelta) {
-          thinkingDuration ??= Date.now() - genStart
-          nextContent += chunk.contentDelta
-          setGenerationPhase(targetChatId, 'writing')
+          thinkingDuration ??= Date.now() - genStart;
+          nextContent += chunk.contentDelta;
+          setGenerationPhase(targetChatId, "writing");
         }
-        if (chunk.usage) nextUsage = chunk.usage
+        if (chunk.usage) nextUsage = chunk.usage;
         if (chunk.reasoningContentDelta || chunk.contentDelta || chunk.usage) {
-          await patchMessage(assistantId, {
-            content: showLiveText ? nextContent : '',
-            reasoningContent: nextReasoningContent || undefined,
-            thinkingDuration,
-            usage: nextUsage,
-          }, { persist: false })
+          await patchMessage(
+            assistantId,
+            {
+              content: showLiveText ? nextContent : "",
+              reasoningContent: nextReasoningContent || undefined,
+              thinkingDuration,
+              usage: nextUsage,
+            },
+            { persist: false },
+          );
         }
       }
     } else {
@@ -751,30 +771,34 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         reasoningEffort: modelConfig.reasoningEffort || undefined,
         userId,
         signal: controller.signal,
-      })
-      if (!isGenerationActive(targetChatId, generationId)) throwGenerationStopped()
-      thinkingDuration = Date.now() - genStart
-      setGenerationPhase(targetChatId, 'writing')
-      await patchMessage(assistantId, {
-        content: '',
-        reasoningContent: result.reasoningContent || undefined,
-        thinkingDuration,
-        usage: result.usage,
-      }, { persist: false })
-      nextContent = result.content
-      nextReasoningContent = result.reasoningContent ?? ''
-      nextUsage = result.usage
+      });
+      if (!isGenerationActive(targetChatId, generationId)) throwGenerationStopped();
+      thinkingDuration = Date.now() - genStart;
+      setGenerationPhase(targetChatId, "writing");
+      await patchMessage(
+        assistantId,
+        {
+          content: "",
+          reasoningContent: result.reasoningContent || undefined,
+          thinkingDuration,
+          usage: result.usage,
+        },
+        { persist: false },
+      );
+      nextContent = result.content;
+      nextReasoningContent = result.reasoningContent ?? "";
+      nextUsage = result.usage;
     }
 
-    thinkingDuration ??= Date.now() - genStart
+    thinkingDuration ??= Date.now() - genStart;
     return {
       content: nextContent,
       reasoningContent: nextReasoningContent,
       usage: withDebugUsage(withDeepSeekUsageCost(nextUsage, modelConfig), debugPrompt),
       generateDuration: Date.now() - genStart,
       thinkingDuration,
-    }
-  }
+    };
+  };
 
   const generateAssistantWithEmptyRetry = async (
     targetChatId: string,
@@ -786,7 +810,7 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
     debugContext?: DebugPromptContext,
   ): Promise<string> => {
     for (let attempt = 0; attempt <= EMPTY_ASSISTANT_RETRY_LIMIT; attempt++) {
-      const attemptNumber = attempt + 1
+      const attemptNumber = attempt + 1;
       const result = await generateAssistantOnce(
         targetChatId,
         assistantId,
@@ -797,8 +821,8 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         attempt > 0,
         attemptNumber,
         debugContext,
-      )
-      void recordUsageCostAndWarn(result.usage)
+      );
+      void recordUsageCostAndWarn(result.usage);
 
       if (hasVisibleAssistantBody(result.content)) {
         await patchMessage(assistantId, {
@@ -807,47 +831,52 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
           generateDuration: result.generateDuration,
           thinkingDuration: result.thinkingDuration,
           usage: result.usage,
-        })
-        return result.content
+        });
+        return result.content;
       }
 
       if (attempt < EMPTY_ASSISTANT_RETRY_LIMIT) {
-        setGenerationPhase(targetChatId, 'retrying')
-        await patchMessage(assistantId, {
-          content: '',
-          reasoningContent: undefined,
-          generateDuration: undefined,
-          thinkingDuration: result.thinkingDuration,
-          usage: result.usage,
-        }, { persist: false })
-        continue
+        setGenerationPhase(targetChatId, "retrying");
+        await patchMessage(
+          assistantId,
+          {
+            content: "",
+            reasoningContent: undefined,
+            generateDuration: undefined,
+            thinkingDuration: result.thinkingDuration,
+            usage: result.usage,
+          },
+          { persist: false },
+        );
+        continue;
       }
 
-      await deleteMessage(assistantId)
-      setStreamingMessageId(targetChatId, null)
-      throw new Error('AI returned an empty body after automatic retry.')
+      await deleteMessage(assistantId);
+      setStreamingMessageId(targetChatId, null);
+      throw new Error("AI returned an empty body after automatic retry.");
     }
-    return ''
-  }
+    return "";
+  };
 
   const processImageGeneration = async (targetChatId: string, assistantId: string, content: string) => {
-    const settings = normalizeImageSettings(useSettingsStore.getState().imageGeneration)
-    if (!settings.enabled || settings.mode !== 'auto' || settings.maxImages <= 0 || !settings.comfyWorkflowJson.trim()) return
+    const settings = normalizeImageSettings(useSettingsStore.getState().imageGeneration);
+    if (!settings.enabled || settings.mode !== "auto" || settings.maxImages <= 0 || !settings.comfyWorkflowJson.trim())
+      return;
 
-    const imageRun = beginImageGeneration(assistantId)
-    const imageToken = imageRun.token
-    const imageSignal = imageRun.controller.signal
-    const isCurrent = () => isCurrentImageGeneration(assistantId, imageToken)
+    const imageRun = beginImageGeneration(assistantId);
+    const imageToken = imageRun.token;
+    const imageSignal = imageRun.controller.signal;
+    const isCurrent = () => isCurrentImageGeneration(assistantId, imageToken);
 
     try {
-      let nextContent = content
-      let markers = extractImageMarkers(nextContent, settings.maxImages)
+      let nextContent = content;
+      let markers = extractImageMarkers(nextContent, settings.maxImages);
 
       if (markers.length === 0) {
         const plannerConfig = settings.plannerConfigId
           ? await resolveMemoryCompressorConfig(settings.plannerConfigId)
-          : null
-        if (!plannerConfig) return
+          : null;
+        if (!plannerConfig) return;
 
         const planned = await planImageMarkersWithModel({
           content: nextContent,
@@ -856,218 +885,230 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
           worldbookReferences: await getImagePlannerWorldbookReferences(nextContent),
           userId: getChatScopedDeepSeekUserId(plannerConfig, targetChatId),
           signal: imageSignal,
-        })
-        if (!isCurrent()) return
+        });
+        if (!isCurrent()) return;
 
-        const plannedUsage = withDeepSeekUsageCost(planned.usage, plannerConfig)
+        const plannedUsage = withDeepSeekUsageCost(planned.usage, plannerConfig);
         void secondaryApiUsageRepository.create({
           chatId: targetChatId,
-          source: 'image-planner',
-          label: 'Auto Image Planning',
+          source: "image-planner",
+          label: "Auto Image Planning",
           modelConfigId: plannerConfig.id,
           model: plannerConfig.model,
           usage: plannedUsage,
-        })
-        void recordUsageCostAndWarn(plannedUsage)
+        });
+        void recordUsageCostAndWarn(plannedUsage);
 
-        nextContent = planned.content
-        markers = extractImageMarkers(nextContent, settings.maxImages)
+        nextContent = planned.content;
+        markers = extractImageMarkers(nextContent, settings.maxImages);
         if (nextContent !== content) {
-          await patchMessage(assistantId, { content: nextContent })
+          await patchMessage(assistantId, { content: nextContent });
         }
       }
 
-      if (markers.length === 0 || !isCurrent()) return
+      if (markers.length === 0 || !isCurrent()) return;
 
-      let images = createGeneratingImages(markers)
-      await patchMessage(assistantId, { images })
+      let images = createGeneratingImages(markers);
+      await patchMessage(assistantId, { images });
 
       for (let i = 0; i < markers.length; i++) {
-        const marker = markers[i]
+        const marker = markers[i];
         try {
-          const src = await generateComfyImage(marker.prompt, settings, imageSignal)
-          if (!isCurrent()) return
-          const latestImages = useChatStore.getState().messages.find((message) => message.id === assistantId)?.images ?? images
+          const src = await generateComfyImage(marker.prompt, settings, imageSignal);
+          if (!isCurrent()) return;
+          const latestImages =
+            useChatStore.getState().messages.find((message) => message.id === assistantId)?.images ?? images;
           images = latestImages.map((image, index) => {
-            if (index !== i) return image
-            if (image.status === 'deleted') return image
-            return { ...image, status: 'done' as const, src, error: undefined, updatedAt: new Date().toISOString() }
-          })
+            if (index !== i) return image;
+            if (image.status === "deleted") return image;
+            return { ...image, status: "done" as const, src, error: undefined, updatedAt: new Date().toISOString() };
+          });
         } catch (err) {
-          if (isAbortError(err) || !isCurrent()) return
-          const latestImages = useChatStore.getState().messages.find((message) => message.id === assistantId)?.images ?? images
+          if (isAbortError(err) || !isCurrent()) return;
+          const latestImages =
+            useChatStore.getState().messages.find((message) => message.id === assistantId)?.images ?? images;
           images = latestImages.map((image, index) => {
-            if (index !== i) return image
-            if (image.status === 'deleted') return image
-            return { ...image, status: 'error' as const, error: (err as Error).message || 'Image generation failed', updatedAt: new Date().toISOString() }
-          })
+            if (index !== i) return image;
+            if (image.status === "deleted") return image;
+            return {
+              ...image,
+              status: "error" as const,
+              error: (err as Error).message || "Image generation failed",
+              updatedAt: new Date().toISOString(),
+            };
+          });
         }
-        if (!isCurrent()) return
-        await patchMessage(assistantId, { images })
+        if (!isCurrent()) return;
+        await patchMessage(assistantId, { images });
       }
     } catch (err) {
-      if (isAbortError(err) || !isCurrent()) return
-      setChatError(targetChatId, (err as Error).message || 'Image generation failed')
+      if (isAbortError(err) || !isCurrent()) return;
+      setChatError(targetChatId, (err as Error).message || "Image generation failed");
     } finally {
-      finishImageGeneration(assistantId, imageToken)
+      finishImageGeneration(assistantId, imageToken);
     }
-  }
+  };
 
-  const sendMessage = useCallback(async (content: string, options: SendMessageOptions = {}) => {
-    const trimmedContent = content.trim()
-    if (!trimmedContent || !chatId || !character) return
+  const sendMessage = useCallback(
+    async (content: string, options: SendMessageOptions = {}) => {
+      const trimmedContent = content.trim();
+      if (!trimmedContent || !chatId || !character) return;
 
-    const controller = new AbortController()
-    const generationId = beginGeneration(chatId, controller)
-    let assistantId: string | null = null
+      const controller = new AbortController();
+      const generationId = beginGeneration(chatId, controller);
+      let assistantId: string | null = null;
 
-    try {
-      if (!options.hiddenUserMessage) {
-        await addMessage({
-          chatId,
-          role: 'user',
-          content: trimmedContent,
-        })
-      }
-
-      const recentMessages = await ensureMessagesHydrated(chatId)
-      const contextTokens = useSettingsStore.getState().contextTokens ?? 64000
-
-      const activePresetId = await presetRepository.getActivePresetId()
-      let presetItems: { role: 'system' | 'user'; content: string; injectionOrder: number }[] | undefined
-      if (activePresetId) {
-        const preset = await presetRepository.getById(activePresetId)
-        if (preset) {
-          presetItems = preset.items
-            .filter((i) => i.enabled)
-            .map((i) => ({
-              role: i.role,
-              content: i.content,
-              injectionOrder: i.injectionOrder,
-            }))
-        }
-      }
-
-      const historyMessages = options.hiddenUserMessage ? recentMessages : recentMessages.slice(0, -1)
-      const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal)
-      const worldbookBlocks = await getWorldbookContextBlocks(trimmedContent, stripMessages(recentMessages))
-      const contextBlocks = [
-        memoryPlan.memoryBlock,
-        ...worldbookBlocks,
-      ].filter(Boolean) as ContextBlock[]
-
-      const built = buildChatPrompt({
-        character,
-        recentMessages: stripMessages(memoryPlan.recentMessages) as Message[],
-        userInput: trimmedContent,
-        maxTotalTokens: contextTokens,
-        presetItems,
-        contextBlocks,
-        userName: useSettingsStore.getState().personaName,
-      })
-
-      if (onPromptBuilt) {
-        onPromptBuilt(built)
-      }
-
-      const modelConfig = useSettingsStore.getState().modelConfig
-      if (!modelConfig) {
-        throw new Error('Model not configured. Please set up API settings first.')
-      }
-
-      const assistant = await addMessage({
-        chatId,
-        role: 'assistant',
-        content: '',
-      })
-      assistantId = assistant.id
-      setStreamingMessageId(chatId, assistant.id)
-      const debugContext: DebugPromptContext | undefined = useSettingsStore.getState().debugMode
-        ? {
+      try {
+        if (!options.hiddenUserMessage) {
+          await addMessage({
             chatId,
-            characterId: character.id,
-            characterName: character.name,
-            contextTokens,
-            round: getNextDebugRound(recentMessages),
-            assistantMessageId: assistant.id,
-            baseTrigger: options.hiddenUserMessage ? 'continue' : 'send',
-            hiddenUserMessage: !!options.hiddenUserMessage,
-          }
-        : undefined
-      const finalContent = await generateAssistantWithEmptyRetry(chatId, assistant.id, built, modelConfig, controller, generationId, debugContext)
-      if (isGenerationActive(chatId, generationId)) {
-        void notifyAssistantOutputComplete(character.name)
-      }
-      void processImageGeneration(chatId, assistant.id, finalContent)
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        setChatError(chatId, 'Generation stopped')
-      } else {
-        setChatError(chatId, (err as Error).message || 'Failed to send message')
-      }
-      await removeEmptyStreamingDraft(assistantId)
-    } finally {
-      finishGeneration(generationId, chatId)
-    }
-  }, [character, chatId, addMessage, patchMessage, deleteMessage, ensureMessagesHydrated, onPromptBuilt])
+            role: "user",
+            content: trimmedContent,
+          });
+        }
 
-  const clearError = useCallback(() => setChatError(chatId, null), [chatId, setChatError])
+        const recentMessages = await ensureMessagesHydrated(chatId);
+        const contextTokens = useSettingsStore.getState().contextTokens ?? 64000;
+
+        const activePresetId = await presetRepository.getActivePresetId();
+        let presetItems: { role: "system" | "user"; content: string; injectionOrder: number }[] | undefined;
+        if (activePresetId) {
+          const preset = await presetRepository.getById(activePresetId);
+          if (preset) {
+            presetItems = preset.items
+              .filter((i) => i.enabled)
+              .map((i) => ({
+                role: i.role,
+                content: i.content,
+                injectionOrder: i.injectionOrder,
+              }));
+          }
+        }
+
+        const historyMessages = options.hiddenUserMessage ? recentMessages : recentMessages.slice(0, -1);
+        const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal);
+        const worldbookBlocks = await getWorldbookContextBlocks(trimmedContent, stripMessages(recentMessages));
+        const contextBlocks = [memoryPlan.memoryBlock, ...worldbookBlocks].filter(Boolean) as ContextBlock[];
+
+        const built = buildChatPrompt({
+          character,
+          recentMessages: stripMessages(memoryPlan.recentMessages) as Message[],
+          userInput: trimmedContent,
+          maxTotalTokens: contextTokens,
+          presetItems,
+          contextBlocks,
+          userName: useSettingsStore.getState().personaName,
+        });
+
+        if (onPromptBuilt) {
+          onPromptBuilt(built);
+        }
+
+        const modelConfig = useSettingsStore.getState().modelConfig;
+        if (!modelConfig) {
+          throw new Error("Model not configured. Please set up API settings first.");
+        }
+
+        const assistant = await addMessage({
+          chatId,
+          role: "assistant",
+          content: "",
+        });
+        assistantId = assistant.id;
+        setStreamingMessageId(chatId, assistant.id);
+        const debugContext: DebugPromptContext | undefined = useSettingsStore.getState().debugMode
+          ? {
+              chatId,
+              characterId: character.id,
+              characterName: character.name,
+              contextTokens,
+              round: getNextDebugRound(recentMessages),
+              assistantMessageId: assistant.id,
+              baseTrigger: options.hiddenUserMessage ? "continue" : "send",
+              hiddenUserMessage: !!options.hiddenUserMessage,
+            }
+          : undefined;
+        const finalContent = await generateAssistantWithEmptyRetry(
+          chatId,
+          assistant.id,
+          built,
+          modelConfig,
+          controller,
+          generationId,
+          debugContext,
+        );
+        if (isGenerationActive(chatId, generationId)) {
+          void notifyAssistantOutputComplete(character.name);
+        }
+        void processImageGeneration(chatId, assistant.id, finalContent);
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          setChatError(chatId, "Generation stopped");
+        } else {
+          setChatError(chatId, (err as Error).message || "Failed to send message");
+        }
+        await removeEmptyStreamingDraft(assistantId);
+      } finally {
+        finishGeneration(generationId, chatId);
+      }
+    },
+    [character, chatId, addMessage, patchMessage, deleteMessage, ensureMessagesHydrated, onPromptBuilt],
+  );
+
+  const clearError = useCallback(() => setChatError(chatId, null), [chatId, setChatError]);
 
   const regenerate = useCallback(async () => {
-    if (!chatId || !character) return
+    if (!chatId || !character) return;
 
-    const controller = new AbortController()
-    const generationId = beginGeneration(chatId, controller)
-    let assistantId: string | null = null
+    const controller = new AbortController();
+    const generationId = beginGeneration(chatId, controller);
+    let assistantId: string | null = null;
 
     try {
-      const allMessages = await ensureMessagesHydrated(chatId)
+      const allMessages = await ensureMessagesHydrated(chatId);
 
-      let lastAssistantIdx = -1
+      let lastAssistantIdx = -1;
       for (let i = allMessages.length - 1; i >= 0; i--) {
-        if (allMessages[i].role === 'assistant') {
-          lastAssistantIdx = i
-          break
+        if (allMessages[i].role === "assistant") {
+          lastAssistantIdx = i;
+          break;
         }
       }
       if (lastAssistantIdx < 0) {
-        setChatError(chatId, 'No AI response to regenerate')
-        return
+        setChatError(chatId, "No AI response to regenerate");
+        return;
       }
 
-      const lastAssistantMsg = allMessages[lastAssistantIdx]
-      cancelImageGeneration(lastAssistantMsg.id)
-      await deleteMessage(lastAssistantMsg.id)
+      const lastAssistantMsg = allMessages[lastAssistantIdx];
+      cancelImageGeneration(lastAssistantMsg.id);
+      await deleteMessage(lastAssistantMsg.id);
 
-      let lastUserIdx = lastAssistantIdx - 1
-      while (lastUserIdx >= 0 && allMessages[lastUserIdx].role !== 'user') lastUserIdx--
+      let lastUserIdx = lastAssistantIdx - 1;
+      while (lastUserIdx >= 0 && allMessages[lastUserIdx].role !== "user") lastUserIdx--;
       if (lastUserIdx < 0) {
-        setChatError(chatId, 'No user message found to regenerate from')
-        return
+        setChatError(chatId, "No user message found to regenerate from");
+        return;
       }
-      const userContent = allMessages[lastUserIdx].content
+      const userContent = allMessages[lastUserIdx].content;
 
-      const afterDelete = allMessages.filter((message) => message.id !== lastAssistantMsg.id)
-      const contextTokens = useSettingsStore.getState().contextTokens ?? 64000
+      const afterDelete = allMessages.filter((message) => message.id !== lastAssistantMsg.id);
+      const contextTokens = useSettingsStore.getState().contextTokens ?? 64000;
 
-      const activePresetId = await presetRepository.getActivePresetId()
-      let presetItems: { role: 'system' | 'user'; content: string; injectionOrder: number }[] | undefined
+      const activePresetId = await presetRepository.getActivePresetId();
+      let presetItems: { role: "system" | "user"; content: string; injectionOrder: number }[] | undefined;
       if (activePresetId) {
-        const preset = await presetRepository.getById(activePresetId)
+        const preset = await presetRepository.getById(activePresetId);
         if (preset) {
           presetItems = preset.items
             .filter((i) => i.enabled)
-            .map((i) => ({ role: i.role, content: i.content, injectionOrder: i.injectionOrder }))
+            .map((i) => ({ role: i.role, content: i.content, injectionOrder: i.injectionOrder }));
         }
       }
 
-      const historyMessages = afterDelete.slice(0, -1)
-      const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal)
-      const worldbookBlocks = await getWorldbookContextBlocks(userContent, stripMessages(afterDelete))
-      const contextBlocks = [
-        memoryPlan.memoryBlock,
-        ...worldbookBlocks,
-      ].filter(Boolean) as ContextBlock[]
+      const historyMessages = afterDelete.slice(0, -1);
+      const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal);
+      const worldbookBlocks = await getWorldbookContextBlocks(userContent, stripMessages(afterDelete));
+      const contextBlocks = [memoryPlan.memoryBlock, ...worldbookBlocks].filter(Boolean) as ContextBlock[];
 
       const built = buildChatPrompt({
         character,
@@ -1077,20 +1118,20 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
         presetItems,
         contextBlocks,
         userName: useSettingsStore.getState().personaName,
-      })
+      });
 
-      if (onPromptBuilt) onPromptBuilt(built)
+      if (onPromptBuilt) onPromptBuilt(built);
 
-      const modelConfig = useSettingsStore.getState().modelConfig
-      if (!modelConfig) throw new Error('Model not configured. Please set up API settings first.')
+      const modelConfig = useSettingsStore.getState().modelConfig;
+      if (!modelConfig) throw new Error("Model not configured. Please set up API settings first.");
 
       const assistant = await addMessage({
         chatId,
-        role: 'assistant',
-        content: '',
-      })
-      assistantId = assistant.id
-      setStreamingMessageId(chatId, assistant.id)
+        role: "assistant",
+        content: "",
+      });
+      assistantId = assistant.id;
+      setStreamingMessageId(chatId, assistant.id);
       const debugContext: DebugPromptContext | undefined = useSettingsStore.getState().debugMode
         ? {
             chatId,
@@ -1099,26 +1140,44 @@ export function useSendMessage({ character, chatId, onPromptBuilt }: UseSendMess
             contextTokens,
             round: getNextDebugRound(afterDelete),
             assistantMessageId: assistant.id,
-            baseTrigger: 'regenerate',
+            baseTrigger: "regenerate",
             hiddenUserMessage: false,
           }
-        : undefined
-      const finalContent = await generateAssistantWithEmptyRetry(chatId, assistant.id, built, modelConfig, controller, generationId, debugContext)
+        : undefined;
+      const finalContent = await generateAssistantWithEmptyRetry(
+        chatId,
+        assistant.id,
+        built,
+        modelConfig,
+        controller,
+        generationId,
+        debugContext,
+      );
       if (isGenerationActive(chatId, generationId)) {
-        void notifyAssistantOutputComplete(character.name)
+        void notifyAssistantOutputComplete(character.name);
       }
-      void processImageGeneration(chatId, assistant.id, finalContent)
+      void processImageGeneration(chatId, assistant.id, finalContent);
     } catch (err) {
-      if ((err as Error).name === 'AbortError') {
-        setChatError(chatId, 'Generation stopped')
+      if ((err as Error).name === "AbortError") {
+        setChatError(chatId, "Generation stopped");
       } else {
-        setChatError(chatId, (err as Error).message || 'Failed to regenerate')
+        setChatError(chatId, (err as Error).message || "Failed to regenerate");
       }
-      await removeEmptyStreamingDraft(assistantId)
+      await removeEmptyStreamingDraft(assistantId);
     } finally {
-      finishGeneration(generationId, chatId)
+      finishGeneration(generationId, chatId);
     }
-  }, [character, chatId, addMessage, patchMessage, deleteMessage, ensureMessagesHydrated, onPromptBuilt])
+  }, [character, chatId, addMessage, patchMessage, deleteMessage, ensureMessagesHydrated, onPromptBuilt]);
 
-  return { sendMessage, regenerate, abort, sending, sendingChatId, streamingMessageId, generationPhase, error, clearError }
+  return {
+    sendMessage,
+    regenerate,
+    abort,
+    sending,
+    sendingChatId,
+    streamingMessageId,
+    generationPhase,
+    error,
+    clearError,
+  };
 }

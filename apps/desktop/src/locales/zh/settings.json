@@ -4,7 +4,9 @@
     "api": "DeepSeek API",
     "appearance": "外观",
     "context": "上下文",
-    "regex": "正则规则"
+    "regex": "正则规则",
+    "general": "通用",
+    "image": "图片生成"
   },
   "api": {
     "deepseekDedicated": "DeepSeek 专用",
@@ -103,6 +105,55 @@
     "lanPassword": "访问密码",
     "lanPasswordHint": "局域网内其他设备访问时需要输入此密码。",
     "lanPasswordGenerate": "重新生成"
+  },
+  "general": {
+    "title": "通用",
+    "description": "调试与开发设置。",
+    "debugMode": "调试模式",
+    "debugHint": "每一轮对话的完整提示词都会保存为 JSON 文件，存放在 app-data 的 debug_prompts 目录下。",
+    "debugDetail": "每个聊天会创建一个以角色名和聊天 ID 命名的子文件夹，文件名包含轮次、触发原因和消息 ID。",
+    "dailyCostWarning": "每日费用预警",
+    "dailyCostHint": "当日 DeepSeek 消费达到每日人民币限额的 80% 时提醒一次。",
+    "dailyCostLimitYuan": "每日费用限额 (元)",
+    "toggleDebug": "切换调试模式",
+    "toggleDailyCost": "切换每日费用预警"
+  },
+  "image": {
+    "title": "图片生成",
+    "description": "使用 ComfyUI 为聊天生成图片。当前所有功能仅限手动触发。",
+    "enable": "启用以允许在聊天中请求图片。",
+    "comfyUrl": "ComfyUI 服务地址",
+    "comfyUrlPlaceholder": "127.0.0.1:8188",
+    "comfyUrlHint": "必须是当前运行时可以访问到的地址。",
+    "testConnection": "测试连接",
+    "testing": "测试中…",
+    "saveTest": "保存并测试",
+    "apiType": "生成接口",
+    "workflow": "工作流 (JSON)",
+    "workflowPlaceholder": "粘贴 ComfyUI workflow JSON…",
+    "workflowHint": "必须包含 'KSampler' 节点才能注入提示词。",
+    "settings": "生成参数",
+    "checkpoint": "Checkpoint",
+    "resolution": "分辨率",
+    "sampler": "Sampler",
+    "scheduler": "调度器",
+    "steps": "步数",
+    "cfg": "CFG",
+    "maxImages": "每次最大张数",
+    "imageMode": "触发模式",
+    "modeManual": "手动",
+    "plannerConfig": "图片规划 API",
+    "plannerConfigHint": "用于分析 AI 回复并找到适合生成图片的画面。",
+    "worldbookRef": "世界书参考",
+    "worldbookRefHint": "为图片规划提供匹配到的世界书条目作为 style 参考。",
+    "toast": {
+      "workflowRequired": "请先导入 ComfyUI workflow JSON",
+      "connected": "ComfyUI 连接成功",
+      "connectionFailed": "连接失败",
+      "connectionError": "{{message}}",
+      "saved": "图片设置已保存",
+      "saveFailed": "保存失败"
+    }
   },
   "context": {
     "title": "上下文 Token",

@@ -1,49 +1,17 @@
-import { useState, useEffect } from "react";
 import { Sun, Moon, Eye, CheckCircle2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from "@neo-tavern/ui";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@neo-tavern/ui";
 import { useThemeStore } from "@/app/theme.store";
-import { changeLocale, type Locale } from "@/i18n";
-import { getStorageItem, setStorageItem } from "@/db/storage";
 import type { ThemeOption } from "./types";
 
 interface AppearanceSectionProps {
   themes: ThemeOption[];
-  locale: Locale;
-  setLocale: (l: Locale) => void;
   t: (key: string, params?: Record<string, string>) => string;
 }
 
-export function AppearanceSection({ themes, locale, setLocale, t }: AppearanceSectionProps) {
+export function AppearanceSection({ themes, t }: AppearanceSectionProps) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
-  const [lanEnabled, setLanEnabled] = useState(false);
-  const [lanAddr, setLanAddr] = useState("0.0.0.0");
-  const [lanPort, setLanPort] = useState("3000");
-  const [lanPassword, setLanPassword] = useState("");
-
-  useEffect(() => {
-    (async () => {
-      const en = await getStorageItem("neotavern_lan_enabled");
-      const ad = await getStorageItem("neotavern_lan_addr");
-      const po = await getStorageItem("neotavern_lan_port");
-      const pw = await getStorageItem("neotavern_lan_password");
-      setLanEnabled(en === "true");
-      if (ad) setLanAddr(ad);
-      if (po) setLanPort(po);
-      if (pw) setLanPassword(pw);
-    })();
-  }, []);
-
-  const handleRegenPassword = async () => {
-    const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&";
-    let pw = "";
-    const buf = new Uint32Array(12);
-    crypto.getRandomValues(buf);
-    for (let i = 0; i < 12; i++) pw += chars[buf[i] % chars.length];
-    setLanPassword(pw);
-    await setStorageItem("neotavern_lan_password", pw);
-  };
 
   const resolvedLabel =
     resolvedTheme === "dark"
@@ -90,96 +58,6 @@ export function AppearanceSection({ themes, locale, setLocale, t }: AppearanceSe
                     ? t("appearance.dark")
                     : t("appearance.light"),
           })}
-        </div>
-
-        <div className="rounded-md border px-3 py-2">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{t("appearance.language")}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("appearance.languageHint")}</p>
-            </div>
-            <select
-              value={locale}
-              onChange={(e) => {
-                const next = e.target.value as Locale;
-                setLocale(next);
-                changeLocale(next);
-              }}
-              className="h-8 rounded-md border border-input bg-transparent px-2 py-0.5 text-xs shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            >
-              <option value="zh">中文</option>
-              <option value="en">English</option>
-            </select>
-          </div>
-        </div>
-
-        {/* ── LAN Server ──────────────────────────── */}
-        <div className="rounded-md border px-3 py-3 space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">{t("appearance.lanServer")}</p>
-              <p className="text-xs text-muted-foreground mt-0.5">{t("appearance.lanEnable")}</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={lanEnabled}
-              onClick={async () => {
-                const next = !lanEnabled;
-                setLanEnabled(next);
-                await setStorageItem("neotavern_lan_enabled", String(next));
-              }}
-              className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${lanEnabled ? "bg-primary" : "bg-muted-foreground/30"}`}
-            >
-              <span
-                className={`inline-block h-5 w-5 rounded-full bg-background shadow-sm transition-transform ${lanEnabled ? "translate-x-5" : "translate-x-0.5"}`}
-              />
-            </button>
-          </div>
-          {lanEnabled && (
-            <>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label className="text-xs">{t("appearance.lanAddr")}</Label>
-                  <Input
-                    value={lanAddr}
-                    onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
-                      setLanAddr(e.target.value);
-                      await setStorageItem("neotavern_lan_addr", e.target.value);
-                    }}
-                    className="h-7 text-xs mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">{t("appearance.lanPort")}</Label>
-                  <Input
-                    value={lanPort}
-                    onChange={async (e: React.ChangeEvent<HTMLInputElement>) => {
-                      setLanPort(e.target.value);
-                      await setStorageItem("neotavern_lan_port", e.target.value);
-                    }}
-                    className="h-7 text-xs mt-1"
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] text-muted-foreground">{t("appearance.lanRestartHint")}</p>
-              <div className="pt-2 border-t">
-                <Label className="text-xs">{t("appearance.lanPassword")}</Label>
-                <p className="text-[10px] text-muted-foreground mb-1">{t("appearance.lanPasswordHint")}</p>
-                <div className="flex gap-2">
-                  <Input value={lanPassword} readOnly className="h-7 text-xs font-mono flex-1" />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-[10px] shrink-0"
-                    onClick={handleRegenPassword}
-                  >
-                    {t("appearance.lanPasswordGenerate")}
-                  </Button>
-                </div>
-              </div>
-            </>
-          )}
         </div>
       </CardContent>
     </Card>
