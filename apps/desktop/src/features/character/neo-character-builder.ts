@@ -1421,12 +1421,14 @@ async function generateBuilderStep(
 
   let content = ''
   let reasoningContent = ''
+  let finishReason: string | undefined
   let usage: MessageUsage | undefined
   const toolParts = new Map<number, ToolCallPart>()
   const raw: unknown[] = []
 
   for await (const chunk of provider.streamGenerate(input)) {
     if (chunk.raw) raw.push(chunk.raw)
+    if (chunk.finishReason) finishReason = chunk.finishReason
     if (chunk.contentDelta) {
       content += chunk.contentDelta
       options.onContentDelta?.(chunk.contentDelta)
@@ -1457,6 +1459,7 @@ async function generateBuilderStep(
     content,
     reasoningContent: reasoningContent || undefined,
     toolCalls: toolCalls.length ? toolCalls : undefined,
+    finishReason,
     usage,
     raw,
   }
@@ -1619,6 +1622,76 @@ async function executeBuilderTool(
   return { output: { ok: false, error: `Unknown tool: ${toolName}` } }
 }
 
+const BUILDER_MAX_TOOL_ROUNDS = 24
+const BUILDER_MAX_TEXT_CONTINUATIONS = 5
+
+function appendVisibleBuilderContent(current: string, next: string) {
+  const clean = next.trim()
+  if (!clean) return current
+  return current ? `${current.trimEnd()}\n\n${clean}` : clean
+}
+
+function getPlanProgress(plan?: NeoCreationPlan) {
+  const entries = plan?.entries ?? []
+  const done = entries.filter((entry) => entry.status === 'done' || entry.status === 'skipped').length
+  return { done, total: entries.length }
+}
+
+function shouldAutoContinueBuilderText(options: {
+  content: string
+  finishReason?: string
+  textContinuations: number
+  toolLog: string[]
+  creationPlan?: NeoCreationPlan
+  currentDraft?: CreateCharacterInput | null
+  currentWorldbookEntries?: CreateWorldbookEntryInput[]
+}) {
+  if (options.textContinuations >= BUILDER_MAX_TEXT_CONTINUATIONS) return false
+  if (options.finishReason === 'length' || options.finishReason === 'max_tokens') return true
+  if (options.toolLog.includes('ask_user_options') || options.toolLog.includes('present_creation_plan')) {
+    return false
+  }
+
+  const content = options.content.trim()
+  const hasWorkingState = !!options.creationPlan
+    || !!options.currentDraft
+    || !!options.currentWorldbookEntries?.length
+    || options.toolLog.length > 0
+  if (!hasWorkingState) return false
+
+  const mentionsNextWork = /(继续|接下来|下一步|进入|开始|现在|马上|准备|修复|补全|校验|验证|保存|草稿|产出物|条目|完成|已完成|所有条目|worldbook|firstMessage|exampleDialogues)/i.test(content)
+  const isOnlyProcessTalk = !/(已为你保存|产出物已准备好|右侧查看角色卡|请从下面选择|请选择一个|我需要你选择)/.test(content)
+  return mentionsNextWork && isOnlyProcessTalk
+}
+
+function buildAutoContinueInstruction(options: {
+  content: string
+  finishReason?: string
+  creationPlan?: NeoCreationPlan
+  hasDraft: boolean
+  hasWorldbookEntries: boolean
+}) {
+  const progress = getPlanProgress(options.creationPlan)
+  return [
+    '【Whale Builder 内部续跑指令】',
+    '上一段只是过程说明，不能停在这里等待用户点击继续。',
+    options.finishReason === 'length' || options.finishReason === 'max_tokens'
+      ? '上一段可能因为输出长度被截断。请从中断处继续，不要重写已经完成的内容。'
+      : '请立刻继续执行工作流，不要复述计划。',
+    `当前创作规划进度：${progress.done}/${progress.total}。`,
+    options.hasDraft ? '当前已有角色草稿。' : '当前还没有可保存的角色草稿。',
+    options.hasWorldbookEntries ? '当前已有世界书条目。' : '当前还没有完整世界书条目。',
+    '如果确实需要用户决定，必须调用 ask_user_options 给出选项；不要用普通文本追问。',
+    '如果还在逐条产出，继续调用 record_entry_output 记录条目完成状态。',
+    '如果条目已经完成，调用 validate_character_draft 校验；校验失败就修复并再次校验。',
+    '校验通过后必须调用 save_character_draft 保存最终草稿。',
+    '不要只输出“现在开始校验/现在保存/接下来修复”这类过程文字。',
+    '',
+    '上一段输出摘要：',
+    trimString(options.content).slice(-1200),
+  ].join('\n')
+}
+
 export async function runNeoCharacterBuilderTurn(options: NeoBuilderTurnOptions): Promise<NeoBuilderTurnResult> {
   const provider = createModelProvider(options.modelConfig)
   const messages = conversationToGenerateMessages(options)
@@ -1632,8 +1705,9 @@ export async function runNeoCharacterBuilderTurn(options: NeoBuilderTurnOptions)
   let evaluationReport: NeoBuilderEvaluationReport | undefined
   let pendingChoices: NeoBuilderChoice[] | undefined
   let assistantContent = ''
+  let textContinuations = 0
 
-  for (let round = 0; round < 12; round++) {
+  for (let round = 0; round < BUILDER_MAX_TOOL_ROUNDS; round++) {
     const result = await generateBuilderStep(provider, {
       messages,
       model: options.modelConfig.model,
@@ -1651,6 +1725,7 @@ export async function runNeoCharacterBuilderTurn(options: NeoBuilderTurnOptions)
     if (result.reasoningContent) {
       reasoningContent = [reasoningContent, result.reasoningContent].filter(Boolean).join('\n\n')
     }
+    assistantContent = appendVisibleBuilderContent(assistantContent, result.content || '')
 
     if (result.toolCalls?.length) {
       messages.push({
@@ -1737,11 +1812,39 @@ export async function runNeoCharacterBuilderTurn(options: NeoBuilderTurnOptions)
       continue
     }
 
-    assistantContent = result.content || ''
     const parsed = extractJsonObject(assistantContent)
     if (parsed) {
       const validation = normalizeDraft(parsed, options.existingCharacter)
       if (validation.issues.length === 0) savedDraft = validation.draft
+    }
+
+    if (savedDraft) break
+
+    if (shouldAutoContinueBuilderText({
+      content: result.content || assistantContent,
+      finishReason: result.finishReason,
+      textContinuations,
+      toolLog,
+      creationPlan: currentCreationPlan,
+      currentDraft: options.currentDraft,
+      currentWorldbookEntries: options.currentWorldbookEntries,
+    })) {
+      textContinuations += 1
+      messages.push({
+        role: 'assistant',
+        content: result.content || assistantContent,
+      })
+      messages.push({
+        role: 'user',
+        content: buildAutoContinueInstruction({
+          content: result.content || assistantContent,
+          finishReason: result.finishReason,
+          creationPlan: currentCreationPlan,
+          hasDraft: !!options.currentDraft || !!savedDraft,
+          hasWorldbookEntries: !!options.currentWorldbookEntries?.length,
+        }),
+      })
+      continue
     }
     break
   }

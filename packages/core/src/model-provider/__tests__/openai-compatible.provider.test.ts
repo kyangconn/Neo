@@ -232,6 +232,25 @@ describe('OpenAICompatibleProvider', () => {
     expect(result.toolCalls).toEqual(toolCalls)
   })
 
+  it('should expose finish reason from non-streaming responses', async () => {
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ finish_reason: 'length', message: { content: 'partial' } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    const result = await provider.generate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+    })
+
+    expect(result.finishReason).toBe('length')
+  })
+
   it('should include user_id in streaming requests', async () => {
     const stream = new ReadableStream({
       start(controller) {

@@ -102,6 +102,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
     const data = await response.json()
     const message = data?.choices?.[0]?.message ?? {}
+    const finishReason = data?.choices?.[0]?.finish_reason ?? undefined
     const content = message?.content ?? ''
     const reasoningContent = message?.reasoning_content ?? ''
     const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : undefined
@@ -110,6 +111,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       content,
       reasoningContent: reasoningContent || undefined,
       toolCalls,
+      finishReason,
       raw: data,
       usage: this.mapUsage(data),
     }

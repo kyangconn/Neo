@@ -61,6 +61,7 @@ export interface GenerateResult {
   content: string
   reasoningContent?: string
   toolCalls?: GenerateToolCall[]
+  finishReason?: string
   raw?: unknown
   usage?: {
     promptTokens?: number
