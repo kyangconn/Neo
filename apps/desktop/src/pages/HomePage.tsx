@@ -28,6 +28,7 @@ export function HomePage() {
   const [contextMenu, setContextMenu] = useState<HomeContextMenu | null>(null)
   const charactersById = useMemo(() => new Map(characters.map((char) => [char.id, char])), [characters])
 
+  // Data is loaded by App.tsx seed; HomePage just reacts
   useEffect(() => {
     loadCharacters()
     loadChats()
