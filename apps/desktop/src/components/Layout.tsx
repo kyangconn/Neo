@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet } from "react-router-dom";
-import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles } from "lucide-react";
+import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles, PenTool } from "lucide-react";
 import { cn } from "@neo-tavern/ui";
 
 export function Layout() {
@@ -9,6 +9,7 @@ export function Layout() {
   const navItems = [
     { to: "/", icon: Home, label: t("nav.home") },
     { to: "/character", icon: User, label: t("nav.characters") },
+    { to: "/character-builder", icon: PenTool, label: t("nav.builder", "Builder") },
     { to: "/preset", icon: LayoutTemplate, label: t("nav.presets") },
     { to: "/worldbook", icon: BookOpen, label: t("nav.worldbook") },
     { to: "/persona", icon: Sparkles, label: t("nav.persona") },
@@ -34,7 +35,7 @@ export function Layout() {
           </NavLink>
         ))}
         <div className="flex-1" />
-        <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap mb-4">NEO</div>
+        <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap mb-4">WHALE</div>
       </aside>
       <main className="flex-1 flex flex-col overflow-hidden">
         <Outlet />

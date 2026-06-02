@@ -1,5 +1,5 @@
 {
-  "name": "neo-tavern-demo",
+  "name": "whale-play",
   "private": true,
   "scripts": {
     "dev": "pnpm --filter @neo-tavern/desktop dev",

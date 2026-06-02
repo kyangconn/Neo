@@ -1,6 +1,6 @@
-# NeoTavern
+# Whale Play
 
-NeoTavern 是一个面向角色扮演的 AI 聊天桌面客户端，重点服务长上下文、角色卡、预设提示词、世界书和正则后处理工作流。项目基于 Tauri v2、React、TypeScript 和 pnpm workspace 构建，适合接入 DeepSeek、OpenAI 以及其他 OpenAI-compatible API。
+Whale Play 是一个面向角色扮演的 AI 聊天桌面客户端，重点服务长上下文、角色卡、预设提示词、世界书和正则后处理工作流。项目基于 Tauri v2、React、TypeScript 和 pnpm workspace 构建，适合接入 DeepSeek、OpenAI 以及其他 OpenAI-compatible API。
 
 ## 适合谁
 
@@ -33,7 +33,7 @@ NeoTavern 是一个面向角色扮演的 AI 聊天桌面客户端，重点服务
 - 每张卡片支持启用/禁用、system/user role、内容编辑和排序。
 - 条目支持拖拽排序，并真实写回 `injectionOrder`。
 - Prompt builder 会按 `injectionOrder` 注入预设条目，因此页面顺序会真实影响提示词组成。
-- 支持导入/导出 JSON，兼容部分 SillyTavern 预设结构。
+- 支持导入/导出 JSON，兼容 Whale Play 与部分 SillyTavern 预设结构。
 
 ### 正则后处理
 
@@ -48,7 +48,7 @@ NeoTavern 是一个面向角色扮演的 AI 聊天桌面客户端，重点服务
 - 支持主题切换：Light / Dark / System。
 - 数据优先写入 Tauri app-data 目录下的 `store.json`。
 - 浏览器开发环境保留 localStorage fallback。
-- 启动时会迁移旧的 `neotavern*` localStorage 数据。
+- 启动时会迁移旧的 `neotavern*` localStorage 数据，保证改名前的数据继续可用。
 - Tauri CSP 已启用显式策略，减少不必要的 WebView 权限暴露。
 
 ## 技术栈
@@ -200,7 +200,7 @@ Prompt #3 -> injectionOrder 30
 
 ## 数据位置
 
-Tauri 环境下，NeoTavern 会把应用数据写入系统 app-data 目录中的 `store.json`。浏览器开发模式下会 fallback 到 localStorage。
+Tauri 环境下，Whale Play 会把应用数据写入系统 app-data 目录中的 `store.json`。浏览器开发模式下会 fallback 到 localStorage。
 
 迁移逻辑会在启动时读取旧的 `neotavern*` localStorage key，并复制到 Tauri app-data store。迁移不会主动删除旧 localStorage 数据。
 

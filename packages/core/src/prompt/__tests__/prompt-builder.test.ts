@@ -113,15 +113,15 @@ describe('buildChatPrompt', () => {
       userInput: 'How are you?',
     })
 
-    const userMessage = result.messages.find(
-      (m) => m.role === 'user' && m.content === 'Hi there'
-    )
-    const assistantMessage = result.messages.find(
-      (m) => m.role === 'assistant' && m.content === 'Hello! Nice to meet you.'
+    const historyMessage = result.messages.find(
+      (m) => m.role === 'system' && m.content.includes('<extra_preset_entry name="chat history">')
     )
 
-    expect(userMessage).toBeDefined()
-    expect(assistantMessage).toBeDefined()
+    expect(historyMessage).toBeDefined()
+    expect(historyMessage!.content).toContain('### 1. user')
+    expect(historyMessage!.content).toContain('Hi there')
+    expect(historyMessage!.content).toContain('### 2. assistant')
+    expect(historyMessage!.content).toContain('Hello! Nice to meet you.')
   })
 
   it('should include user input as last message', () => {
@@ -173,17 +173,100 @@ describe('buildChatPrompt', () => {
       contextBlocks,
     })
 
-    const blockMessages = result.messages.filter((m) =>
-      m.content.includes('[worldbook]') || m.content.includes('[memory]')
-    )
+    const memoryMessage = result.messages.find((m) => m.content.includes('[memory]'))
+    const worldbookMessage = result.messages.find((m) => m.content.includes('<extra_preset_entry name="前置世界书">'))
 
-    expect(blockMessages).toHaveLength(2)
-    expect(blockMessages[0].content).toContain('High priority')
-    expect(blockMessages[1].content).toContain('Low priority')
+    expect(memoryMessage).toBeDefined()
+    expect(memoryMessage!.content).toContain('Low priority')
+    expect(worldbookMessage).toBeDefined()
+    expect(worldbookMessage!.content).toContain('### Worldbook 1')
+    expect(worldbookMessage!.content).toContain('High priority')
     expect(result.includedContextBlocks).toEqual([
       { id: 'cb-2', source: 'worldbook', title: 'Worldbook 1', content: 'High priority', priority: 10 },
       { id: 'cb-1', source: 'memory', title: 'Memory 1', content: 'Low priority', priority: 1 },
     ])
+  })
+
+  it('should inject experimental directory entries for worldbook and chat history', () => {
+    const result = buildChatPrompt({
+      character: mockCharacter,
+      recentMessages: mockMessages,
+      userInput: 'Test',
+      contextBlocks: [
+        {
+          id: 'wb-always',
+          source: 'worldbook',
+          title: 'Static Lore',
+          content: 'Always lore',
+          priority: 5,
+          position: 'beforeHistory',
+        },
+        {
+          id: 'wb-trigger',
+          source: 'worldbook',
+          title: 'Recalled Lore',
+          content: 'Keyword lore',
+          priority: 10,
+          position: 'afterHistory',
+        },
+      ],
+    })
+
+    const preview = result.previewText
+    const staticIndex = preview.indexOf('<extra_preset_entry name="前置世界书">')
+    const historyIndex = preview.indexOf('<extra_preset_entry name="chat history">')
+    const recalledIndex = preview.indexOf('<extra_preset_entry name="召回世界书">')
+    const inputIndex = preview.lastIndexOf('## user\nTest')
+
+    expect(staticIndex).toBeGreaterThanOrEqual(0)
+    expect(historyIndex).toBeGreaterThan(staticIndex)
+    expect(recalledIndex).toBeGreaterThan(historyIndex)
+    expect(inputIndex).toBeGreaterThan(recalledIndex)
+    expect(preview).toContain('### Static Lore\nAlways lore')
+    expect(preview).toContain('### Recalled Lore\nKeyword lore')
+  })
+
+  it('should replace runtime extra preset slots without duplicating default directory entries', () => {
+    const result = buildChatPrompt({
+      character: mockCharacter,
+      recentMessages: mockMessages,
+      userInput: 'Test',
+      presetItems: [
+        { role: 'system', content: '<extra_preset_slot name="前置世界书" />', injectionOrder: 10 },
+        { role: 'system', content: '<extra_preset_slot name="chat history" />', injectionOrder: 20 },
+        { role: 'system', content: '<extra_preset_slot name="召回世界书" />', injectionOrder: 30 },
+      ],
+      contextBlocks: [
+        {
+          id: 'wb-always',
+          source: 'worldbook',
+          title: 'Static Lore',
+          content: 'Always lore',
+          priority: 5,
+          position: 'beforeHistory',
+        },
+        {
+          id: 'wb-trigger',
+          source: 'worldbook',
+          title: 'Recalled Lore',
+          content: 'Keyword lore',
+          priority: 10,
+          position: 'afterHistory',
+        },
+      ],
+    })
+
+    const preview = result.previewText
+    expect(preview).not.toContain('<extra_preset_slot')
+    expect(preview.match(/<extra_preset_entry name="前置世界书">/g)).toHaveLength(1)
+    expect(preview.match(/<extra_preset_entry name="chat history">/g)).toHaveLength(1)
+    expect(preview.match(/<extra_preset_entry name="召回世界书">/g)).toHaveLength(1)
+    expect(preview.indexOf('<extra_preset_entry name="前置世界书">')).toBeLessThan(
+      preview.indexOf('<extra_preset_entry name="chat history">'),
+    )
+    expect(preview.indexOf('<extra_preset_entry name="chat history">')).toBeLessThan(
+      preview.indexOf('<extra_preset_entry name="召回世界书">'),
+    )
   })
 
   it('should include user persona when provided', () => {

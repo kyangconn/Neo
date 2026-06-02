@@ -2,6 +2,7 @@
   "nav": {
     "home": "首页",
     "characters": "角色管理",
+    "builder": "角色生成器",
     "presets": "预设提示词",
     "worldbook": "世界书",
     "persona": "用户人设",

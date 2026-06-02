@@ -1,10 +1,10 @@
-# NeoTavern one-click setup + launch
+# Whale Play one-click setup + launch
 $ErrorActionPreference = "Continue"
 $root = $PSScriptRoot
 
 Write-Host ""
 Write-Host "  ============================================================"  -ForegroundColor Cyan
-Write-Host "      NeoTavern"                                               -ForegroundColor Cyan
+Write-Host "      Whale Play"                                              -ForegroundColor Cyan
 Write-Host "  ============================================================"  -ForegroundColor Cyan
 Write-Host ""
 

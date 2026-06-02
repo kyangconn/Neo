@@ -1,9 +1,10 @@
 {
   "identifier": "default",
-  "description": "Default capability for NeoTavern",
+  "description": "Default capability for Whale Play",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "notification:default",
     "shell:allow-open"
   ]
 }

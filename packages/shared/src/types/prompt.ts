@@ -2,12 +2,17 @@ import type { Character } from './character'
 import type { Message } from './message'
 import type { GenerateMessage } from './model-provider'
 
+export type PromptMessageRole = 'system' | 'user' | 'assistant'
+
 export interface ContextBlock {
   id: string
   source: 'character' | 'worldbook' | 'memory' | 'persona' | 'system' | 'safety'
   title: string
   content: string
   priority: number
+  role?: PromptMessageRole
+  position?: 'beforeHistory' | 'afterHistory' | 'atDepth'
+  depth?: number
 }
 
 export interface ContextInput {

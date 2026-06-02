@@ -2,7 +2,7 @@
 chcp 65001 >nul
 cd /d "%~dp0"
 
-echo NeoTavern 一键清理卸载
+echo Whale Play 一键清理卸载
 echo.
 echo 将清理：
 echo - 本地聊天记录、消息、预设、角色、世界书、设置

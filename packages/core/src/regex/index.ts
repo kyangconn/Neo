@@ -7,9 +7,10 @@ export interface SideBlock {
 }
 
 export interface DisplayBlock {
-  type: 'narration' | 'dialogue'
+  type: 'narration' | 'dialogue' | 'template' | 'image'
   content: string
   speaker?: string
+  name?: string
 }
 
 export interface SplitResult {
@@ -38,6 +39,139 @@ function buildDisplayBlocks(content: string, regex: RegExp): DisplayBlock[] {
     if (narration) blocks.push({ type: 'narration', content: narration })
   }
   return blocks
+}
+
+interface InlineTemplateBlock {
+  name: string
+  content: string
+}
+
+const INLINE_TEMPLATE_MARKER = '\uE000NEO_INLINE_TEMPLATE_'
+const INLINE_TEMPLATE_MARKER_END = '\uE001'
+const INLINE_TEMPLATE_REGEX = /\uE000NEO_INLINE_TEMPLATE_(\d+)\uE001/g
+const IMAGE_MARKER = '\uE000NEO_IMAGE_'
+const IMAGE_MARKER_END = '\uE001'
+const IMAGE_MARKER_REGEX = /\uE000NEO_IMAGE_(\d+)\uE001/g
+const IMAGE_TAG_REGEX = /\[image\]([\s\S]*?)(?:\[\/image\]|\[image\])/gi
+
+function isInlineTemplateRule(rule: RegexRule) {
+  const normalizedName = rule.name.toLowerCase()
+  return rule.displayTemplate.includes('neo-thoughts')
+    || rule.name.includes('内心')
+    || normalizedName.includes('inner')
+    || normalizedName.includes('thought')
+}
+
+function applyTemplate(template: string, match: RegExpMatchArray | RegExpExecArray) {
+  let display = template
+  for (let i = 1; i < match.length; i++) {
+    display = display.split(`$${i}`).join(match[i] || '')
+  }
+  return display
+}
+
+function markInlineTemplateBlocks(content: string, rules: RegexRule[]) {
+  const inlineBlocks: InlineTemplateBlock[] = []
+  let markedContent = content
+
+  for (const rule of rules) {
+    try {
+      const regex = new RegExp(rule.pattern, 'gs')
+      markedContent = markedContent.replace(regex, (...args) => {
+        const match = args.slice(0, -2) as RegExpMatchArray
+        const index = inlineBlocks.length
+        inlineBlocks.push({
+          name: rule.name,
+          content: applyTemplate(rule.displayTemplate, match),
+        })
+        return `${INLINE_TEMPLATE_MARKER}${index}${INLINE_TEMPLATE_MARKER_END}`
+      })
+    } catch { continue }
+  }
+
+  return { markedContent, inlineBlocks }
+}
+
+function markImageBlocks(content: string) {
+  const imagePrompts: string[] = []
+  const markedContent = content.replace(IMAGE_TAG_REGEX, (_match, prompt: string) => {
+    const index = imagePrompts.length
+    imagePrompts.push(prompt.trim())
+    return `${IMAGE_MARKER}${index}${IMAGE_MARKER_END}`
+  })
+  return { markedContent, imagePrompts }
+}
+
+function stripImageTags(content: string) {
+  return content.replace(IMAGE_TAG_REGEX, '').trim()
+}
+
+function expandMarkerBlocks(
+  blocks: DisplayBlock[],
+  markerRegex: RegExp,
+  createBlock: (index: number) => DisplayBlock | null,
+) {
+  const expanded: DisplayBlock[] = []
+
+  for (const block of blocks) {
+    if (block.type === 'template' || block.type === 'image') {
+      expanded.push(block)
+      continue
+    }
+
+    let lastIndex = 0
+    let match: RegExpExecArray | null
+    const regex = new RegExp(markerRegex.source, 'g')
+
+    while ((match = regex.exec(block.content)) !== null) {
+      const before = block.content.slice(lastIndex, match.index).trim()
+      if (before) expanded.push({ ...block, content: before })
+
+      const nextBlock = createBlock(Number(match[1]))
+      if (nextBlock) expanded.push(nextBlock)
+
+      lastIndex = match.index + match[0].length
+    }
+
+    const after = block.content.slice(lastIndex).trim()
+    if (after) expanded.push({ ...block, content: after })
+  }
+
+  return expanded
+}
+
+function expandInlineTemplateBlocks(blocks: DisplayBlock[], inlineBlocks: InlineTemplateBlock[]) {
+  if (inlineBlocks.length === 0) return blocks
+
+  return expandMarkerBlocks(blocks, INLINE_TEMPLATE_REGEX, (index) => {
+    const inline = inlineBlocks[index]
+    if (!inline) return null
+    return {
+      type: 'template',
+      name: inline.name,
+      content: inline.content,
+    }
+  })
+}
+
+function expandImageBlocks(blocks: DisplayBlock[], imagePrompts: string[]) {
+  if (imagePrompts.length === 0) return blocks
+
+  return expandMarkerBlocks(blocks, IMAGE_MARKER_REGEX, (index) => {
+    const prompt = imagePrompts[index]
+    if (!prompt) return null
+    return {
+      type: 'image',
+      name: 'Image',
+      content: prompt,
+    }
+  })
+}
+
+function formatDisplayBlock(block: DisplayBlock) {
+  if (block.type === 'dialogue') return `**${block.speaker}：**${block.content}`
+  if (block.type === 'image') return `[image]${block.content}[/image]`
+  return block.content
 }
 
 export function applyRegexRules(content: string, rules: RegexRule[]): SplitResult {
@@ -100,7 +234,13 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
     } catch { continue }
   }
 
-  const promptContent = displayContent.trim()
+  const promptContent = stripImageTags(displayContent)
+  const inlineTemplateRules = templateRules.filter(isInlineTemplateRule)
+  const sideTemplateRules = templateRules.filter((rule) => !isInlineTemplateRule(rule))
+  const inlineTemplates = markInlineTemplateBlocks(displayContent, inlineTemplateRules)
+  displayContent = inlineTemplates.markedContent
+  const imageMarkers = markImageBlocks(displayContent)
+  displayContent = imageMarkers.markedContent
 
   let displayBlocks: DisplayBlock[] = []
   for (const rule of dialogueRules) {
@@ -114,22 +254,29 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
   }
 
   displayContent = displayContent.trim()
+  if (displayBlocks.length > 0) {
+    displayBlocks = expandInlineTemplateBlocks(displayBlocks, inlineTemplates.inlineBlocks)
+    displayBlocks = expandImageBlocks(displayBlocks, imageMarkers.imagePrompts)
+  } else if (inlineTemplates.inlineBlocks.length > 0 || imageMarkers.imagePrompts.length > 0) {
+    displayBlocks = expandInlineTemplateBlocks(
+      [{ type: 'narration', content: displayContent }],
+      inlineTemplates.inlineBlocks
+    )
+    displayBlocks = expandImageBlocks(displayBlocks, imageMarkers.imagePrompts)
+  }
 
   let finalDisplayContent = displayBlocks.length > 0
-    ? displayBlocks.map((b) => b.type === 'dialogue' ? `**${b.speaker}：**${b.content}` : b.content).join('\n\n')
+    ? displayBlocks.map(formatDisplayBlock).join('\n\n')
     : displayContent
 
-  for (const rule of templateRules) {
+  for (const rule of sideTemplateRules) {
     try {
       const regex = new RegExp(rule.pattern, 'gs')
       const matches = [...content.matchAll(regex)]
       if (matches.length === 0) continue
 
       for (const match of matches) {
-        let display = rule.displayTemplate
-        for (let i = 1; i < match.length; i++) {
-          display = display.replace(`$${i}`, match[i] || '')
-        }
+        const display = applyTemplate(rule.displayTemplate, match)
         sideBlocks.push({ name: rule.name, content: display })
       }
 
@@ -137,6 +284,7 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
       for (const block of displayBlocks) {
         block.content = block.content.replace(regex, '')
       }
+      displayBlocks = displayBlocks.filter((block) => block.type === 'template' || block.content.trim())
     } catch { continue }
   }
 
@@ -159,5 +307,5 @@ export function stripPromptContent(content: string, rules: RegexRule[]): string 
     if (!rule.enabled || !rule.stripFromPrompt) continue
     try { result = result.replace(new RegExp(rule.pattern, 'gs'), '') } catch { continue }
   }
-  return result.trim()
+  return stripImageTags(result)
 }

@@ -109,6 +109,177 @@ describe('OpenAICompatibleProvider', () => {
     expect(body.max_tokens).toBe(800)
   })
 
+  it('should omit temperature when requested', async () => {
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Response' } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    await provider.generate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+      temperature: 0.3,
+      omitTemperature: true,
+    })
+
+    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(fetchCall[1].body)
+
+    expect(body).not.toHaveProperty('temperature')
+  })
+
+  it('should include user_id when provided', async () => {
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'Response' } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    await provider.generate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+      userId: 'chat_abc-123',
+    })
+
+    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(fetchCall[1].body)
+
+    expect(body.user_id).toBe('chat_abc-123')
+  })
+
+  it('should send tools and map tool messages', async () => {
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: 'ok' } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    await provider.generate({
+      messages: [
+        { role: 'user', content: 'Draft a card' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCalls: [{
+            id: 'call_1',
+            type: 'function',
+            function: { name: 'read_skill_reference', arguments: '{"id":"rules"}' },
+          }],
+        },
+        { role: 'tool', toolCallId: 'call_1', name: 'read_skill_reference', content: 'rules text' },
+      ],
+      model: 'deepseek-v4-pro',
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'read_skill_reference',
+          parameters: {
+            type: 'object',
+            properties: { id: { type: 'string' } },
+            required: ['id'],
+          },
+        },
+      }],
+      toolChoice: 'auto',
+    })
+
+    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(fetchCall[1].body)
+
+    expect(body.tools).toHaveLength(1)
+    expect(body.tool_choice).toBe('auto')
+    expect(body.messages[1].tool_calls[0].function.name).toBe('read_skill_reference')
+    expect(body.messages[2].tool_call_id).toBe('call_1')
+  })
+
+  it('should parse tool calls from non-streaming responses', async () => {
+    const toolCalls = [{
+      id: 'call_save',
+      type: 'function',
+      function: {
+        name: 'save_character_draft',
+        arguments: '{"character":{"name":"Nova"}}',
+      },
+    }]
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: '', tool_calls: toolCalls } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    const result = await provider.generate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+    })
+
+    expect(result.toolCalls).toEqual(toolCalls)
+  })
+
+  it('should expose finish reason from non-streaming responses', async () => {
+    const mockResponse = {
+      ok: true,
+      json: async () => ({
+        choices: [{ finish_reason: 'length', message: { content: 'partial' } }],
+        usage: {},
+      }),
+    }
+
+    global.fetch = vi.fn().mockResolvedValue(mockResponse)
+
+    const result = await provider.generate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+    })
+
+    expect(result.finishReason).toBe('length')
+  })
+
+  it('should include user_id in streaming requests', async () => {
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: stream,
+    })
+
+    for await (const _chunk of provider.streamGenerate({
+      messages: [{ role: 'user', content: 'Hi' }],
+      model: 'deepseek-v4-pro',
+      userId: 'chat_stream-123',
+      omitTemperature: true,
+    })) {
+      // Consume the stream so the request is issued.
+    }
+
+    const fetchCall = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(fetchCall[1].body)
+
+    expect(body.user_id).toBe('chat_stream-123')
+    expect(body).not.toHaveProperty('temperature')
+    expect(body.stream).toBe(true)
+  })
+
   it('should handle empty API key', () => {
     const noKeyProvider = new OpenAICompatibleProvider({
       id: 'test',

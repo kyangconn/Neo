@@ -38,8 +38,13 @@ function AppContent() {
       await seedEldoriaWorldbook();
       await useSettingsStore.getState().loadAllConfigs();
       await useSettingsStore.getState().loadContextTokens();
+      await useSettingsStore.getState().loadMemorySettings();
+      await useSettingsStore.getState().loadImageGenerationSettings();
       await useSettingsStore.getState().loadRegexRules();
       await useSettingsStore.getState().loadPersona();
+      await useSettingsStore.getState().loadDebugMode();
+      await useSettingsStore.getState().loadDailyCostWarningSettings();
+      await useSettingsStore.getState().loadDailyCostSpent();
       await useWorldbookStore.getState().loadWorldbooks();
     })();
   }, [themeInit]);

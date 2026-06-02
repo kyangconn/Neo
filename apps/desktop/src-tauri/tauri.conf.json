@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/cn-tauri-docs/master/docs/.vitepress/public/tauri-v2.schema.json",
-  "productName": "NeoTavern Demo",
+  "productName": "Whale Play",
   "version": "0.1.0",
   "identifier": "com.neotavern.demo",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "NeoTavern Demo",
+        "title": "Whale Play",
         "width": 1200,
         "height": 800,
         "resizable": true,
