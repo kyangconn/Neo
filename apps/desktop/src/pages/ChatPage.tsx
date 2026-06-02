@@ -38,9 +38,7 @@ import { useChatStore } from "@/features/chat/chat.store";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import {
   buildLightweightMemorySummary,
-  countMemoryTurns,
   createMemoryContextBlock,
-  getRecentMemoryTurnStartIndex,
   splitMessagesByRecentTurns,
 } from "@/features/chat/memory";
 import type { GenerationPhase } from "@/features/chat/chat.types";
@@ -85,6 +83,7 @@ import {
 import { formatCnyCost, formatCnyExact, withDeepSeekUsageCost } from "@/features/billing/deepseek-billing";
 import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
 import { getChatScopedDeepSeekUserId } from "@/features/settings/model-capabilities";
+import { useVirtualizer } from "@tanstack/react-virtual";
 
 function Avatar({ name, src, isUser }: { name: string; src?: string; isUser?: boolean }) {
   const initial = name.charAt(0).toUpperCase();
@@ -108,8 +107,6 @@ const DEEPSEEK_CONTEXT_LIMIT = 1_000_000;
 const CHAT_FONT_SIZE_KEY = "neotavern_chat_font_size";
 const CHAT_DRAFT_KEY_PREFIX = "neotavern_chat_draft";
 const CONTINUE_PROMPT = "续写剧情";
-const CHAT_VISIBLE_TURN_LIMIT = 10;
-const CHAT_OLDER_TURN_BATCH = 5;
 const CHAT_FONT_SIZE_MIN = 12;
 const CHAT_FONT_SIZE_MAX = 22;
 
@@ -452,14 +449,11 @@ export function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const lastAiMsgRef = useRef<HTMLDivElement>(null);
   const initRef = useRef<string | null>(null);
   const lastOpenedChatRef = useRef<string | null>(null);
   const draftReadyChatRef = useRef<string | null>(null);
   const skipNextMessageAutoScrollRef = useRef<string | null>(null);
-  const prependScrollRef = useRef<{ height: number; top: number } | null>(null);
   const wasGeneratingCurrentChatRef = useRef(false);
   const activeStreamingMessageRef = useRef<string | null>(null);
   const completedScrollMessageRef = useRef<string | null>(null);
@@ -527,7 +521,6 @@ export function ChatPage() {
   const [savingSavepoint, setSavingSavepoint] = useState(false);
   const [loadingSavepoints, setLoadingSavepoints] = useState(false);
   const [restoringSavepointId, setRestoringSavepointId] = useState<string | null>(null);
-  const [renderedTurnLimit, setRenderedTurnLimit] = useState(CHAT_VISIBLE_TURN_LIMIT);
 
   const characterId = searchParams.get("characterId");
   const character = characters.find((c) => c.id === (currentChat?.characterId ?? characterId));
@@ -601,7 +594,6 @@ export function ChatPage() {
   }, [id, characterId, characters.length]);
 
   useEffect(() => {
-    setRenderedTurnLimit(CHAT_VISIBLE_TURN_LIMIT);
     wasGeneratingCurrentChatRef.current = false;
     activeStreamingMessageRef.current = null;
     completedScrollMessageRef.current = null;
@@ -622,56 +614,6 @@ export function ChatPage() {
       cancelled = true;
     };
   }, [currentChat?.id, tokenDialogOpen, tokenUsageView, messages]);
-
-  useEffect(() => {
-    const lastMsg = messages[messages.length - 1];
-    if (!lastMsg) return;
-
-    const isGeneratingThisChat = sending && !!currentChat?.id && sendingChatId === currentChat.id;
-    if (isGeneratingThisChat && streamingMessageId) {
-      activeStreamingMessageRef.current = streamingMessageId;
-    }
-
-    if (skipNextMessageAutoScrollRef.current === currentChat?.id) {
-      skipNextMessageAutoScrollRef.current = null;
-      wasGeneratingCurrentChatRef.current = isGeneratingThisChat;
-      return;
-    }
-
-    const justFinishedGenerating = wasGeneratingCurrentChatRef.current && !isGeneratingThisChat;
-    const completedMessageId = activeStreamingMessageRef.current;
-
-    if (
-      justFinishedGenerating &&
-      completedMessageId &&
-      lastMsg.role === "assistant" &&
-      lastMsg.id === completedMessageId &&
-      completedScrollMessageRef.current !== completedMessageId &&
-      lastAiMsgRef.current
-    ) {
-      const container = messagesContainerRef.current;
-      if (container) {
-        const top = lastAiMsgRef.current.offsetTop - container.offsetTop - 16;
-        container.scrollTo({ top, behavior: "smooth" });
-      }
-      completedScrollMessageRef.current = completedMessageId;
-      activeStreamingMessageRef.current = null;
-    } else if (lastMsg.role === "user") {
-      messagesEndRef.current?.scrollIntoView({ behavior: "instant" });
-    }
-
-    wasGeneratingCurrentChatRef.current = isGeneratingThisChat;
-  }, [messages.length, sending, sendingChatId, streamingMessageId, currentChat?.id]);
-
-  useLayoutEffect(() => {
-    if (loading || !currentChat?.id || messages.length === 0) return;
-    if (lastOpenedChatRef.current === currentChat.id) return;
-    lastOpenedChatRef.current = currentChat.id;
-    skipNextMessageAutoScrollRef.current = currentChat.id;
-    requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
-    });
-  }, [currentChat?.id, loading, messages.length]);
 
   useEffect(() => {
     if (!character) return;
@@ -1324,38 +1266,10 @@ export function ChatPage() {
     currentContextTokens > 0
       ? `${currentContextTokens.toLocaleString()} / ${DEEPSEEK_CONTEXT_LIMIT.toLocaleString()} current conversation context tokens`
       : "No context usage data yet";
-  const totalTurnCount = useMemo(() => countMemoryTurns(messages), [messages]);
-  const recentMessageStartIndex = useMemo(
-    () => getRecentMemoryTurnStartIndex(messages, renderedTurnLimit),
-    [messages, renderedTurnLimit],
-  );
-  const hasOlderMessages = recentMessageStartIndex > 0;
-  const visibleMessages = useMemo(() => messages.slice(recentMessageStartIndex), [messages, recentMessageStartIndex]);
-  const hiddenMessages = useMemo(
-    () => (hasOlderMessages ? messages.slice(0, recentMessageStartIndex) : []),
-    [hasOlderMessages, messages, recentMessageStartIndex],
-  );
-  const hiddenTurnCount = useMemo(() => countMemoryTurns(hiddenMessages), [hiddenMessages]);
-  const loadOlderMessages = useCallback(() => {
-    if (!hasOlderMessages) return;
-    const container = messagesContainerRef.current;
-    if (container) {
-      prependScrollRef.current = {
-        height: container.scrollHeight,
-        top: container.scrollTop,
-      };
-    }
-    setRenderedTurnLimit((limit) => Math.min(totalTurnCount, limit + CHAT_OLDER_TURN_BATCH));
-  }, [hasOlderMessages, totalTurnCount]);
-  const handleMessagesScroll = useCallback(() => {
-    const container = messagesContainerRef.current;
-    if (!container || !hasOlderMessages) return;
-    if (prependScrollRef.current) return;
-    if (container.scrollTop <= 24) loadOlderMessages();
-  }, [hasOlderMessages, loadOlderMessages]);
+
   const renderedMessages = useMemo(
     () =>
-      visibleMessages.map((msg) => {
+      messages.map((msg) => {
         const isUser = msg.role === "user";
         const isFinalAi = !isUser && msg.id === lastAssistantId;
         const split =
@@ -1368,22 +1282,81 @@ export function ChatPage() {
 
         return { msg, isUser, isFinalAi, split, displayContent, isStreamingAi, hasDisplayContent };
       }),
-    [activeRegexRules, isGeneratingCurrentChat, lastAssistantId, streamingMessageId, visibleMessages],
+    [activeRegexRules, isGeneratingCurrentChat, lastAssistantId, streamingMessageId, messages],
   );
 
-  useLayoutEffect(() => {
-    const snapshot = prependScrollRef.current;
-    const container = messagesContainerRef.current;
-    if (!snapshot || !container) return;
+  const isNearBottomRef = useRef(true);
 
+  const handleChatScroll = useCallback(() => {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 120;
+  }, []);
+
+  const chatVirtualizer = useVirtualizer({
+    count: renderedMessages.length,
+    getScrollElement: () => messagesContainerRef.current,
+    estimateSize: () => 260,
+    getItemKey: (index) => renderedMessages[index]?.msg.id ?? `msg-${index}`,
+    overscan: 8,
+  });
+
+  useLayoutEffect(() => {
+    chatVirtualizer.measure();
+  }, [fontSize, chatVirtualizer]);
+
+  useEffect(() => {
+    const lastMsg = messages[messages.length - 1];
+    if (!lastMsg) return;
+
+    const isGeneratingThisChat = sending && !!currentChat?.id && sendingChatId === currentChat.id;
+    if (isGeneratingThisChat && streamingMessageId) {
+      activeStreamingMessageRef.current = streamingMessageId;
+    }
+
+    if (skipNextMessageAutoScrollRef.current === currentChat?.id) {
+      skipNextMessageAutoScrollRef.current = null;
+      wasGeneratingCurrentChatRef.current = isGeneratingThisChat;
+      return;
+    }
+
+    const justFinishedGenerating = wasGeneratingCurrentChatRef.current && !isGeneratingThisChat;
+    const completedMessageId = activeStreamingMessageRef.current;
+
+    if (
+      justFinishedGenerating &&
+      completedMessageId &&
+      lastMsg.role === "assistant" &&
+      lastMsg.id === completedMessageId &&
+      completedScrollMessageRef.current !== completedMessageId
+    ) {
+      const completedIndex = renderedMessages.findIndex((m) => m.msg.id === completedMessageId);
+      if (completedIndex >= 0 && isNearBottomRef.current) {
+        chatVirtualizer.scrollToIndex(completedIndex, { align: "start" });
+      }
+      completedScrollMessageRef.current = completedMessageId;
+      activeStreamingMessageRef.current = null;
+    } else if (lastMsg.role === "user") {
+      if (isNearBottomRef.current) {
+        chatVirtualizer.scrollToIndex(renderedMessages.length - 1, { align: "end" });
+      }
+    }
+
+    wasGeneratingCurrentChatRef.current = isGeneratingThisChat;
+  }, [messages.length, sending, sendingChatId, streamingMessageId, currentChat?.id, renderedMessages, chatVirtualizer]);
+
+  useLayoutEffect(() => {
+    if (loading || !currentChat?.id || messages.length === 0) return;
+    if (lastOpenedChatRef.current === currentChat.id) return;
+    lastOpenedChatRef.current = currentChat.id;
+    skipNextMessageAutoScrollRef.current = currentChat.id;
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight - snapshot.height + snapshot.top;
-      prependScrollRef.current = null;
+      chatVirtualizer.scrollToIndex(renderedMessages.length - 1, { align: "end" });
     });
-  }, [visibleMessages.length]);
+  }, [currentChat?.id, loading, messages.length, renderedMessages.length, chatVirtualizer]);
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" style={{ "--chat-font-size": fontSize + "px" } as React.CSSProperties}>
       <div className="w-60 border-r p-4 flex flex-col gap-3 overflow-y-auto shrink-0">
         <button
           onClick={() => navigate("/")}
@@ -1441,7 +1414,7 @@ export function ChatPage() {
         </div>
         <div
           ref={messagesContainerRef}
-          onScroll={handleMessagesScroll}
+          onScroll={handleChatScroll}
           className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50"
         >
           {loading && <p className="text-sm text-muted-foreground text-center">Loading...</p>}
@@ -1473,29 +1446,35 @@ export function ChatPage() {
               )}
             </div>
           )}
-          <div className="max-w-4xl mx-auto space-y-5">
-            {hasOlderMessages && (
-              <div className="flex justify-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadOlderMessages}
-                  className="h-8 gap-1.5 text-xs text-muted-foreground"
-                >
-                  <ChevronUp className="h-3.5 w-3.5" />
-                  {`加载较早消息：还隐藏 ${hiddenTurnCount} 轮 / ${hiddenMessages.length} 条`}
-                </Button>
-              </div>
-            )}
-            {renderedMessages.map(
-              ({ msg, isUser, isFinalAi, split, displayContent, isStreamingAi, hasDisplayContent }) => {
+          <div className="max-w-4xl mx-auto">
+            <div
+              style={{
+                height: `${chatVirtualizer.getTotalSize()}px`,
+                width: "100%",
+                position: "relative",
+              }}
+            >
+              {chatVirtualizer.getVirtualItems().map((virtualItem) => {
+                const { msg, isUser, isFinalAi, split, displayContent, isStreamingAi, hasDisplayContent } =
+                  renderedMessages[virtualItem.index];
                 const aiName = character?.name ?? "AI";
                 let imageBlockIndex = 0;
                 const isMessageImageBusy =
                   !!imageGenerationBusy[msg.id] || !!msg.images?.some((image) => image.status === "generating");
 
                 return (
-                  <div key={msg.id} ref={isFinalAi ? lastAiMsgRef : undefined}>
+                  <div
+                    key={virtualItem.key}
+                    data-index={virtualItem.index}
+                    ref={chatVirtualizer.measureElement}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualItem.start}px)`,
+                    }}
+                  >
                     {!isUser && (
                       <div className="flex items-center justify-between mb-1.5 px-1 group">
                         <div className="flex items-center gap-2">
@@ -1741,8 +1720,8 @@ export function ChatPage() {
                     </div>
                   </div>
                 );
-              },
-            )}
+              })}
+            </div>
             {isGeneratingCurrentChat && !hasStreamingMessage && (
               <div>
                 <div className="flex items-center gap-2 mb-1.5 px-1">
@@ -1784,7 +1763,6 @@ export function ChatPage() {
                 </div>
               </div>
             )}
-            <div ref={messagesEndRef} />
           </div>
         </div>
 

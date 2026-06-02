@@ -117,28 +117,6 @@ export function WorldbookPage() {
     loadWorldbooks();
   }, [loadWorldbooks]);
 
-  useEffect(() => {
-    if (!selectedId && worldbooks.length > 0) {
-      handleSelect(worldbooks[0].id);
-    }
-  }, [worldbooks]);
-
-  const selected = worldbooks.find((worldbook) => worldbook.id === selectedId) ?? null;
-  const entries = useMemo(
-    () => (selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []),
-    [selected],
-  );
-  const selectedEntry = editingEntryId ? entries.find((entry) => entry.id === editingEntryId) : null;
-  const stats = useMemo(() => {
-    const source = selected?.entries ?? [];
-    return {
-      total: source.length,
-      enabled: source.filter((entry) => entry.enabled).length,
-      always: source.filter((entry) => entry.enabled && entry.type === "always").length,
-      trigger: source.filter((entry) => entry.enabled && entry.type === "trigger").length,
-    };
-  }, [selected]);
-
   const resetEntryForm = () => {
     setEditingEntryId(null);
     setEntryTitle("");
@@ -170,6 +148,28 @@ export function WorldbookPage() {
     setExpandedEntryIds(new Set());
     resetEntryForm();
   };
+
+  useEffect(() => {
+    if (!selectedId && worldbooks.length > 0) {
+      handleSelect(worldbooks[0].id);
+    }
+  }, [worldbooks]);
+
+  const selected = worldbooks.find((worldbook) => worldbook.id === selectedId) ?? null;
+  const entries = useMemo(
+    () => (selected ? [...selected.entries].sort((a, b) => b.priority - a.priority) : []),
+    [selected],
+  );
+  const selectedEntry = editingEntryId ? entries.find((entry) => entry.id === editingEntryId) : null;
+  const stats = useMemo(() => {
+    const source = selected?.entries ?? [];
+    return {
+      total: source.length,
+      enabled: source.filter((entry) => entry.enabled).length,
+      always: source.filter((entry) => entry.enabled && entry.type === "always").length,
+      trigger: source.filter((entry) => entry.enabled && entry.type === "trigger").length,
+    };
+  }, [selected]);
 
   const handleCreate = async () => {
     try {

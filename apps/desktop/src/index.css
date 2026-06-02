@@ -225,3 +225,19 @@
     color-scheme: light;
   }
 }
+
+.animate-delay-0 {
+  animation-delay: 0ms;
+}
+.animate-delay-150 {
+  animation-delay: 150ms;
+}
+.animate-delay-300 {
+  animation-delay: 300ms;
+}
+
+@layer components {
+  .info-block { @apply rounded-md border px-3 py-2 text-xs text-muted-foreground; }
+  .setting-row { @apply flex items-center justify-between gap-4 rounded-md border px-3 py-3; }
+  .card-title-row { @apply flex items-center gap-2; }
+}

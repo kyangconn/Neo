@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -22,6 +22,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Textarea } from "@neo-tavern/ui";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { generateId } from "@neo-tavern/shared";
 import type {
   Character,
@@ -636,7 +637,15 @@ export function NeoBuilderPage() {
     readInitialBuilderRecords(initialSnapshot ?? null),
   );
   const [builderSessionId, setBuilderSessionId] = useState(() => initialSnapshot?.builderSessionId ?? generateId());
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const builderScrollRef = useRef<HTMLDivElement>(null);
+
+  const builderVirtualizer = useVirtualizer({
+    count: messages.length,
+    getScrollElement: () => builderScrollRef.current,
+    estimateSize: () => 240,
+    getItemKey: (index) => messages[index]?.id ?? `msg-${index}`,
+    overscan: 6,
+  });
 
   const toast = (type: "success" | "error" | "info", msg: string) => {
     const fn = (window as any).__toast;
@@ -647,9 +656,25 @@ export function NeoBuilderPage() {
     loadCharacters();
   }, [loadCharacters]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages]);
+  const isNearBottomRef = useRef(true);
+
+  const handleBuilderScroll = useCallback(() => {
+    const el = builderScrollRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 120;
+  }, []);
+
+  useLayoutEffect(() => {
+    if (messages.length === 0) return;
+    if (isNearBottomRef.current) {
+      builderVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+    }
+  }, [messages, builderVirtualizer]);
+
+  useLayoutEffect(() => {
+    builderVirtualizer.scrollToIndex(messages.length - 1, { align: "end" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [builderSessionId]);
 
   useEffect(() => {
     writeBuilderWorkspaceRecords(workspaceRecords);
@@ -977,12 +1002,40 @@ export function NeoBuilderPage() {
           />
 
           <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background">
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5">
-              <div className="mx-auto flex w-full min-w-0 max-w-4xl flex-col gap-5">
-                {messages.map((message) => (
-                  <BuilderChatMessage key={message.id} message={message} onChoice={handleChoice} />
-                ))}
-                <div ref={chatEndRef} />
+            <div
+              ref={builderScrollRef}
+              onScroll={handleBuilderScroll}
+              className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5"
+            >
+              <div
+                style={{
+                  height: `${builderVirtualizer.getTotalSize()}px`,
+                  width: "100%",
+                  position: "relative",
+                }}
+              >
+                {builderVirtualizer.getVirtualItems().map((virtualItem) => {
+                  const message = messages[virtualItem.index];
+                  if (!message) return null;
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      ref={builderVirtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${virtualItem.start}px)`,
+                      }}
+                    >
+                      <div className="mx-auto w-full min-w-0 max-w-4xl pb-5">
+                        <BuilderChatMessage message={message} onChoice={handleChoice} />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

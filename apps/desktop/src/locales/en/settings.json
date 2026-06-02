@@ -1,9 +1,11 @@
 {
   "back": "Back",
   "sections": {
+    "general": "General",
     "api": "DeepSeek API",
     "appearance": "Appearance",
     "context": "Context",
+    "image": "Image Generation",
     "regex": "Regex Rules"
   },
   "api": {

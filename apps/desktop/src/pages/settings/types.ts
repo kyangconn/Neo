@@ -10,113 +10,37 @@ export type ThemeOption = {
   label: string;
 };
 
-// ── ApiSection ──────────────────────────────────────────
-export interface ModelOption {
-  id: string;
-  label: string;
-  badge: string;
-  description: string;
-}
+// ── Shared constants ───────────────────────────────────
+export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";
+export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash";
+export const DEFAULT_DEEPSEEK_CONFIG_NAME = "DeepSeek V4 Flash";
+export const DEEPSEEK_LEGACY_MODELS = ["deepseek-chat", "deepseek-reasoner"];
 
-export interface ApiSectionProps {
+export const DEEPSEEK_MODEL_OPTIONS = [
+  {
+    id: "deepseek-v4-flash",
+    label: "DeepSeek V4 Flash",
+    badge: "Recommended",
+    description: "Best first choice for daily chat and roleplay. Lower cost.",
+  },
+  {
+    id: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    badge: "Pro",
+    description: "Use for deeper reasoning and complex writing. Higher cost.",
+  },
+] as const;
+
+// ── Section component props ────────────────────────────
+
+export interface SettingsSectionProps {
   t: (key: string, params?: Record<string, string>) => string;
-
-  modelConfigs: Array<{ id: string; name: string }>;
-  activeConfigId: string | null;
-  selectedId: string;
-  setSelectedId: (id: string) => void;
-  saving: boolean;
-  testing: boolean;
-
-  name: string;
-  setName: (v: string) => void;
-  baseUrl: string;
-  setBaseUrl: (v: string) => void;
-  apiKey: string;
-  setApiKey: (v: string) => void;
-  model: string;
-  setModel: (v: string) => void;
-  temperature: string;
-  setTemperature: (v: string) => void;
-  maxTokens: string;
-  setMaxTokens: (v: string) => void;
-  reasoningEffort: string;
-  setReasoningEffort: (v: string) => void;
-  streamingEnabled: boolean;
-  setStreamingEnabled: (v: boolean) => void;
-
-  fetchingModels: boolean;
-  availableModels: string[];
-  onFetchModels: () => void;
-
-  onSave: () => void;
-  onDelete: (configId: string) => void;
-  onTestConnection: () => void;
-  onResetForm: () => void;
-  onSelectConfig: (configId: string) => void;
-  onNewProfile: () => void;
-
-  modelSelectOptions: ModelOption[];
-  baseModelOptions: ModelOption[];
-  selectedModelMeta: ModelOption | undefined;
-  isLegacyModel: boolean;
 }
 
-// ── RegexSection ────────────────────────────────────────
-export interface RegexRuleForm {
-  id?: string;
-  name: string;
-  pattern: string;
-  displayTemplate: string;
-  stripFromPrompt: boolean;
-  enabled: boolean;
+export interface ImageSectionProps extends SettingsSectionProps {}
+
+export interface ApiSectionProps extends SettingsSectionProps {
+  modelConfigs: Array<{ id: string; name: string; model: string }>;
 }
 
-export interface RegexPresetData {
-  id: string;
-  name: string;
-  description: string;
-  isGlobal: boolean;
-  rules: RegexRuleForm[];
-}
-
-export interface RegexSectionProps {
-  t: (key: string, params?: Record<string, string>) => string;
-
-  presets: RegexPresetData[];
-  activePresetId: string | null;
-  selectedPresetId: string | null;
-
-  presetName: string;
-  setPresetName: (v: string) => void;
-  presetDesc: string;
-  setPresetDesc: (v: string) => void;
-
-  ruleName: string;
-  setRuleName: (v: string) => void;
-  rulePattern: string;
-  setRulePattern: (v: string) => void;
-  ruleTemplate: string;
-  setRuleTemplate: (v: string) => void;
-  ruleStrip: boolean;
-  setRuleStrip: (v: boolean) => void;
-  ruleEnabled: boolean;
-  setRuleEnabled: (v: boolean) => void;
-  editingRuleId: string | null;
-
-  deleteTarget: RegexPresetData | null;
-  setDeleteTarget: (p: RegexPresetData | null) => void;
-
-  onSelectPreset: (id: string) => void;
-  onCreatePreset: () => void;
-  onSavePresetMeta: () => void;
-  onDeletePreset: () => void;
-  onActivatePreset: () => void;
-  onToggleGlobal: () => void;
-  onSaveRule: () => void;
-  onDeleteRule: (ruleId: string) => void;
-  onToggleRule: (ruleId: string) => void;
-  onEditRule: (rule: RegexRuleForm & { id: string }) => void;
-  onResetRuleForm: () => void;
-  onQuickSummary: () => void;
-}
+export interface RegexSectionProps extends SettingsSectionProps {}
