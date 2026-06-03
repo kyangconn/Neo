@@ -13,9 +13,5 @@
     "displayNameHint": "Default: User",
     "description": "Persona Description (optional)",
     "descriptionPlaceholder": "Brief description of your persona... Will be injected into the system prompt."
-  },
-  "toast": {
-    "nameRequired": "Name is required",
-    "saved": "Persona saved"
   }
 }

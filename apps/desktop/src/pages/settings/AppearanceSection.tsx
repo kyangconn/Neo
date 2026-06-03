@@ -1,17 +1,18 @@
-import { Sun, Moon, Eye, CheckCircle2 } from "lucide-react";
+import { Sun, Moon, Eye, Monitor, CheckCircle2 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@neo-tavern/ui";
-import { useThemeStore } from "@/app/theme.store";
-import type { ThemeOption } from "./types";
+import { useThemeStore, type Theme } from "@/app/theme.store";
 
-interface AppearanceSectionProps {
-  themes: ThemeOption[];
-  t: (key: string, params?: Record<string, string>) => string;
-}
-
-export function AppearanceSection({ themes, t }: AppearanceSectionProps) {
+export function AppearanceSection({ t }: { t: (key: string, params?: Record<string, string>) => string }) {
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
   const resolvedTheme = useThemeStore((s) => s.resolvedTheme);
+
+  const themes = [
+    { value: "light" as Theme, icon: Sun, label: t("appearance.light") },
+    { value: "dark" as Theme, icon: Moon, label: t("appearance.dark") },
+    { value: "sepia" as Theme, icon: Eye, label: t("appearance.eyeCare") },
+    { value: "system" as Theme, icon: Monitor, label: t("appearance.system") },
+  ];
 
   const resolvedLabel =
     resolvedTheme === "dark"

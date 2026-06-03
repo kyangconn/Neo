@@ -29,6 +29,7 @@
     "model": "DeepSeek Model",
     "modelDescription": "Choose the model for chat generation.",
     "modelId": "Model ID",
+    "advancedOptions": "Advanced options",
     "fetch": "Fetch",
     "fetching": "Loading...",
     "modelsAvailable": "{{count}} DeepSeek models available",
@@ -66,25 +67,13 @@
     "format": "Format",
     "streaming": "Streaming",
     "streamingHint": "When enabled, AI responses appear word-by-word. When disabled, the full response appears at once.",
+    "endpoint": "Endpoint",
+    "balance": "Balance",
     "toggleStreaming": "Toggle streaming",
     "saveProfile": "Save DeepSeek Profile",
     "saving": "Saving...",
     "testConnection": "Test Connection",
-    "testing": "Testing...",
-    "toast": {
-      "apiKeyRequired": "Please enter your DeepSeek API key first.",
-      "saved": "\"{{name}}\" saved.",
-      "updated": "\"{{name}}\" updated.",
-      "deleted": "\"{{name}}\" deleted.",
-      "saveFailed": "Failed to save configuration.",
-      "deleteFailed": "Failed to delete.",
-      "testPassed": "{{content}}",
-      "testConnected": "Connected to DeepSeek API",
-      "testFailed": "{{message}}",
-      "modelsLoaded": "Loaded {{count}} DeepSeek models",
-      "modelsEmpty": "No DeepSeek models returned from API",
-      "modelsFetchFailed": "Failed: {{message}}"
-    }
+    "testing": "Testing..."
   },
   "appearance": {
     "title": "Appearance",
@@ -145,15 +134,7 @@
     "plannerConfig": "Image Planning API",
     "plannerConfigHint": "Used to analyze AI replies and find scenes suitable for image generation.",
     "worldbookRef": "Worldbook Reference",
-    "worldbookRefHint": "Provides matched worldbook entries as style reference for image planning.",
-    "toast": {
-      "workflowRequired": "Please import a ComfyUI workflow JSON first",
-      "connected": "ComfyUI connected",
-      "connectionFailed": "Connection failed",
-      "connectionError": "{{message}}",
-      "saved": "Image settings saved",
-      "saveFailed": "Save failed"
-    }
+    "worldbookRefHint": "Provides matched worldbook entries as style reference for image planning."
   },
   "context": {
     "title": "Context Tokens",
@@ -207,8 +188,5 @@
       "description": "Delete \"{{name}}\" and all its rules? This cannot be undone."
     },
     "quickSummary": "Quick: Summary"
-  },
-  "toast": {
-    "secretUnlocked": "🔓 Secret unlocked! Check the writing preset."
   }
 }

@@ -13,9 +13,5 @@
     "displayNameHint": "默认：User",
     "description": "人设描述（可选）",
     "descriptionPlaceholder": "简短描述你的人设……将被注入到系统提示词中。"
-  },
-  "toast": {
-    "nameRequired": "名称不能为空",
-    "saved": "人设已保存"
   }
 }

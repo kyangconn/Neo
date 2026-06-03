@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { Dice5, MessageCircle, Plus, Save, Settings, Trash2 } from "lucide-react";
 import {
   Button,
@@ -31,6 +32,9 @@ type HomeContextMenu =
   | { type: "chat"; x: number; y: number; chat: Chat; character?: Character };
 
 export function HomePage() {
+  const { t } = useTranslation("home");
+  const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const { characters, loading: charsLoading, loadCharacters } = useCharacterStore();
   const { chats, loading: chatsLoading, loadChats, deleteChat, createOrGetChat } = useChatStore();
@@ -87,7 +91,7 @@ export function HomePage() {
       setModeTarget(null);
       navigate(`/chat/${chat.id}`);
     } catch (err) {
-      toast("error", (err as Error).message || "创建会话失败");
+      toast("error", (err as Error).message || tt("createChatFailed"));
     } finally {
       setCreatingMode(null);
     }
@@ -132,10 +136,10 @@ export function HomePage() {
         name: savepointName,
         messages,
       });
-      toast("success", "存档已创建");
+      toast("success", tt("savepointCreated"));
       closeSaveDialog();
     } catch {
-      toast("error", "创建存档失败");
+      toast("error", tt("savepointFailed"));
       setSavingSavepoint(false);
     }
   };
@@ -144,44 +148,40 @@ export function HomePage() {
     <div className="flex h-full flex-col overflow-hidden">
       <div className="shrink-0 border-b px-6 py-5">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Whale Play</h1>
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
           <Button variant="outline" onClick={() => navigate("/settings")}>
             <Settings className="h-4 w-4 mr-2" />
-            Settings
+            {t("settings")}
           </Button>
         </div>
 
         <div className="mt-5 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-semibold">Characters</h2>
+          <h2 className="text-lg font-semibold">{t("characters")}</h2>
           <Button size="icon" variant="ghost" onClick={() => navigate("/character")}>
             <Plus className="h-4 w-4" />
           </Button>
         </div>
 
-        <div className="mt-3 min-h-[128px] overflow-x-auto pb-2">
-          <div className="flex min-w-max gap-4">
-            {charsLoading && <p className="text-sm text-muted-foreground p-2">Loading...</p>}
-            {!charsLoading && characters.length === 0 && (
-              <p className="text-sm text-muted-foreground p-2">No characters yet.</p>
-            )}
-            {characters.map((char) => (
-              <CharacterAvatarTile
-                key={char.id}
-                character={char}
-                onClick={() => handleCharacterClick(char.id)}
-                onContextMenu={(event) => openCharacterContextMenu(event, char)}
-              />
-            ))}
-          </div>
+        <div className="mt-3 flex min-h-[128px] gap-4 overflow-x-auto pb-2">
+          {charsLoading && <p className="text-sm text-muted-foreground shrink-0 p-2">{t("loading")}</p>}
+          {!charsLoading && characters.length === 0 && (
+            <p className="text-sm text-muted-foreground shrink-0">{t("noCharacters")}</p>
+          )}
+          {characters.map((char) => (
+            <CharacterAvatarTile
+              key={char.id}
+              character={char}
+              onClick={() => handleCharacterClick(char.id)}
+              onContextMenu={(event) => openCharacterContextMenu(event, char)}
+            />
+          ))}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-5">
-        <h2 className="text-lg font-semibold mb-3">Recent Chats</h2>
-        {chatsLoading && <p className="text-sm text-muted-foreground">Loading...</p>}
-        {!chatsLoading && chats.length === 0 && (
-          <p className="text-sm text-muted-foreground">No chats yet. Select a character to start.</p>
-        )}
+        <h2 className="text-lg font-semibold mb-3">{t("recentChats")}</h2>
+        {chatsLoading && <p className="text-sm text-muted-foreground">{t("loading")}</p>}
+        {!chatsLoading && chats.length === 0 && <p className="text-sm text-muted-foreground">{t("noChats")}</p>}
         <div className="grid gap-3">
           {chats.map((chat) => {
             const character = charactersById.get(chat.characterId);
@@ -306,7 +306,7 @@ export function HomePage() {
                   setDeleteTarget(contextMenu.chat);
                 }}
               >
-                Delete chat
+                {t("contextMenu.deleteChat")}
               </button>
             </>
           )}
@@ -316,18 +316,15 @@ export function HomePage() {
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Chat</DialogTitle>
-            <DialogDescription>
-              Delete "{deleteTarget?.title}"? This will also remove all messages in this conversation. This action
-              cannot be undone.
-            </DialogDescription>
+            <DialogTitle>{t("deleteChat.title")}</DialogTitle>
+            <DialogDescription>{t("deleteChat.description", { title: deleteTarget?.title })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
             <Button variant="destructive" onClick={handleDeleteConfirm}>
-              Delete
+              {tc("actions.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -341,8 +338,8 @@ export function HomePage() {
       >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>选择会话模式</DialogTitle>
-            <DialogDescription>为 "{modeTarget?.name}" 创建一个新会话。</DialogDescription>
+            <DialogTitle>{t("modeDialog.title")}</DialogTitle>
+            <DialogDescription>{t("modeDialog.description", { name: modeTarget?.name })}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 sm:grid-cols-2">
             <button
@@ -355,7 +352,7 @@ export function HomePage() {
                 <MessageCircle className="h-4 w-4" />
                 普通模式
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">角色按当前角色卡直接对话。</p>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t("modeDialog.normal.desc")}</p>
             </button>
             <button
               type="button"
@@ -367,12 +364,12 @@ export function HomePage() {
                 <Dice5 className="h-4 w-4" />
                 实验模式
               </div>
-              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">主持人推进场景、判定风险并维护状态。</p>
+              <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t("modeDialog.agentic.desc")}</p>
             </button>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModeTarget(null)} disabled={!!creatingMode}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -381,7 +378,7 @@ export function HomePage() {
       <Dialog open={!!saveTarget} onOpenChange={closeSaveDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>创建存档点</DialogTitle>
+            <DialogTitle>{t("savepoint.title")}</DialogTitle>
             <DialogDescription>
               为 "{saveTarget?.title}" 保存当前消息快照。名字可以留空，系统会自动生成。
             </DialogDescription>
@@ -396,10 +393,10 @@ export function HomePage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={closeSaveDialog}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
             <Button onClick={handleCreateSavepoint} disabled={savingSavepoint}>
-              {savingSavepoint ? "Saving..." : "Save"}
+              {savingSavepoint ? t("saving") : tc("actions.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

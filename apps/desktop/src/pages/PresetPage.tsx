@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   Plus,
   Trash2,
@@ -35,11 +36,7 @@ import { EXTRA_PRESET_ITEM_TEMPLATES } from "@/features/preset/preset.templates"
 import type { Preset, PresetItem } from "@neo-tavern/shared";
 import { getStorageItem } from "@/db/storage";
 import { invoke } from "@tauri-apps/api/core";
-
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
+import { toast } from "@/utils/toast";
 
 function sortPresetItems(items: PresetItem[]) {
   return [...items].sort(
@@ -63,6 +60,10 @@ function downloadPresetJson(json: string, filename: string) {
 }
 
 export function PresetPage() {
+  const { t } = useTranslation("preset");
+  const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("toast");
+
   const navigate = useNavigate();
   const store = usePresetStore();
 
@@ -93,6 +94,7 @@ export function PresetPage() {
 
   useEffect(() => {
     store.loadPresets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -135,7 +137,7 @@ export function PresetPage() {
       const p = await store.createPreset({ name: "New Preset", description: "" });
       setSelectedId(p.id);
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -143,9 +145,9 @@ export function PresetPage() {
     if (!selected) return;
     try {
       await store.updatePreset(selected.id, { name: editName, description: editDesc });
-      toast("success", "Preset updated");
+      toast("success", tt("presetUpdated"));
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -155,9 +157,9 @@ export function PresetPage() {
       await store.deletePreset(deleteTarget.id);
       if (selectedId === deleteTarget.id) setSelectedId(null);
       setDeleteTarget(null);
-      toast("info", `"${deleteTarget.name}" deleted`);
+      toast("info", tt("presetDeleted", { name: deleteTarget.name }));
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -165,7 +167,7 @@ export function PresetPage() {
     if (!selected) return;
     const newId = store.activePresetId === selected.id ? null : selected.id;
     await store.setActivePreset(newId);
-    toast("info", newId ? `Activated "${selected.name}"` : "Preset deactivated");
+    toast("info", newId ? tt("presetActivated", { name: selected.name }) : tt("presetDeactivated"));
   };
 
   const openNewItem = () => {
@@ -198,7 +200,7 @@ export function PresetPage() {
           content: itemContent,
           injectionOrder: itemOrder,
         });
-        toast("success", `"${itemName}" updated`);
+        toast("success", tt("presetItemUpdated", { name: itemName }));
       } else {
         await store.addItem(selected.id, {
           name: itemName.trim(),
@@ -207,11 +209,11 @@ export function PresetPage() {
           content: itemContent,
           injectionOrder: itemOrder,
         });
-        toast("success", `"${itemName}" added`);
+        toast("success", tt("presetItemAdded", { name: itemName }));
       }
       setItemDialogOpen(false);
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -220,9 +222,9 @@ export function PresetPage() {
     try {
       await store.deleteItem(selected.id, deleteItemTarget.id);
       setDeleteItemTarget(null);
-      toast("info", `"${deleteItemTarget.name}" deleted`);
+      toast("info", tt("presetItemDeleted", { name: deleteItemTarget.name }));
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -355,13 +357,13 @@ export function PresetPage() {
           toast("info", "Export cancelled");
           return;
         }
-        toast("success", `Exported to ${savedPath}`);
+        toast("success", tt("presetExportedTo", { path: savedPath }));
       } catch {
         downloadPresetJson(json, filename);
-        toast("success", "Exported");
+        toast("success", tt("presetExported"));
       }
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -374,9 +376,9 @@ export function PresetPage() {
       setSelectedId(preset.id);
       setImportOpen(false);
       setImportFile(null);
-      toast("success", `Imported "${preset.name}" with ${preset.items.length} items`);
+      toast("success", tt("presetImported", { name: preset.name, count: preset.items.length }));
     } catch {
-      toast("error", "Invalid JSON or import failed");
+      toast("error", tt("presetImportFailed"));
     } finally {
       setImporting(false);
     }
@@ -393,7 +395,7 @@ export function PresetPage() {
   const handleAddTemplateItem = async () => {
     if (!selected || !selectedTemplate) return;
     if (selected.items.some((item) => item.content === selectedTemplate.content)) {
-      toast("info", `"${selectedTemplate.name}" is already in this preset.`);
+      toast("info", tt("presetAlreadyAdded", { name: selectedTemplate.name }));
       return;
     }
 
@@ -406,9 +408,9 @@ export function PresetPage() {
         content: selectedTemplate.content,
         injectionOrder: nextOrder,
       });
-      toast("success", `"${selectedTemplate.name}" added`);
+      toast("success", tt("presetItemAdded", { name: selectedTemplate.name }));
     } catch {
-      toast("error", store.error || "Failed");
+      toast("error", store.error || tt("presetFailed"));
     }
   };
 
@@ -416,33 +418,23 @@ export function PresetPage() {
 
   return (
     <div className="flex h-full">
-      <div className="w-56 border-r p-4 flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Presets</h2>
-          <div className="flex gap-1">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              onClick={() => setImportOpen(true)}
-              disabled={importing}
-              title="Import preset"
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => navigate("/")}>
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
+      <div className="w-60 border-r p-4 flex flex-col gap-3">
+        <button
+          onClick={() => navigate("/")}
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t("back")}
+        </button>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("title")}</h2>
         <Button variant="outline" size="sm" onClick={handleCreate} className="justify-start text-xs">
           <Plus className="h-3.5 w-3.5 mr-1" />
-          New Preset
+          {t("newPreset")}
         </Button>
         <ScrollArea className="flex-1 -mx-2 px-2">
           <div className="flex flex-col gap-0.5">
             {store.presets.length === 0 && !store.loading && (
-              <p className="text-xs text-muted-foreground p-2">No presets yet</p>
+              <p className="text-xs text-muted-foreground p-2">{t("noPresets")}</p>
             )}
             {store.presets.map((p) => (
               <button
@@ -463,7 +455,7 @@ export function PresetPage() {
         {!selected ? (
           <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
             <div className="text-center space-y-2">
-              <p>Select a preset or create a new one</p>
+              <p>{t("selectOrCreate")}</p>
               <Button variant="outline" size="sm" onClick={handleCreate}>
                 <Plus className="h-4 w-4 mr-1" />
                 New Preset
@@ -485,7 +477,7 @@ export function PresetPage() {
                     value={editDesc}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditDesc(e.target.value)}
                     className="border-0 border-b rounded-none px-0 min-h-[40px] resize-none text-sm text-muted-foreground focus-visible:ring-0"
-                    placeholder="Description (optional)"
+                    placeholder={t("descPlaceholder")}
                     rows={1}
                   />
                 </div>
@@ -501,7 +493,7 @@ export function PresetPage() {
                     variant={store.activePresetId === selected.id ? "default" : "outline"}
                     onClick={handleActivate}
                   >
-                    {store.activePresetId === selected.id ? "Active" : "Activate"}
+                    {store.activePresetId === selected.id ? t("active") : t("activate")}
                   </Button>
                   <Button
                     size="sm"
@@ -520,7 +512,7 @@ export function PresetPage() {
                     <div className="min-w-0 flex-1">
                       <Label htmlFor="extra-preset-entry" className="flex items-center gap-1.5">
                         <LibraryBig className="h-3.5 w-3.5" />
-                        Extra Preset Entry
+                        {t("extraPresetEntry")}
                       </Label>
                       <select
                         id="extra-preset-entry"
@@ -538,7 +530,7 @@ export function PresetPage() {
                     </div>
                     <Button size="sm" variant="outline" onClick={handleAddTemplateItem} disabled={!selectedTemplate}>
                       <Plus className="h-3.5 w-3.5 mr-1" />
-                      Add Selected
+                      {t("addSelected")}
                     </Button>
                   </div>
                 </div>
@@ -546,14 +538,14 @@ export function PresetPage() {
                 <div className="rounded-md border bg-muted/10 p-3">
                   <div className="flex h-full items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-medium">{sortedItems.length} cards</p>
+                      <p className="text-sm font-medium">{t("items", { count: sortedItems.length })}</p>
                       <p className="text-xs text-muted-foreground">
-                        {sortedItems.filter((i) => i.enabled).length} enabled · drag to reorder
+                        {t("itemsEnabled", { count: sortedItems.filter((i) => i.enabled).length })}
                       </p>
                     </div>
                     <Button size="sm" onClick={openNewItem} className="shrink-0">
                       <Plus className="h-3.5 w-3.5 mr-1" />
-                      Blank Card
+                      {t("blankCard")}
                     </Button>
                   </div>
                 </div>
@@ -563,7 +555,7 @@ export function PresetPage() {
             <div className="flex-1 overflow-y-auto p-6">
               {sortedItems.length === 0 ? (
                 <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
-                  No cards yet. Add a template entry or create a blank card.
+                  <p>{t("noItems")}</p>
                 </div>
               ) : (
                 <div className="space-y-2 max-w-5xl">
@@ -668,34 +660,34 @@ export function PresetPage() {
       <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editingItem ? "Edit Card" : "New Card"}</DialogTitle>
+            <DialogTitle>{editingItem ? t("editCard") : t("newCard")}</DialogTitle>
             <DialogDescription>
-              Each card is an independent prompt snippet that can be toggled on/off.
+              {t("cardDialog.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Name</Label>
+              <Label>{t("cardDialog.name")}</Label>
               <Input
                 value={itemName}
                 onChange={(e: React.ChangeEvent<HTMLInputElement>) => setItemName(e.target.value)}
-                placeholder="Card name"
+                placeholder={t("cardDialog.namePlaceholder")}
               />
             </div>
             <div className="flex gap-4">
               <div className="flex-1">
-                <Label>Role</Label>
+                <Label>{t("cardDialog.role")}</Label>
                 <select
                   value={itemRole}
                   onChange={(e) => setItemRole(e.target.value as "system" | "user")}
                   className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                 >
-                  <option value="system">System</option>
-                  <option value="user">User</option>
+                  <option value="system">{t("itemRoles.system")}</option>
+                  <option value="user">{t("itemRoles.user")}</option>
                 </select>
               </div>
               <div>
-                <Label>Order</Label>
+                <Label>{t("cardDialog.order")}</Label>
                 <Input
                   type="number"
                   value={itemOrder}
@@ -705,11 +697,11 @@ export function PresetPage() {
               </div>
             </div>
             <div>
-              <Label>Content</Label>
+              <Label>{t("cardDialog.content")}</Label>
               <Textarea
                 value={itemContent}
                 onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setItemContent(e.target.value)}
-                placeholder="Enter the prompt content..."
+                placeholder={t("cardDialog.contentPlaceholder")}
                 rows={10}
                 className="font-mono text-xs"
               />
@@ -720,7 +712,7 @@ export function PresetPage() {
               Cancel
             </Button>
             <Button onClick={handleSaveItem} disabled={!itemName.trim()}>
-              {editingItem ? "Update" : "Add"}
+              {editingItem ? tc("actions.save") : tc("actions.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -729,9 +721,9 @@ export function PresetPage() {
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Preset</DialogTitle>
+            <DialogTitle>{t("deletePreset.title")}</DialogTitle>
             <DialogDescription>
-              Delete "{deleteTarget?.name}" and all its cards? This cannot be undone.
+              {t("deletePreset.description", { name: deleteTarget?.name })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -748,8 +740,8 @@ export function PresetPage() {
       <Dialog open={!!deleteItemTarget} onOpenChange={() => setDeleteItemTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Card</DialogTitle>
-            <DialogDescription>Delete "{deleteItemTarget?.name}"? This cannot be undone.</DialogDescription>
+            <DialogTitle>{t("deleteCard.title")}</DialogTitle>
+            <DialogDescription>{t("deleteCard.description", { name: deleteItemTarget?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteItemTarget(null)}>
@@ -771,9 +763,9 @@ export function PresetPage() {
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Import Preset</DialogTitle>
+            <DialogTitle>{t("importDialog.title")}</DialogTitle>
             <DialogDescription>
-              Select a preset JSON file. Supports Whale Play and SillyTavern preset formats.
+              {t("importDialog.description")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
@@ -789,7 +781,7 @@ export function PresetPage() {
               ) : (
                 <div className="space-y-2">
                   <Upload className="h-8 w-8 mx-auto text-muted-foreground" />
-                  <p className="text-sm text-muted-foreground">Click to select a .json file</p>
+                  <p className="text-sm text-muted-foreground">{t("importDialog.clickToSelect")}</p>
                 </div>
               )}
               <input ref={fileInputRef} type="file" accept=".json" onChange={handleFileChange} className="hidden" />
@@ -806,7 +798,7 @@ export function PresetPage() {
               Cancel
             </Button>
             <Button onClick={handleImport} disabled={!importFile || importing}>
-              {importing ? "Importing..." : "Import"}
+              {importing ? t("importDialog.importing") : t("importDialog.import")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -40,6 +40,8 @@
     "orAny": "OR any",
     "keywords": "Keywords",
     "keywordsPlaceholder": "Comma-separated keywords",
+    "secondaryKeys": "Secondary keys",
+    "secondaryKeysPlaceholder": "Optional secondary keywords",
     "content": "Content",
     "contentPlaceholder": "Entry content...",
     "priority": "Priority",
@@ -65,16 +67,5 @@
   "deleteDialog": {
     "title": "Delete World Book",
     "description": "Delete \"{{name}}\" and all entries? This cannot be undone."
-  },
-  "toast": {
-    "saved": "Saved",
-    "saveFailed": "Failed",
-    "activated": "Activated \"{{name}}\"",
-    "deactivated": "Deactivated",
-    "deleted": "\"{{name}}\" deleted",
-    "entryUpdated": "\"{{title}}\" updated",
-    "entryAdded": "\"{{title}}\" added",
-    "entryDeleted": "\"{{title}}\" deleted",
-    "titleRequired": "Title required"
   }
 }

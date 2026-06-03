@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { Plus, Trash2, Edit, ArrowLeft, Upload, MoreHorizontal, Sparkles } from "lucide-react";
 import {
@@ -58,6 +59,9 @@ function pngAvatarDataUrl(buffer: ArrayBuffer) {
 }
 
 export function CharacterPage() {
+  const { t } = useTranslation("character");
+  const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const { characters, loading, error, loadCharacters, createCharacter, updateCharacter, deleteCharacter, clearError } =
     useCharacterStore();
@@ -161,7 +165,7 @@ export function CharacterPage() {
       }
 
       if (!card) {
-        toast("error", "Could not parse character card");
+        toast("error", tt("importParseFailed"));
         return;
       }
 
@@ -253,13 +257,13 @@ export function CharacterPage() {
         importedParts.push(wb.entries.length + " worldbook entries");
       }
 
-      toast("success", `Imported "${charName}" — ${importedParts.join(", ")}`);
+      toast("success", tt("characterImported", { name: charName, parts: importedParts.join(", ") }));
       setCreating(false);
       setEditingId(null);
       setSelectedId(char.id);
       setDetailOpen(true);
     } catch {
-      toast("error", "Failed to import character card");
+      toast("error", tt("importFailed"));
     } finally {
       setImporting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
@@ -346,7 +350,7 @@ export function CharacterPage() {
         setCreating(false);
         setForm(emptyForm);
       }
-      toast("info", `Deleted "${deleteTarget.name}"`);
+      toast("info", tt("characterDeleted", { name: deleteTarget.name }));
     } catch {
       // ignored
     }
@@ -362,7 +366,7 @@ export function CharacterPage() {
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
       <div className="shrink-0 border-b px-6 py-4">
         <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold">Characters</h1>
+          <h1 className="text-2xl font-bold">{t("title")}</h1>
           <div className="flex items-center gap-2">
             <input ref={fileInputRef} type="file" accept=".json,.png" onChange={handleImportFile} className="hidden" />
             <Button variant="outline" size="sm" onClick={() => openBuilderPage()}>
@@ -371,7 +375,7 @@ export function CharacterPage() {
             </Button>
             <Button variant="outline" size="sm" onClick={() => handleStartEdit()}>
               <Plus className="h-3.5 w-3.5 mr-1" />
-              New Character
+              {t("newCharacter")}
             </Button>
             <Button
               size="icon"
@@ -379,7 +383,7 @@ export function CharacterPage() {
               className="h-8 w-8"
               onClick={() => fileInputRef.current?.click()}
               disabled={importing}
-              title="Import character card"
+              title={t("importCard")}
             >
               <Upload className="h-4 w-4" />
             </Button>
@@ -395,19 +399,19 @@ export function CharacterPage() {
           <div className="mb-4 flex items-center justify-between rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
             <span>{error}</span>
             <Button variant="ghost" size="sm" onClick={clearError}>
-              Dismiss
+              {t("dismiss")}
             </Button>
           </div>
         )}
 
         <div className="flex flex-wrap gap-x-6 gap-y-8">
-          {loading && <p className="text-sm text-muted-foreground p-2">Loading...</p>}
+          {loading && <p className="text-sm text-muted-foreground p-2">{t("loading")}</p>}
           {!loading && characters.length === 0 && (
             <div className="text-muted-foreground text-sm">
-              <p className="mb-3">No characters yet.</p>
+              <p className="mb-3">{t("noCharacters")}</p>
               <Button variant="outline" size="sm" onClick={() => handleStartEdit()}>
                 <Plus className="h-4 w-4 mr-1" />
-                New Character
+                {t("newCharacter")}
               </Button>
             </div>
           )}
@@ -424,7 +428,7 @@ export function CharacterPage() {
                   variant="ghost"
                   className="h-6 w-8 rounded-md text-muted-foreground hover:text-foreground"
                   onClick={(event: React.MouseEvent<HTMLButtonElement>) => openCharacterMenuFromButton(event, char)}
-                  title="Character menu"
+                  title={t("characterMenu")}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
@@ -448,7 +452,7 @@ export function CharacterPage() {
             className="w-full rounded px-3 py-2 text-left hover:bg-accent"
             onClick={() => openDetails(characterMenu.character)}
           >
-            Details
+            {t("contextMenu.details")}
           </button>
         </div>
       )}
@@ -464,71 +468,71 @@ export function CharacterPage() {
           {creating || editingId !== null ? (
             <>
               <DialogHeader>
-                <DialogTitle>{editingId ? "Edit Character" : "New Character"}</DialogTitle>
-                <DialogDescription className="sr-only">Create or edit character details.</DialogDescription>
+                <DialogTitle>{editingId ? t("dialog.editCharacter") : t("dialog.newCharacter")}</DialogTitle>
+                                <DialogDescription className="sr-only">{t("dialog.editCharacter")}</DialogDescription>
               </DialogHeader>
 
               <div className="grid gap-4">
                 <div>
-                  <Label htmlFor="char-name">Name *</Label>
+                  <Label htmlFor="char-name">{t("form.name")}</Label>
                   <Input
                     id="char-name"
                     value={form.name}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateField("name", e.target.value)}
-                    placeholder="Character name"
+                    placeholder={t("form.namePlaceholder")}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-desc">Description</Label>
+                  <Label htmlFor="char-desc">{t("form.description")}</Label>
                   <Textarea
                     id="char-desc"
                     value={form.description}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("description", e.target.value)}
-                    placeholder="Describe the character..."
+                    placeholder={t("form.descriptionPlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-personality">Personality</Label>
+                  <Label htmlFor="char-personality">{t("form.personality")}</Label>
                   <Textarea
                     id="char-personality"
                     value={form.personality}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("personality", e.target.value)}
-                    placeholder="Personality traits..."
+                    placeholder={t("form.personalityPlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-scenario">Scenario</Label>
+                  <Label htmlFor="char-scenario">{t("form.scenario")}</Label>
                   <Textarea
                     id="char-scenario"
                     value={form.scenario}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateField("scenario", e.target.value)}
-                    placeholder="Current scenario / situation..."
+                    placeholder={t("form.scenarioPlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-firstmsg">First Message</Label>
+                  <Label htmlFor="char-firstmsg">{t("form.firstMessage")}</Label>
                   <Textarea
                     id="char-firstmsg"
                     value={form.firstMessage}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                       updateField("firstMessage", e.target.value)
                     }
-                    placeholder="The character's first message..."
+                    placeholder={t("form.firstMessagePlaceholder")}
                     rows={3}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="char-examples">Example Dialogues</Label>
+                  <Label htmlFor="char-examples">{t("form.exampleDialogues")}</Label>
                   <Textarea
                     id="char-examples"
                     value={form.exampleDialogues ?? ""}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
                       updateField("exampleDialogues", e.target.value)
                     }
-                    placeholder="Example conversations..."
+                    placeholder={t("form.exampleDialoguesPlaceholder")}
                     rows={4}
                   />
                 </div>
@@ -536,10 +540,10 @@ export function CharacterPage() {
 
               <DialogFooter>
                 <Button variant="outline" onClick={handleCancel}>
-                  Cancel
+                  {tc("actions.cancel")}
                 </Button>
                 <Button onClick={handleSubmit} disabled={!form.name.trim() || loading}>
-                  {editingId ? "Update" : "Create"}
+                  {editingId ? tc("actions.save") : tc("actions.create")}
                 </Button>
               </DialogFooter>
             </>
@@ -553,18 +557,18 @@ export function CharacterPage() {
                 <div className="flex shrink-0 items-center gap-2">
                   <Button size="sm" variant="outline" onClick={() => openBuilderPage(selected.id)}>
                     <Sparkles className="h-3.5 w-3.5 mr-1" />
-                    Builder
+                    {t("whaleBuilder")}
                   </Button>
                   <Button size="sm" variant="destructive" onClick={() => setDeleteTarget(selected)}>
                     <Trash2 className="h-3.5 w-3.5 mr-1" />
-                    Delete
+                    {tc("actions.delete")}
                   </Button>
                   <Button size="sm" variant="outline" onClick={closeDetail}>
-                    Close
+                    {tc("actions.back")}
                   </Button>
                   <Button size="sm" onClick={() => handleStartEdit(selected)}>
                     <Edit className="h-3.5 w-3.5 mr-1" />
-                    Edit
+                    {tc("actions.edit")}
                   </Button>
                 </div>
               </div>
@@ -590,7 +594,7 @@ export function CharacterPage() {
                 {hasContent(selected.description) && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Description
+                      {t("sections.description")}
                     </h3>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.description}</p>
                   </div>
@@ -599,7 +603,7 @@ export function CharacterPage() {
                 {hasContent(selected.personality) && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Personality
+                      {t("sections.personality")}
                     </h3>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.personality}</p>
                   </div>
@@ -608,7 +612,7 @@ export function CharacterPage() {
                 {hasContent(selected.scenario) && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Scenario
+                      {t("sections.scenario")}
                     </h3>
                     <p className="text-sm leading-relaxed whitespace-pre-wrap">{selected.scenario}</p>
                   </div>
@@ -617,7 +621,7 @@ export function CharacterPage() {
                 {hasContent(selected.firstMessage) && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      First Message
+                      {t("sections.firstMessage")}
                     </h3>
                     <div className="bg-accent/50 border border-border/50 rounded-lg p-4">
                       <p className="text-sm leading-relaxed whitespace-pre-wrap italic">{selected.firstMessage}</p>
@@ -628,7 +632,7 @@ export function CharacterPage() {
                 {hasContent(selected.exampleDialogues) && (
                   <div>
                     <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-                      Example Dialogues
+                      {t("sections.exampleDialogues")}
                     </h3>
                     <div className="bg-muted/40 border border-border/30 rounded-lg p-4">
                       <p className="text-xs leading-relaxed whitespace-pre-wrap text-muted-foreground font-mono">
@@ -644,13 +648,13 @@ export function CharacterPage() {
                   !hasContent(selected.firstMessage) &&
                   !hasContent(selected.exampleDialogues) && (
                     <div className="text-center text-muted-foreground text-sm py-8">
-                      <p>This character has no details yet.</p>
+                      <p>{t("dialog.noDetails")}</p>
                     </div>
                   )}
               </div>
             </>
           ) : (
-            <div className="py-8 text-center text-sm text-muted-foreground">No character selected.</div>
+            <div className="py-8 text-center text-sm text-muted-foreground">{t("dialog.noCharacterSelected")}</div>
           )}
         </DialogContent>
       </Dialog>
@@ -658,18 +662,17 @@ export function CharacterPage() {
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Character</DialogTitle>
+            <DialogTitle>{t("delete.title")}</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete "{deleteTarget?.name}"? This will also delete all associated chats and
-              messages. This action cannot be undone.
+              {t("delete.description", { name: deleteTarget?.name })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
-              Cancel
+              {tc("actions.cancel")}
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
-              Delete
+              {tc("actions.delete")}
             </Button>
           </DialogFooter>
         </DialogContent>

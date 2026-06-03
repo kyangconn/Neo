@@ -1,5 +1,5 @@
 {
-  "title": "NeoTavern Demo",
+  "title": "Whale Play",
   "settings": "设置",
   "characters": "角色管理",
   "loading": "加载中……",
@@ -24,8 +24,16 @@
     "savepoint": "存档点",
     "deleteChat": "删除对话"
   },
-  "toast": {
-    "savepointCreated": "存档已创建",
-    "savepointFailed": "创建存档失败"
+  "modeDialog": {
+    "title": "选择会话模式",
+    "description": "为\"{{name}}\"创建一个新会话。",
+    "normal": {
+      "label": "普通模式",
+      "desc": "角色按当前角色卡直接对话。"
+    },
+    "agentic": {
+      "label": "实验模式",
+      "desc": "主持人推进场景、判定风险并维护状态。"
+    }
   }
 }

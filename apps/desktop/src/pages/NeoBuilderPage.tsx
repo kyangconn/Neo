@@ -1,59 +1,18 @@
 import { useEffect, useLayoutEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import {
-  ArrowLeft,
-  BookOpen,
-  Bot,
-  Brain,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  CircleDashed,
-  Download,
-  Eye,
-  FileText,
-  Globe2,
-  Loader2,
-  Save,
-  Send,
-  Sparkles,
-  Trash2,
-  User,
-  Wrench,
-  XCircle,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, Globe2, Send } from "lucide-react";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Textarea } from "@neo-tavern/ui";
 import { useVirtualList, VirtualList } from "@/components";
 import { generateId } from "@neo-tavern/shared";
-import type {
-  Character,
-  CreateCharacterInput,
-  CreateWorldbookEntryInput,
-  MessageUsage,
-  Worldbook,
-} from "@neo-tavern/shared";
 import {
   ChoiceInputPanel,
   type ChoiceInputPanelChoice,
   type ChoiceInputPanelQuestion,
 } from "@/components/ChoiceInputPanel";
 import { worldbookRepository } from "@/db/repositories";
-import { formatCnyCost } from "@/features/billing/deepseek-billing";
 import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
-import {
-  runNeoCharacterBuilderTurn,
-  type NeoBuilderEvaluationReport,
-  type NeoBuilderChoice,
-  type NeoBuilderQuestion,
-  type NeoBuilderConversationMessage,
-  type NeoBuilderToolEvent,
-  type NeoBuilderTurnResult,
-  type NeoCreationPlan,
-  type NeoCreationPlanEntry,
-  type NeoPersonalityPalette,
-  type NeoMvuConfig,
-} from "@/features/character/neo-character-builder";
+import { runNeoCharacterBuilderTurn } from "@/features/character/neo-character-builder";
 import { exportPackToFolder, type CharacterCardPack } from "@/features/character/neo-character-builder";
 import { deleteWorkspaceDir } from "@/features/character/builder/workspace-files";
 import { searchWeb } from "@/features/character/web-search";
@@ -62,693 +21,50 @@ import { useCharacterStore } from "@/features/character/character.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 
-const NEW_TARGET = "__new__";
-const BUILDER_WORKSPACE_STORAGE_KEY = "neo:character-builder:workspace:v1";
-const BUILDER_WORKSPACE_RECORDS_STORAGE_KEY = "neo:character-builder:workspace-records:v1";
+import { BuilderWorkspaceList } from "./neo-builder/WorkspaceList";
+import { BuilderChatMessage } from "./neo-builder/ChatMessage";
+import { ArtifactsPanel } from "./neo-builder/ArtifactsPanel";
 
-type BuilderTarget = typeof NEW_TARGET | string;
+import type {
+  BuilderMessage,
+  BuilderTarget,
+  BuilderWorkspaceRecord,
+  BuilderWorkspaceSnapshot,
+  WorldbookDraft,
+  ArtifactView,
+} from "./neo-builder/types";
+import type { Character, CreateCharacterInput, Worldbook } from "./neo-builder/types";
+import type {
+  NeoBuilderEvaluationReport,
+  NeoBuilderTurnResult,
+  NeoCreationPlan,
+  NeoPersonalityPalette,
+  NeoMvuConfig,
+} from "./neo-builder/types";
 
-type WorldbookDraft = {
-  name?: string;
-  description?: string;
-  entries: CreateWorldbookEntryInput[];
-};
-
-type BuilderMessage = {
-  id: string;
-  role: "assistant" | "user";
-  content: string;
-  choices?: NeoBuilderChoice[];
-  questions?: NeoBuilderQuestion[];
-  reasoningContent?: string;
-  toolEvents?: NeoBuilderToolEvent[];
-  usage?: MessageUsage;
-  pending?: boolean;
-  hidden?: boolean;
-  backgroundCreation?: boolean;
-  startedAt?: number;
-  completedAt?: number;
-};
-
-type ArtifactView = "character" | "worldbook" | "plan" | "palette" | "evaluation" | null;
-
-type BuilderWorkspaceSnapshot = {
-  targetId: BuilderTarget;
-  messages: BuilderMessage[];
-  input: string;
-  webSearchEnabled: boolean;
-  lastResult: NeoBuilderTurnResult | null;
-  draft: CreateCharacterInput | null;
-  worldbookDraft: WorldbookDraft | null;
-  creationPlan: NeoCreationPlan | null;
-  personalityPalette: NeoPersonalityPalette | null;
-  evaluationReport: NeoBuilderEvaluationReport | null;
-  mvu: NeoMvuConfig | null;
-  savedCharacterId: string | null;
-  builderSessionId: string;
-};
-
-type BuilderWorkspaceRecord = BuilderWorkspaceSnapshot & {
-  id: string;
-  title: string;
-  updatedAt: string;
-};
-
-function normalizeRestoredMessages(messages: unknown): BuilderMessage[] {
-  if (!Array.isArray(messages) || messages.length === 0) return initialMessages();
-  return messages
-    .filter(
-      (message): message is BuilderMessage =>
-        !!message &&
-        typeof message === "object" &&
-        ((message as BuilderMessage).role === "assistant" || (message as BuilderMessage).role === "user") &&
-        typeof (message as BuilderMessage).content === "string",
-    )
-    .map((message) => ({
-      ...message,
-      pending: false,
-      completedAt: message.pending && message.startedAt ? Date.now() : message.completedAt,
-    }));
-}
-
-function readBuilderWorkspaceSnapshot(): BuilderWorkspaceSnapshot | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(BUILDER_WORKSPACE_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<BuilderWorkspaceSnapshot>;
-    return {
-      targetId: typeof parsed.targetId === "string" ? parsed.targetId : NEW_TARGET,
-      messages: normalizeRestoredMessages(parsed.messages),
-      input: typeof parsed.input === "string" ? parsed.input : "",
-      webSearchEnabled: !!parsed.webSearchEnabled,
-      lastResult: parsed.lastResult ?? null,
-      draft: parsed.draft ?? null,
-      worldbookDraft: parsed.worldbookDraft ?? null,
-      creationPlan: parsed.creationPlan ?? null,
-      personalityPalette: parsed.personalityPalette ?? null,
-      evaluationReport: parsed.evaluationReport ?? null,
-      mvu: parsed.mvu ?? null,
-      savedCharacterId: parsed.savedCharacterId ?? null,
-      builderSessionId: typeof parsed.builderSessionId === "string" ? parsed.builderSessionId : generateId(),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function writeBuilderWorkspaceSnapshot(snapshot: BuilderWorkspaceSnapshot) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(BUILDER_WORKSPACE_STORAGE_KEY, JSON.stringify(snapshot));
-  } catch {
-    // Local snapshots are best-effort; the Builder should keep working if storage is full or blocked.
-  }
-}
-
-function getLatestUserMessage(messages: BuilderMessage[]) {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message.role === "user" && !message.hidden && message.content.trim()) return message.content.trim();
-  }
-  return "";
-}
-
-function hasWorkspaceProgress(snapshot: BuilderWorkspaceSnapshot) {
-  return !!(
-    snapshot.input.trim() ||
-    snapshot.draft?.name?.trim() ||
-    snapshot.creationPlan?.project?.name?.trim() ||
-    snapshot.personalityPalette?.base?.trim() ||
-    snapshot.evaluationReport?.summary?.trim() ||
-    snapshot.savedCharacterId ||
-    getLatestUserMessage(snapshot.messages) ||
-    snapshot.messages.length > 1
-  );
-}
-
-function buildWorkspaceTitle(snapshot: BuilderWorkspaceSnapshot) {
-  const draftName = snapshot.draft?.name?.trim();
-  if (draftName) return draftName;
-  const projectName = snapshot.creationPlan?.project?.name?.trim();
-  if (projectName) return projectName;
-  const latestUserMessage = getLatestUserMessage(snapshot.messages);
-  if (latestUserMessage)
-    return latestUserMessage.length > 24 ? `${latestUserMessage.slice(0, 24)}...` : latestUserMessage;
-  return "未命名创作";
-}
-
-function createWorkspaceRecord(
-  snapshot: BuilderWorkspaceSnapshot,
-  updatedAt = new Date().toISOString(),
-): BuilderWorkspaceRecord {
-  return {
-    ...snapshot,
-    id: snapshot.builderSessionId,
-    title: buildWorkspaceTitle(snapshot),
-    updatedAt,
-  };
-}
-
-function normalizeWorkspaceRecord(record: Partial<BuilderWorkspaceRecord>): BuilderWorkspaceRecord | null {
-  const builderSessionId =
-    typeof record.builderSessionId === "string"
-      ? record.builderSessionId
-      : typeof record.id === "string"
-        ? record.id
-        : generateId();
-  const snapshot: BuilderWorkspaceSnapshot = {
-    targetId: typeof record.targetId === "string" ? record.targetId : NEW_TARGET,
-    messages: normalizeRestoredMessages(record.messages),
-    input: typeof record.input === "string" ? record.input : "",
-    webSearchEnabled: !!record.webSearchEnabled,
-    lastResult: record.lastResult ?? null,
-    draft: record.draft ?? null,
-    worldbookDraft: record.worldbookDraft ?? null,
-    creationPlan: record.creationPlan ?? null,
-    personalityPalette: record.personalityPalette ?? null,
-    evaluationReport: record.evaluationReport ?? null,
-    mvu: record.mvu ?? null,
-    savedCharacterId: record.savedCharacterId ?? null,
-    builderSessionId,
-  };
-  if (!hasWorkspaceProgress(snapshot)) return null;
-  return {
-    ...snapshot,
-    id: typeof record.id === "string" ? record.id : builderSessionId,
-    title: typeof record.title === "string" && record.title.trim() ? record.title : buildWorkspaceTitle(snapshot),
-    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
-  };
-}
-
-function readBuilderWorkspaceRecords(): BuilderWorkspaceRecord[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(BUILDER_WORKSPACE_RECORDS_STORAGE_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((record) => normalizeWorkspaceRecord(record as Partial<BuilderWorkspaceRecord>))
-      .filter((record): record is BuilderWorkspaceRecord => !!record)
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  } catch {
-    return [];
-  }
-}
-
-function writeBuilderWorkspaceRecords(records: BuilderWorkspaceRecord[]) {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(BUILDER_WORKSPACE_RECORDS_STORAGE_KEY, JSON.stringify(records.slice(0, 80)));
-  } catch {
-    // Best-effort bookkeeping for Builder workspace history.
-  }
-}
-
-function upsertWorkspaceRecord(records: BuilderWorkspaceRecord[], record: BuilderWorkspaceRecord) {
-  const next = [record, ...records.filter((item) => item.id !== record.id)]
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    .slice(0, 80);
-  return next;
-}
-
-function getWorkspaceRecordStatus(record: BuilderWorkspaceRecord) {
-  if (record.savedCharacterId) return "已保存";
-  if (record.draft?.name?.trim()) return "待保存";
-  return "构思中";
-}
-
-function getWorkspaceRecordStatusClass(record: BuilderWorkspaceRecord) {
-  if (record.savedCharacterId) return "text-emerald-500";
-  if (record.draft?.name?.trim()) return "text-amber-500";
-  return "text-muted-foreground";
-}
-
-function readInitialBuilderSnapshot() {
-  const snapshot = readBuilderWorkspaceSnapshot();
-  if (snapshot) return snapshot;
-  const records = readBuilderWorkspaceRecords();
-  return records[0] ?? null;
-}
-
-function readInitialBuilderRecords(initialSnapshot: BuilderWorkspaceSnapshot | null) {
-  const records = readBuilderWorkspaceRecords();
-  if (initialSnapshot && hasWorkspaceProgress(initialSnapshot)) {
-    return upsertWorkspaceRecord(records, createWorkspaceRecord(initialSnapshot, new Date().toISOString()));
-  }
-  return records;
-}
-
-function initialMessages(): BuilderMessage[] {
-  return [
-    {
-      id: generateId(),
-      role: "assistant",
-      content:
-        "把角色想法直接丢给我就行。我会按 Whale Play 工作流先对齐规划，信息不够时给你几个选项；需要真实资料时可以打开联网搜索。",
-      choices: [
-        { id: "original", label: "原创角色", value: "我想做一个原创角色，请先帮我确定核心方向。" },
-        { id: "palette", label: "先做调色盘", value: "我想先做角色性格调色盘，请引导我确定底色、主色调、点缀和衍生。" },
-        { id: "research", label: "查资料写卡", value: "我想基于真实资料或已有题材写角色，请先联网搜索并提炼参考。" },
-      ],
-    },
-  ];
-}
-
-function toConversation(messages: BuilderMessage[]): NeoBuilderConversationMessage[] {
-  return messages
-    .filter((message) => !message.pending && message.content.trim())
-    .map((message) => ({
-      role: message.role,
-      content: message.content,
-    }));
-}
-
-function upsertToolEvent(events: NeoBuilderToolEvent[] | undefined, event: NeoBuilderToolEvent) {
-  const next = [...(events ?? [])];
-  const index = next.findIndex((item) => item.id === event.id);
-  if (index >= 0) next[index] = event;
-  else next.push(event);
-  return next;
-}
-
-function formatElapsed(ms: number) {
-  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  if (minutes > 0) return `${minutes}m ${seconds}s`;
-  return `${seconds}s`;
-}
-
-function formatToolSummary(events: NeoBuilderToolEvent[]) {
-  const running = events.filter((event) => event.status === "running");
-  const failed = events.filter((event) => event.status === "error");
-  const labelCounts = events.reduce<Map<string, number>>((counts, event) => {
-    counts.set(event.label, (counts.get(event.label) ?? 0) + 1);
-    return counts;
-  }, new Map());
-  const labels = [...labelCounts.entries()]
-    .slice(0, 3)
-    .map(([label, count]) => (count > 1 ? `${label} x${count}` : label))
-    .join("、");
-
-  if (running.length > 0) return `正在调用 ${running.length} 个工具${labels ? `：${labels}` : ""}`;
-  if (failed.length > 0) return `已调用 ${events.length} 次工具，${failed.length} 个失败${labels ? `：${labels}` : ""}`;
-  return `已调用 ${events.length} 次工具${labels ? `：${labels}` : ""}`;
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function readString(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function normalizePlanStatus(value: unknown, fallback: NeoCreationPlanEntry["status"]): NeoCreationPlanEntry["status"] {
-  return value === "done" || value === "in_progress" || value === "skipped" || value === "planned" ? value : fallback;
-}
-
-function getPlanStatusLabel(status: NeoCreationPlanEntry["status"]) {
-  switch (status) {
-    case "done":
-      return "done";
-    case "in_progress":
-      return "running";
-    case "skipped":
-      return "skipped";
-    default:
-      return "planned";
-  }
-}
-
-function applyEntryProgressEvent(
-  plan: NeoCreationPlan | null,
-  event: NeoBuilderToolEvent,
-): NeoCreationPlan | null {
-  if (!plan || event.name !== "record_entry_output" || event.status === "error") return plan;
-
-  const args = readRecord(event.args);
-  const result = readRecord(event.result);
-  const summary = readRecord(result.summary);
-  const entryKey =
-    readString(args.entryId) ||
-    readString(args.id) ||
-    readString(args.name) ||
-    readString(summary.entry);
-  if (!entryKey) return plan;
-
-  const nextStatus =
-    event.status === "running"
-      ? "in_progress"
-      : normalizePlanStatus(args.status || summary.status, "done");
-  let changed = false;
-  const entries = plan.entries.map((entry) => {
-    if (entry.id !== entryKey && entry.name !== entryKey) return entry;
-    changed = true;
-    return {
-      ...entry,
-      status: nextStatus,
-      outputRef: readString(args.outputRef || args.output_ref) || entry.outputRef,
-      skipReason: readString(args.skipReason || args.skip_reason) || entry.skipReason,
-    };
-  });
-
-  return changed ? { ...plan, entries, updatedAt: new Date().toISOString() } : plan;
-}
-
-function shouldRunBuilderTurnInBackground(
-  content: string,
-  plan: NeoCreationPlan | null,
-  draft: CreateCharacterInput | null,
-  hiddenUserMessage: boolean,
-) {
-  if (!plan?.entries.length || draft) return false;
-  if (/调整|修改|改一下|补细节|先补|别生成|不要生成|暂停/.test(content)) return false;
-  if (hiddenUserMessage) return true;
-  return /确认|按规划|开始|继续|逐条|生成|创作|本阶段选项汇总|选项回答/.test(content);
-}
-
-function getBackgroundResultContent(result: NeoBuilderTurnResult) {
-  if (result.draft?.character?.name) return `后台创作已完成：${result.draft.character.name}。右侧可以查看角色卡与世界书。`;
-  if (result.draft) return "后台创作已完成。右侧可以查看产出物。";
-  return "后台创作已暂停。请查看右侧进度与产出物。";
-}
-
-function ToolTimeline({ events }: { events: NeoBuilderToolEvent[] | undefined }) {
-  if (!events?.length) return null;
-  const hasRunning = events.some((event) => event.status === "running");
-  const hasError = events.some((event) => event.status === "error");
-  return (
-    <div className="relative pb-3 pl-5">
-      <span
-        className={`absolute left-[-6px] top-1 flex h-3 w-3 items-center justify-center rounded-full bg-background ${
-          hasError ? "text-destructive" : hasRunning ? "text-primary" : "text-emerald-500"
-        }`}
-      >
-        {hasError ? (
-          <XCircle className="h-3.5 w-3.5" />
-        ) : hasRunning ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <CheckCircle2 className="h-3.5 w-3.5" />
-        )}
-      </span>
-      <div
-        className={`flex min-w-0 items-center gap-1 text-xs ${hasError ? "text-destructive" : "text-muted-foreground"}`}
-      >
-        <Wrench className="h-3.5 w-3.5 shrink-0" />
-        <span className="min-w-0 truncate" title={events.map((event) => event.label).join("、")}>
-          {formatToolSummary(events)}
-        </span>
-        <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-      </div>
-    </div>
-  );
-}
-
-function BuilderActivityTimeline({ message }: { message: BuilderMessage }) {
-  const active = !!message.pending;
-  const [now, setNow] = useState(() => Date.now());
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-
-  useEffect(() => {
-    if (!active || !message.startedAt) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active, message.startedAt]);
-
-  const hasThinking = active || !!message.reasoningContent;
-  const hasTools = !!message.toolEvents?.length;
-  const hasActivity = hasThinking || hasTools;
-  if (!hasActivity) return null;
-
-  const elapsed = message.startedAt ? formatElapsed((message.completedAt ?? now) - message.startedAt) : null;
-  const reasoningLines = (message.reasoningContent ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const reasoningPreview = reasoningLines.length ? reasoningLines[reasoningLines.length - 1] : "";
-
-  return (
-    <div className="mb-3 min-w-0">
-      {elapsed && (
-        <div className="mb-3 grid grid-cols-[minmax(0,1fr)_6.5rem_minmax(0,1fr)] items-center gap-3 text-xs text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          <span className="shrink-0 text-center tabular-nums">任务耗时 {elapsed}</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-      )}
-
-      <div className="min-w-0 border-l border-border/80">
-        {hasThinking && (
-          <div className="relative pb-3 pl-5">
-            <span
-              className={`absolute left-[-6px] top-1 flex h-3 w-3 items-center justify-center rounded-full bg-background ${
-                active ? "text-primary" : "text-emerald-500"
-              }`}
-            >
-              {active ? (
-                <CircleDashed className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
-              )}
-            </span>
-            <button
-              type="button"
-              className="flex w-full min-w-0 max-w-full items-center gap-1 overflow-hidden text-left text-sm font-medium disabled:cursor-default"
-              onClick={() => setThinkingOpen((open) => !open)}
-              disabled={!message.reasoningContent}
-            >
-              <Brain className="h-3.5 w-3.5 shrink-0" />
-              <span className="shrink-0">{active ? "正在思考" : "已完成思考"}</span>
-              {active && !thinkingOpen && reasoningPreview ? (
-                <span className="min-w-0 truncate text-muted-foreground">· {reasoningPreview}</span>
-              ) : null}
-              {thinkingOpen ? (
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-              )}
-            </button>
-            {thinkingOpen && message.reasoningContent ? (
-              <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
-                {message.reasoningContent}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        <ToolTimeline events={message.toolEvents} />
-      </div>
-    </div>
-  );
-}
-
-function formatCharacterUpdatedAt(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
-
-function BuilderWorkspaceList({
-  records,
-  activeWorkspaceId,
-  disabled,
-  onNew,
-  onSelect,
-  onDelete,
-}: {
-  records: BuilderWorkspaceRecord[];
-  activeWorkspaceId: string;
-  disabled: boolean;
-  onNew: () => void;
-  onSelect: (record: BuilderWorkspaceRecord) => void;
-  onDelete: (record: BuilderWorkspaceRecord) => void;
-}) {
-  const { t } = useTranslation("neo-builder");
-  return (
-    <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card">
-      <div className="shrink-0 border-b p-3">
-        <div className="flex items-center gap-2 text-sm font-semibold">
-          <FileText className="h-4 w-4" />
-          {t("workspace.title")}
-        </div>
-      </div>
-
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        <button
-          type="button"
-          className="mb-2 flex w-full min-w-0 items-center gap-2 rounded-md border bg-background px-3 py-2 text-left text-sm hover:bg-muted/60"
-          onClick={onNew}
-          disabled={disabled}
-        >
-          <Sparkles className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 truncate">{t("workspace.newWorkspace")}</span>
-        </button>
-
-        <div className="space-y-1">
-          {records.map((record) => (
-            <div
-              key={record.id}
-              className={`flex min-w-0 items-stretch rounded-md border ${
-                activeWorkspaceId === record.id ? "border-primary bg-primary/10" : "bg-background hover:bg-muted/60"
-              }`}
-            >
-              <button
-                type="button"
-                className="min-w-0 flex-1 px-3 py-2 text-left"
-                onClick={() => onSelect(record)}
-                disabled={disabled}
-              >
-                <div className="flex min-w-0 items-center gap-2">
-                  <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 truncate text-sm font-medium">{record.title}</span>
-                </div>
-                <div className="mt-1 flex min-w-0 items-center justify-between gap-2 text-xs">
-                  <span className={`shrink-0 ${getWorkspaceRecordStatusClass(record)}`}>
-                    {getWorkspaceRecordStatus(record)}
-                  </span>
-                  <span className="min-w-0 truncate text-muted-foreground">
-                    {formatCharacterUpdatedAt(record.updatedAt)}
-                  </span>
-                </div>
-              </button>
-              <button
-                type="button"
-                className="flex w-9 shrink-0 items-center justify-center border-l text-muted-foreground hover:bg-destructive/10 hover:text-destructive disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={() => onDelete(record)}
-                disabled={disabled}
-                title={t("workspace.delete")}
-                aria-label={t("workspace.deleteAria", { title: record.title })}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
-        </div>
-
-        {!records.length ? (
-          <div className="px-3 py-8 text-center text-xs text-muted-foreground">{t("workspace.empty")}</div>
-        ) : null}
-      </div>
-    </aside>
-  );
-}
-
-function getChoicePanelTitle(content: string): string {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  return lines.at(-1) ?? "请选择一个方向";
-}
-
-function BuilderBackgroundMonitor({
-  plan,
-  running,
-}: {
-  plan: NeoCreationPlan | null;
-  running: boolean;
-}) {
-  const entries = plan?.entries ?? [];
-  const completed = entries.filter((entry) => entry.status === "done" || entry.status === "skipped").length;
-  const currentEntry = entries.find((entry) => entry.status === "in_progress") ?? entries.find((entry) => entry.status === "planned");
-  const percent = entries.length ? Math.round((completed / entries.length) * 100) : 0;
-
-  return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="flex min-w-0 items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2 text-sm font-semibold">
-            {running ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
-            <span>{running ? "已转入后台创作" : "后台创作已完成"}</span>
-          </div>
-          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            条目正文不在聊天区刷屏；请看右侧创作规划条目实时进度。
-          </p>
-        </div>
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          {completed}/{entries.length || 0}
-        </span>
-      </div>
-
-      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
-      </div>
-
-      {currentEntry ? (
-        <div className="mt-3 rounded-md border bg-background/70 p-3 text-xs">
-          <div className="text-muted-foreground">{running ? "当前条目" : "最后状态"}</div>
-          <div className="mt-1 flex min-w-0 items-center gap-2">
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                currentEntry.status === "done"
-                  ? "bg-emerald-500"
-                  : currentEntry.status === "in_progress"
-                    ? "bg-primary"
-                    : currentEntry.status === "skipped"
-                      ? "bg-amber-500"
-                      : "bg-muted-foreground/40"
-              }`}
-            />
-            <span className="min-w-0 flex-1 truncate font-medium">{currentEntry.name}</span>
-            <span className="shrink-0 text-muted-foreground">{getPlanStatusLabel(currentEntry.status)}</span>
-          </div>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function BuilderChatMessage({ message, creationPlan }: { message: BuilderMessage; creationPlan: NeoCreationPlan | null }) {
-  const { t } = useTranslation("neo-builder");
-  const isUser = message.role === "user";
-  return (
-    <div className={`flex min-w-0 gap-3 ${isUser ? "justify-end" : "justify-start"}`}>
-      {!isUser && (
-        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <Bot className="h-4 w-4" />
-        </div>
-      )}
-      <div
-        className={`min-w-0 overflow-hidden ${isUser ? "max-w-[min(82%,48rem)] rounded-lg border bg-primary p-4 text-primary-foreground" : "w-full max-w-4xl py-1"}`}
-      >
-        {!isUser && <BuilderActivityTimeline message={message} />}
-
-        {!isUser && message.backgroundCreation ? (
-          <BuilderBackgroundMonitor plan={creationPlan} running={!!message.pending} />
-        ) : message.content ? (
-          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
-            {message.content}
-          </div>
-        ) : null}
-
-        {message.usage && (
-          <div className="mt-3 text-xs text-muted-foreground">
-            {message.usage.totalTokens ? `${message.usage.totalTokens.toLocaleString()} tokens` : t("chat.tokensDash")}
-            {message.usage.costCny ? ` · ${formatCnyCost(message.usage.costCny)}` : ""}
-          </div>
-        )}
-      </div>
-      {isUser && (
-        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
-          <User className="h-4 w-4" />
-        </div>
-      )}
-    </div>
-  );
-}
+import {
+  NEW_TARGET,
+  normalizeRestoredMessages,
+  readInitialBuilderSnapshot,
+  readInitialBuilderRecords,
+  initialMessages,
+  createWorkspaceRecord,
+  upsertWorkspaceRecord,
+  hasWorkspaceProgress,
+  writeBuilderWorkspaceSnapshot,
+  writeBuilderWorkspaceRecords,
+  applyEntryProgressEvent,
+  shouldRunBuilderTurnInBackground,
+  getBackgroundResultContent,
+  toConversation,
+  upsertToolEvent,
+  getChoicePanelTitle,
+  formatCharacterUpdatedAt,
+} from "./neo-builder/utils";
 
 export function NeoBuilderPage() {
   const { t } = useTranslation("neo-builder");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const { loadCharacters, createCharacter, updateCharacter } = useCharacterStore();
   const [initialSnapshot] = useState(() => readInitialBuilderSnapshot());
@@ -930,7 +246,7 @@ export function NeoBuilderPage() {
 
     const config = useSettingsStore.getState().modelConfig;
     if (!config) {
-      const message = "请先在设置里配置主 API 模型。";
+      const message = tt("noApiConfig");
       setError(message);
       toast("error", message);
       return;
@@ -1005,7 +321,7 @@ export function NeoBuilderPage() {
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-              ? {
+            ? {
                 ...message,
                 content: keepBackgroundCreation ? getBackgroundResultContent(result) : result.content,
                 choices: result.choices,
@@ -1021,7 +337,7 @@ export function NeoBuilderPage() {
         ),
       );
     } catch (err) {
-      const message = (err as Error).message || "Whale Builder failed";
+      const message = (err as Error).message || tt("builderFailed");
       setError(message);
       setMessages((prev) =>
         prev.map((item) =>
@@ -1040,7 +356,8 @@ export function NeoBuilderPage() {
     const shouldEnableSearch = /联网|搜索|查资料|真实资料/.test(`${choice?.label ?? ""} ${value}`);
     if (shouldEnableSearch) setWebSearchEnabled(true);
     const latestMessage = messages[messages.length - 1];
-    if (latestMessage?.choices?.length || latestMessage?.questions?.length) setDismissedChoiceMessageId(latestMessage.id);
+    if (latestMessage?.choices?.length || latestMessage?.questions?.length)
+      setDismissedChoiceMessageId(latestMessage.id);
     void sendMessage(value, shouldEnableSearch ? true : webSearchEnabled, true);
   };
 
@@ -1092,9 +409,9 @@ export function NeoBuilderPage() {
 
       setSavedCharacterId(saved.id);
       await loadCharacters();
-      toast("success", `Saved "${saved.name}"`);
+      toast("success", tt("saveSuccess", { name: saved.name }));
     } catch (err) {
-      const message = (err as Error).message || t("toast.saveFailed");
+      const message = (err as Error).message || tt("saveFailed");
       setError(message);
       toast("error", message);
     } finally {
@@ -1122,7 +439,15 @@ export function NeoBuilderPage() {
       },
       personalityPalette: personalityPalette ?? undefined,
       worldbook: worldbookDraft?.entries.length
-        ? { name: worldbookDraft.name, description: worldbookDraft.description, entries: worldbookDraft.entries.map((e) => ({ ...e, position: e.position ?? (e.type === "always" ? "beforeHistory" : "afterHistory"), role: e.role ?? "system" })) }
+        ? {
+            name: worldbookDraft.name,
+            description: worldbookDraft.description,
+            entries: worldbookDraft.entries.map((e) => ({
+              ...e,
+              position: e.position ?? (e.type === "always" ? "beforeHistory" : "afterHistory"),
+              role: e.role ?? "system",
+            })),
+          }
         : undefined,
       mvu: lastResult?.mvu ?? undefined,
       creationPlan: creationPlan ?? undefined,
@@ -1130,10 +455,16 @@ export function NeoBuilderPage() {
 
     try {
       const folder = await exportPackToFolder(pack);
-      if (folder) toast("success", `已导出到 ${folder}`);
+      if (folder) toast("success", t("export.success", { folder: folder }));
     } catch (err) {
-      toast("error", (err as Error).message || "导出失败");
+      toast("error", (err as Error).message || t("export.failed"));
     }
+  };
+
+  const handleEvaluate = () => {
+    void sendMessage(
+      "请评估当前 Whale Builder 草稿，检查角色卡、性格调色盘、世界书条目、创作规划.yaml 是否完整，并给出可执行修改建议。",
+    );
   };
 
   const allToolEvents = messages.flatMap((message) => message.toolEvents ?? []);
@@ -1268,7 +599,7 @@ export function NeoBuilderPage() {
                 {lastResult?.draft && (
                   <span className="inline-flex items-center gap-1 text-xs text-emerald-500">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                  {t("chat.draftReady")}
+                    {t("chat.draftReady")}
                   </span>
                 )}
               </div>
@@ -1316,253 +647,22 @@ export function NeoBuilderPage() {
         </section>
 
         <div className="hidden xl:contents">
-          <aside className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-card">
-            <div className="shrink-0 border-b p-4">
-              <h2 className="font-semibold">{t("sidebar.progressAndArtifacts")}</h2>
-            </div>
-
-            <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden p-4">
-              <section>
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                  <CheckCircle2 className="h-4 w-4" />
-                  {t("sidebar.progress")}
-                </div>
-                <div className="space-y-2">
-                  {steps.map((step, index) => (
-                    <div
-                      key={step.label}
-                      className={`flex items-center gap-3 rounded-md border bg-background p-3 ${
-                        step.active ? "border-primary/60 bg-primary/5" : ""
-                      }`}
-                    >
-                      <div
-                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs ${
-                          step.done
-                            ? "bg-emerald-500 text-white"
-                            : step.active
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {step.done ? (
-                          <CheckCircle2 className="h-3.5 w-3.5" />
-                        ) : step.active ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          index + 1
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium">{step.label}</div>
-                        {step.optional && !step.done ? (
-                          <div className="text-xs text-muted-foreground">{t("sidebar.optional")}</div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                {planEntries.length ? (
-                  <div className="mt-3 rounded-md border bg-background p-3">
-                    <div className="mb-2 flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                      <span>{t("planEntries.title")}</span>
-                      <span>
-                        {completedPlanEntries}/{planEntries.length}
-                      </span>
-                    </div>
-                    <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
-                      {planEntries.map((entry) => (
-                        <div key={entry.id} className="flex min-w-0 items-center gap-2 text-xs">
-                          <span
-                            className={`h-2 w-2 shrink-0 rounded-full ${
-                              entry.status === "done"
-                                ? "bg-emerald-500"
-                                : entry.status === "in_progress"
-                                  ? "bg-primary"
-                                  : entry.status === "skipped"
-                                    ? "bg-amber-500"
-                                    : "bg-muted-foreground/40"
-                            }`}
-                          />
-                          <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                          <span className="shrink-0 text-muted-foreground">{getPlanStatusLabel(entry.status)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-              </section>
-
-              <section className="mt-5">
-                <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
-                  <Sparkles className="h-4 w-4" />
-                  {t("sidebar.artifacts")}
-                </div>
-                <div className="space-y-3">
-                  <div className="rounded-md border bg-background p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <FileText className="h-4 w-4" />
-                          {t("artifacts.plan.title")}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {creationPlan
-                            ? t("artifacts.plan.entries", { count: creationPlan.entries.length })
-                            : t("status.generated")}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setArtifactView("plan")}
-                        disabled={!creationPlan}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        {t("view")}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border bg-background p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <Brain className="h-4 w-4" />
-                          {t("artifacts.palette.title")}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {personalityPalette
-                            ? t("artifacts.palette.summary", {
-                                base: personalityPalette.base || t("artifacts.palette.noBase"),
-                                count: personalityPalette.derivatives.length,
-                              })
-                            : t("status.generated")}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setArtifactView("palette")}
-                        disabled={!personalityPalette}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        {t("view")}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border bg-background p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <FileText className="h-4 w-4" />
-                          {t("artifacts.character.title")}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {draft ? draft.name : t("status.generated")}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setArtifactView("character")}
-                        disabled={!draft}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        {t("view")}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border bg-background p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <BookOpen className="h-4 w-4" />
-                          {t("artifacts.worldbook.title")}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {worldbookDraft?.entries.length
-                            ? t("artifacts.worldbook.entries", { count: worldbookDraft.entries.length })
-                            : t("status.generated")}
-                        </p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setArtifactView("worldbook")}
-                        disabled={!worldbookDraft?.entries.length}
-                      >
-                        <Eye className="mr-1 h-3.5 w-3.5" />
-                        {t("view")}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="rounded-md border bg-background p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2 text-sm font-medium">
-                          <CheckCircle2 className="h-4 w-4" />
-                          {t("artifacts.evaluation.title")}
-                        </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {evaluationReport
-                            ? t("artifacts.evaluation.issues", { count: evaluationReport.issues.length })
-                            : t("status.evaluated")}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setArtifactView("evaluation")}
-                          disabled={!evaluationReport}
-                        >
-                          <Eye className="mr-1 h-3.5 w-3.5" />
-                          {t("view")}
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full"
-                    onClick={() =>
-                      sendMessage(
-                        "请评估当前 Whale Builder 草稿，检查角色卡、性格调色盘、世界书条目、创作规划.yaml 是否完整，并给出可执行修改建议。",
-                      )
-                    }
-                    disabled={running || saving || (!draft && !creationPlan)}
-                  >
-                    <CheckCircle2 className="mr-1 h-4 w-4" />
-                    {t("evaluate")}
-                  </Button>
-
-                  <Button
-                    className="w-full"
-                    onClick={handleSave}
-                    disabled={!draft?.name.trim() || running || saving || !!savedCharacterId}
-                  >
-                    <Save className="mr-1 h-4 w-4" />
-                    {savedCharacterId ? t("save.saved") : saving ? t("save.saving") : t("save.create")}
-                  </Button>
-
-                <Button
-                  variant="outline"
-                  className="w-full"
-                  onClick={handleExport}
-                  disabled={!draft?.name.trim() || running}
-                >
-                  <Download className="mr-1 h-4 w-4" />
-                  导出到文件夹
-                </Button>
-              </div>
-            </section>
-          </div>
-        </aside>
+          <ArtifactsPanel
+            creationPlan={creationPlan}
+            personalityPalette={personalityPalette}
+            evaluationReport={evaluationReport}
+            draft={draft}
+            worldbookDraft={worldbookDraft}
+            setArtifactView={setArtifactView}
+            steps={steps}
+            savedCharacterId={savedCharacterId}
+            saving={saving}
+            running={running}
+            onSave={handleSave}
+            onExport={handleExport}
+            onEvaluate={handleEvaluate}
+            t={t}
+          />
         </div>
       </div>
 
@@ -1575,7 +675,7 @@ export function NeoBuilderPage() {
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("dialogs.creationPlan.title")}</DialogTitle>
-            <DialogDescription>Whale Builder 当前工作台的持久创作规划。</DialogDescription>
+            <DialogDescription>{t("dialogs.creationPlan.description")}</DialogDescription>
           </DialogHeader>
           {creationPlan ? (
             <div className="space-y-4 text-sm">
@@ -1601,7 +701,7 @@ export function NeoBuilderPage() {
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("dialogs.palette.title")}</DialogTitle>
-            <DialogDescription>底色、主色调、点缀和具体衍生。</DialogDescription>
+            <DialogDescription>{t("dialogs.palette.description")}</DialogDescription>
           </DialogHeader>
           {personalityPalette ? (
             <div className="space-y-4 text-sm">
@@ -1668,7 +768,7 @@ export function NeoBuilderPage() {
         <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("dialogs.evaluation.title")}</DialogTitle>
-            <DialogDescription>当前草稿的结构、质量和一致性检查。</DialogDescription>
+            <DialogDescription>{t("dialogs.evaluation.description")}</DialogDescription>
           </DialogHeader>
           {evaluationReport ? (
             <div className="space-y-4 text-sm">

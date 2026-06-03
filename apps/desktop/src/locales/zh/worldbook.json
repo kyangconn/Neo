@@ -40,6 +40,8 @@
     "orAny": "任意 OR",
     "keywords": "关键词",
     "keywordsPlaceholder": "逗号分隔的关键词",
+    "secondaryKeys": "次要关键词",
+    "secondaryKeysPlaceholder": "可选附加关键词",
     "content": "内容",
     "contentPlaceholder": "条目内容…",
     "priority": "优先级",
@@ -65,16 +67,5 @@
   "deleteDialog": {
     "title": "删除世界书",
     "description": "确定删除「{{name}}」及其所有条目？此操作不可撤销。"
-  },
-  "toast": {
-    "saved": "已保存",
-    "saveFailed": "保存失败",
-    "activated": "已激活「{{name}}」",
-    "deactivated": "已停用",
-    "deleted": "已删除「{{name}}」",
-    "entryUpdated": "已更新「{{title}}」",
-    "entryAdded": "已添加「{{title}}」",
-    "entryDeleted": "已删除「{{title}}」",
-    "titleRequired": "标题为必填项"
   }
 }

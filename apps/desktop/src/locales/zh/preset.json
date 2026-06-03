@@ -1,4 +1,5 @@
 {
+  "back": "返回",
   "title": "预设提示词",
   "newPreset": "新建预设",
   "noPresets": "暂无预设",
@@ -54,19 +55,5 @@
   "moveDown": "下移",
   "enable": "启用",
   "disable": "禁用",
-  "dragReorder": "拖动排序",
-  "toast": {
-    "presetUpdated": "预设已更新",
-    "activated": "已激活\"{{name}}\"",
-    "deactivated": "预设已停用",
-    "deleted": "\"{{name}}\" 已删除",
-    "exported": "已导出",
-    "imported": "已导入\"{{name}}\"，{{count}} 项",
-    "importFailed": "JSON 格式无效或导入失败",
-    "alreadyAdded": "\"{{name}}\" 已在该预设中。",
-    "itemAdded": "\"{{name}}\" 已添加",
-    "itemUpdated": "\"{{name}}\" 已更新",
-    "itemDeleted": "\"{{name}}\" 已删除",
-    "failed": "操作失败"
-  }
+  "dragReorder": "拖动排序"
 }

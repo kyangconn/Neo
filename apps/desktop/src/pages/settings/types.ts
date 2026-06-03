@@ -1,14 +1,8 @@
-import type { Plug, Sun } from "lucide-react";
+import type { Plug } from "lucide-react";
 
 export type Section = "general" | "api" | "appearance" | "regex" | "context" | "image";
 
 export type SectionWithLabel = { key: Section; icon: typeof Plug; label: string };
-
-export type ThemeOption = {
-  value: "light" | "dark" | "sepia" | "system";
-  icon: typeof Sun;
-  label: string;
-};
 
 // ── Shared constants ───────────────────────────────────
 export const DEEPSEEK_BASE_URL = "https://api.deepseek.com";

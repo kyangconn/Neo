@@ -22,13 +22,13 @@
     "active": "活跃——正在聊天中使用",
     "profileName": "配置名称",
     "apiKey": "DeepSeek API 密钥",
-    "apiKeyPlaceholder": "sk-...",
     "baseUrl": "DeepSeek 基础 URL",
     "useOfficial": "使用官方地址",
     "baseUrlHint": "聊天请求将发送到 /chat/completions。",
     "model": "DeepSeek 模型",
     "modelDescription": "选择用于聊天生成的模型。",
     "modelId": "模型 ID",
+    "advancedOptions": "高级选项",
     "fetch": "获取",
     "fetching": "加载中…",
     "modelsAvailable": "{{count}} 个 DeepSeek 模型可用",
@@ -66,25 +66,13 @@
     "format": "格式",
     "streaming": "流式输出",
     "streamingHint": "开启后 AI 回复将逐字流式显示；关闭则等全部生成后一次性展示。",
+    "endpoint": "端点",
+    "balance": "余额",
     "toggleStreaming": "切换流式输出",
     "saveProfile": "保存 DeepSeek 配置",
     "saving": "保存中…",
     "testConnection": "测试连接",
-    "testing": "测试中…",
-    "toast": {
-      "apiKeyRequired": "请先输入您的 DeepSeek API 密钥。",
-      "saved": "已保存「{{name}}」。",
-      "updated": "已更新「{{name}}」。",
-      "deleted": "已删除「{{name}}」。",
-      "saveFailed": "保存配置失败。",
-      "deleteFailed": "删除失败。",
-      "testPassed": "{{content}}",
-      "testConnected": "已连接到 DeepSeek API",
-      "testFailed": "{{message}}",
-      "modelsLoaded": "已加载 {{count}} 个 DeepSeek 模型",
-      "modelsEmpty": "API 未返回任何 DeepSeek 模型",
-      "modelsFetchFailed": "失败：{{message}}"
-    }
+    "testing": "测试中…"
   },
   "appearance": {
     "title": "外观",
@@ -145,15 +133,7 @@
     "plannerConfig": "图片规划 API",
     "plannerConfigHint": "用于分析 AI 回复并找到适合生成图片的画面。",
     "worldbookRef": "世界书参考",
-    "worldbookRefHint": "为图片规划提供匹配到的世界书条目作为 style 参考。",
-    "toast": {
-      "workflowRequired": "请先导入 ComfyUI workflow JSON",
-      "connected": "ComfyUI 连接成功",
-      "connectionFailed": "连接失败",
-      "connectionError": "{{message}}",
-      "saved": "图片设置已保存",
-      "saveFailed": "保存失败"
-    }
+    "worldbookRefHint": "为图片规划提供匹配到的世界书条目作为 style 参考。"
   },
   "context": {
     "title": "上下文 Token",
@@ -207,8 +187,5 @@
       "description": "确定删除「{{name}}」及其所有规则？此操作不可撤销。"
     },
     "quickSummary": "快速：Summary"
-  },
-  "toast": {
-    "secretUnlocked": "🔓 秘密已解锁！查看写作预设。"
   }
 }

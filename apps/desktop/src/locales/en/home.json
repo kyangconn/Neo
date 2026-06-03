@@ -1,5 +1,5 @@
 {
-  "title": "NeoTavern Demo",
+  "title": "Whale Play",
   "settings": "Settings",
   "characters": "Characters",
   "loading": "Loading...",
@@ -24,8 +24,16 @@
     "savepoint": "Savepoint",
     "deleteChat": "Delete chat"
   },
-  "toast": {
-    "savepointCreated": "Savepoint created",
-    "savepointFailed": "Failed to create savepoint"
+  "modeDialog": {
+    "title": "Choose Chat Mode",
+    "description": "Start a new chat for \"{{name}}\".",
+    "normal": {
+      "label": "Normal Mode",
+      "desc": "Direct conversation based on the character card."
+    },
+    "agentic": {
+      "label": "Agentic Mode",
+      "desc": "Narrator-driven scenes with risk resolution and state tracking."
+    }
   }
 }

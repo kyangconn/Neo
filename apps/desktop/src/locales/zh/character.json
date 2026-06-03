@@ -39,11 +39,5 @@
   "delete": {
     "title": "删除角色",
     "description": "确定要删除\"{{name}}\"吗？这将同时删除所有关联的对话和消息。此操作不可撤销。"
-  },
-  "toast": {
-    "parseFailed": "无法解析角色卡",
-    "importFailed": "导入角色卡失败",
-    "imported": "已导入\"{{name}}\" — {{parts}}",
-    "deleted": "已删除\"{{name}}\""
   }
 }

@@ -1,4 +1,5 @@
 {
+  "back": "Back",
   "title": "Presets",
   "newPreset": "New Preset",
   "noPresets": "No presets yet",
@@ -54,19 +55,5 @@
   "moveDown": "Move down",
   "enable": "Enable",
   "disable": "Disable",
-  "dragReorder": "Drag to reorder",
-  "toast": {
-    "presetUpdated": "Preset updated",
-    "activated": "Activated \"{{name}}\"",
-    "deactivated": "Preset deactivated",
-    "deleted": "\"{{name}}\" deleted",
-    "exported": "Exported",
-    "imported": "Imported \"{{name}}\" with {{count}} items",
-    "importFailed": "Invalid JSON or import failed",
-    "alreadyAdded": "\"{{name}}\" is already in this preset.",
-    "itemAdded": "\"{{name}}\" added",
-    "itemUpdated": "\"{{name}}\" updated",
-    "itemDeleted": "\"{{name}}\" deleted",
-    "failed": "Failed"
-  }
+  "dragReorder": "Drag to reorder"
 }

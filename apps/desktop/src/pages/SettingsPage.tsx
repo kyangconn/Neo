@@ -3,13 +3,9 @@ import { useNavigate } from "react-router-dom";
 import {
   Bug,
   Plug,
-  Sun,
-  Moon,
-  Monitor,
   Palette,
   Regex,
   SlidersHorizontal,
-  BookOpen,
   Image as ImageIcon,
 } from "lucide-react";
 import { useSettingsStore } from "@/features/settings/settings.store";
@@ -26,15 +22,9 @@ import { getLocale, type Locale } from "@/i18n";
 import { useTranslation } from "react-i18next";
 import type { Section, SectionWithLabel } from "./settings/types";
 
-const themes = [
-  { value: "light" as const, icon: Sun, label: "Light" },
-  { value: "dark" as const, icon: Moon, label: "Dark" },
-  { value: "sepia" as const, icon: BookOpen, label: "Eye Care" },
-  { value: "system" as const, icon: Monitor, label: "System" },
-];
-
 export function SettingsPage() {
   const { t } = useTranslation("settings");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const [section, setSection] = useState<Section>("api");
   const [locale, setLocale] = useState<Locale>(getLocale);
@@ -86,7 +76,7 @@ export function SettingsPage() {
       void setStorageItem("neotavern_secret_unlocked", "1");
       setSecretUnlocked(true);
       window.dispatchEvent(new Event("neotavern-secret-changed"));
-      toast("success", "🔓 Secret unlocked! Check the writing preset.");
+      toast("success", tt("secretUnlocked"));
     }
     setSection("context");
   };
@@ -105,7 +95,7 @@ export function SettingsPage() {
       <div className="flex-1 p-6 overflow-auto">
         {section === "general" && <GeneralSection locale={locale} setLocale={setLocale} t={t} />}
         {section === "api" && <ApiSection t={t} />}
-        {section === "appearance" && <AppearanceSection themes={themes} t={t} />}
+        {section === "appearance" && <AppearanceSection t={t} />}
         {section === "context" && (
           <ContextSection contextTokens={contextTokens} setContextTokens={setContextTokens} t={t} />
         )}

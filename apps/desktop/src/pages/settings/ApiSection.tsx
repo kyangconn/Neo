@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import { Save, Plug, Trash2, KeyRound, Server, Zap, Wallet } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Button, Input, Label } from "@neo-tavern/ui";
 import { useSettingsStore } from "@/features/settings/settings.store";
@@ -39,6 +40,7 @@ interface ApiSectionProps {
 }
 
 export function ApiSection({ t }: ApiSectionProps) {
+  const { t: tt } = useTranslation("toast");
   const modelConfigs = useSettingsStore((s) => s.modelConfigs);
   const activeConfigId = useSettingsStore((s) => s.activeConfigId);
   const saving = useSettingsStore((s) => s.saving);
@@ -122,7 +124,7 @@ export function ApiSection({ t }: ApiSectionProps) {
       const nextModel = model.trim() || DEFAULT_DEEPSEEK_MODEL;
       const nextStreamingEnabled = streamingEnabled;
       if (!nextApiKey) {
-        toast("error", "Please enter your DeepSeek API key first.");
+        toast("error", tt("apiKeyRequired"));
         return;
       }
       if (selectedId !== "__new__" && modelConfigs.some((c) => c.id === selectedId)) {
@@ -140,7 +142,7 @@ export function ApiSection({ t }: ApiSectionProps) {
         setBaseUrl(nextBaseUrl);
         setApiKey(nextApiKey);
         setModel(nextModel);
-        toast("success", `"${nextName}" updated.`);
+        toast("success", tt("apiUpdated", { name: nextName }));
       } else {
         const cfg = await saveModelConfig({
           provider: "openai-compatible",
@@ -158,10 +160,10 @@ export function ApiSection({ t }: ApiSectionProps) {
         setApiKey(nextApiKey);
         setModel(nextModel);
         setSelectedId(cfg.id);
-        toast("success", `"${nextName}" saved.`);
+        toast("success", tt("apiSaved", { name: nextName }));
       }
     } catch {
-      toast("error", error || "Failed to save configuration.");
+      toast("error", error || tt("apiSaveFailed"));
     }
   };
 
@@ -179,9 +181,9 @@ export function ApiSection({ t }: ApiSectionProps) {
         resetDeepSeekForm();
         setSelectedId("__new__");
       }
-      toast("info", `"${cfg.name || "Configuration"}" deleted.`);
+      toast("info", tt("apiDeleted", { name: cfg.name || "Configuration" }));
     } catch {
-      toast("error", error || "Failed to delete.");
+      toast("error", error || tt("apiDeleteFailed"));
     }
   };
 
@@ -190,7 +192,7 @@ export function ApiSection({ t }: ApiSectionProps) {
     const nextApiKey = apiKey.trim();
     const nextModel = model.trim() || DEFAULT_DEEPSEEK_MODEL;
     if (!nextApiKey) {
-      toast("error", "Please enter your DeepSeek API key first.");
+      toast("error", tt("apiKeyRequired"));
       return;
     }
     setBaseUrl(nextBaseUrl);
@@ -204,7 +206,7 @@ export function ApiSection({ t }: ApiSectionProps) {
     const nextBaseUrl = baseUrl.trim() || DEEPSEEK_BASE_URL;
     const nextApiKey = apiKey.trim();
     if (!nextApiKey) {
-      toast("error", "Please enter your DeepSeek API key first.");
+      toast("error", tt("apiKeyRequired"));
       return;
     }
     setBaseUrl(nextBaseUrl);
@@ -213,9 +215,9 @@ export function ApiSection({ t }: ApiSectionProps) {
       const result = await fetchDeepSeekBalance({ baseUrl: nextBaseUrl, apiKey: nextApiKey });
       setDeepSeekBalance(result);
       const cny = result.balances.find((item) => item.currency === "CNY");
-      toast("success", cny ? `DeepSeek balance: ${formatCnyCost(cny.totalBalance)}` : "DeepSeek balance loaded");
+      toast("success", cny ? tt("apiBalance", { balance: formatCnyCost(cny.totalBalance) }) : tt("apiBalanceLoaded"));
     } catch (err) {
-      toast("error", `Balance failed: ${(err as Error).message}`);
+      toast("error", tt("apiBalanceFailed", { message: (err as Error).message }));
     } finally {
       setCheckingBalance(false);
     }
@@ -342,17 +344,17 @@ export function ApiSection({ t }: ApiSectionProps) {
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium">{option.label}</span>
+                      <span className="text-sm font-medium">{t("api.models." + option.id + ".label")}</span>
                       <span
                         className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
                           model === option.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
                         }`}
                       >
-                        {option.badge}
+                        {t("api.models." + option.id + ".badge")}
                       </span>
                     </div>
                     <p className="mt-1 font-mono text-[11px] text-muted-foreground">{option.id}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">{option.description}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">{t("api.models." + option.id + ".description")}</p>
                   </button>
                 ))}
               </div>
@@ -364,7 +366,7 @@ export function ApiSection({ t }: ApiSectionProps) {
             </div>
 
             <details className="rounded-md border">
-              <summary className="cursor-pointer px-3 py-3 text-sm font-medium">Advanced options</summary>
+              <summary className="cursor-pointer px-3 py-3 text-sm font-medium">{t("api.advancedOptions")}</summary>
               <div className="space-y-4 border-t p-3">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
@@ -438,18 +440,17 @@ export function ApiSection({ t }: ApiSectionProps) {
                       onChange={(e) => setReasoningEffort(e.target.value)}
                       className="w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                     >
-                      <option value="">Default</option>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
+                      <option value="">{t("api.reasoningOff")}</option>
+                      <option value="high">{t("api.reasoningHigh")}</option>
+                      <option value="maximum">{t("api.reasoningMax")}</option>
                     </select>
                   </div>
                 </div>
 
                 <div className="setting-row">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium">Live text</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Show output while it is generating.</p>
+                    <p className="text-sm font-medium">{t("api.streaming")}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">{t("api.streamingHint")}</p>
                   </div>
                   <SwitchButton
                     checked={streamingEnabled}
@@ -463,11 +464,11 @@ export function ApiSection({ t }: ApiSectionProps) {
             <div className="flex flex-col gap-2 rounded-md border bg-accent/30 p-3 sm:flex-row">
               <Button onClick={handleSave} disabled={saving} className="flex-1">
                 <Save className="h-4 w-4 mr-2" />
-                {saving ? "Saving..." : "Save"}
+                {saving ? t("api.saving") : t("api.saveProfile")}
               </Button>
               <Button variant="outline" onClick={handleTestConnection} disabled={testing} className="sm:min-w-[120px]">
                 <Plug className="h-4 w-4 mr-2" />
-                {testing ? "Testing..." : "Test"}
+                {testing ? t("api.testing") : t("api.testConnection")}
               </Button>
               <Button
                 variant="outline"
@@ -486,7 +487,7 @@ export function ApiSection({ t }: ApiSectionProps) {
           <CardHeader>
             <CardTitle className="card-title-row">
               <Zap className="h-5 w-5" />
-              Current Setup
+              {t("api.currentDefault")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
@@ -501,11 +502,11 @@ export function ApiSection({ t }: ApiSectionProps) {
               <p className="mt-1 truncate font-mono text-xs">{model || DEFAULT_DEEPSEEK_MODEL}</p>
             </div>
             <div className="rounded-md border px-3 py-2">
-              <p className="text-xs text-muted-foreground">Endpoint</p>
+              <p className="text-xs text-muted-foreground">{t("api.endpoint")}</p>
               <p className="mt-1 truncate font-mono text-xs">{displayBaseUrl}</p>
             </div>
             <div className="rounded-md border px-3 py-2">
-              <p className="text-xs text-muted-foreground">Balance</p>
+              <p className="text-xs text-muted-foreground">{t("api.balance")}</p>
               {deepSeekBalance ? (
                 <div className="mt-1 space-y-1">
                   {deepSeekBalance.balances.map((balance) => (

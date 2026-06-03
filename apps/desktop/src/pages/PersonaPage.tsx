@@ -19,6 +19,7 @@ import { toast } from "@/utils/toast";
 export function PersonaPage() {
   const { t } = useTranslation("persona");
   const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const personaName = useSettingsStore((s) => s.personaName);
   const personaDesc = useSettingsStore((s) => s.personaDesc);
@@ -43,24 +44,24 @@ export function PersonaPage() {
 
   const handleSave = () => {
     if (!name.trim()) {
-      toast("error", t("toast.nameRequired"));
+      toast("error", tt("nameRequired"));
       return;
     }
     savePersona(name.trim(), desc);
-    toast("success", t("toast.saved"));
+    toast("success", tt("personaSaved"));
   };
 
   return (
     <div className="flex h-full">
-      <div className="w-56 border-r p-4 flex flex-col">
+      <div className="w-60 border-r p-4 flex flex-col gap-3">
         <button
           onClick={() => navigate("/")}
-          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+          className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />
           {tc("actions.back")}
         </button>
-        <h2 className="text-lg font-semibold mb-1">{t("sidebar.title")}</h2>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("sidebar.title")}</h2>
         <p className="text-xs text-muted-foreground" dangerouslySetInnerHTML={{ __html: t("sidebar.description") }} />
       </div>
       <div className="flex-1 p-6 overflow-auto">

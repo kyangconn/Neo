@@ -39,11 +39,5 @@
   "delete": {
     "title": "Delete Character",
     "description": "Are you sure you want to delete \"{{name}}\"? This will also delete all associated chats and messages. This action cannot be undone."
-  },
-  "toast": {
-    "parseFailed": "Could not parse character card",
-    "importFailed": "Failed to import character card",
-    "imported": "Imported \"{{name}}\" — {{parts}}",
-    "deleted": "Deleted \"{{name}}\""
   }
 }

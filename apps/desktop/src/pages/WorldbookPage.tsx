@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ArrowLeft, BookOpen, CheckCircle2, FileText, KeyRound, Plus, Power, Save, Trash2, X } from "lucide-react";
 import {
   Button,
@@ -16,11 +17,7 @@ import {
 } from "@neo-tavern/ui";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import type { WorldbookEntry } from "@neo-tavern/shared";
-
-function toast(type: "success" | "error" | "info", message: string) {
-  const fn = (window as any).__toast;
-  if (fn) fn(type, message);
-}
+import { toast } from "@/utils/toast";
 
 function keywordsFrom(keys: string) {
   return keys
@@ -72,6 +69,9 @@ function SwitchButton({ checked, onClick, label }: { checked: boolean; onClick: 
 }
 
 export function WorldbookPage() {
+  const { t } = useTranslation("worldbook");
+  const { t: tc } = useTranslation("common");
+  const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
   const {
     worldbooks,
@@ -191,7 +191,7 @@ export function WorldbookPage() {
     if (!selectedId) return;
     try {
       await updateWorldbook(selectedId, { name: wbName, description: wbDesc });
-      toast("success", "Saved");
+      toast("success", tt("worldbookSaved"));
     } catch {
       toast("error", "Failed");
     }
@@ -317,31 +317,28 @@ export function WorldbookPage() {
 
   return (
     <div className="flex h-full min-h-0 overflow-hidden bg-background">
-      <aside className="flex w-80 shrink-0 flex-col overflow-hidden border-r bg-card/30">
-        <div className="shrink-0 space-y-4 border-b p-4">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => navigate("/")}
-              className="flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Back
-            </button>
-            <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleCreate} title="New world book">
-              <Plus className="h-4 w-4" />
-            </Button>
-          </div>
+      <aside className="flex w-60 shrink-0 flex-col overflow-hidden border-r bg-card/30">
+        <div className="shrink-0 border-b p-4 flex flex-col gap-3">
+          <button
+            onClick={() => navigate("/")}
+            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t("back")}
+          </button>
           <div>
-            <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">World Books</h2>
-            <p className="mt-1 text-xs text-muted-foreground">{worldbooks.length} books available</p>
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("title")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("booksAvailable", { count: worldbooks.length })}</p>
           </div>
         </div>
 
         <ScrollArea type="always" className="min-h-0 flex-1">
           <div className="space-y-2 p-3 pr-8">
-            {loading && <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">Loading...</p>}
+            {loading && (
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">{t("loading")}</p>
+            )}
             {!loading && worldbooks.length === 0 && (
-              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No world books</p>
+              <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">{t("noBooks")}</p>
             )}
             {worldbooks.map((worldbook) => {
               const isSelected = selectedId === worldbook.id;
@@ -365,15 +362,21 @@ export function WorldbookPage() {
                     )}
                   </div>
                   <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
-                    {worldbook.description || "No description"}
+                    {worldbook.description || t("noDescription")}
                   </p>
                   <div className="mt-2 flex items-center gap-2 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                    <span>{worldbook.entries.length} entries</span>
-                    <span>{enabledCount} on</span>
+                    <span>{t("entries", { count: worldbook.entries.length })}</span>
+                    <span>
+                      {enabledCount} {t("enabledOn")}
+                    </span>
                   </div>
                 </button>
               );
             })}
+            <Button variant="outline" size="sm" onClick={handleCreate} className="w-full justify-center text-xs">
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              {t("newBook")}
+            </Button>
           </div>
         </ScrollArea>
       </aside>
@@ -383,10 +386,10 @@ export function WorldbookPage() {
           <div className="flex flex-1 items-center justify-center text-muted-foreground">
             <div className="space-y-3 text-center">
               <BookOpen className="mx-auto h-10 w-10 opacity-30" />
-              <p className="text-sm">Select a world book or create one</p>
+              <p className="text-sm">{t("selectOrCreate")}</p>
               <Button variant="outline" size="sm" onClick={handleCreate}>
                 <Plus className="mr-1.5 h-3.5 w-3.5" />
-                New Book
+                {t("newBook")}
               </Button>
             </div>
           </div>
@@ -403,19 +406,19 @@ export function WorldbookPage() {
                     value={wbName}
                     onChange={(event: ChangeEvent<HTMLInputElement>) => setWbName(event.target.value)}
                     className="h-auto border-0 border-b bg-transparent px-0 pb-1 text-2xl font-bold shadow-none focus-visible:ring-0"
-                    placeholder="Book name"
+                    placeholder={t("bookNamePlaceholder")}
                   />
                   <Input
                     value={wbDesc}
                     onChange={(event: ChangeEvent<HTMLInputElement>) => setWbDesc(event.target.value)}
                     className="mt-2 h-auto border-0 border-b bg-transparent px-0 pb-1 text-sm text-muted-foreground shadow-none focus-visible:ring-0"
-                    placeholder="Description"
+                    placeholder={t("descPlaceholder")}
                   />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <Button size="sm" variant="outline" onClick={handleSaveMeta}>
                     <Save className="mr-1.5 h-3.5 w-3.5" />
-                    Save
+                    {tc("actions.save")}
                   </Button>
                   <Button
                     size="sm"
@@ -423,24 +426,24 @@ export function WorldbookPage() {
                     onClick={handleActivate}
                   >
                     <Power className="mr-1.5 h-3.5 w-3.5" />
-                    {activeWorldbookId === selectedId ? "Active" : "Activate"}
+                    {activeWorldbookId === selectedId ? t("active") : t("activate")}
                   </Button>
                   <Button
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 text-destructive"
                     onClick={() => setDeleteTarget(selected)}
-                    title="Delete world book"
+                    title={t("deleteBook")}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
               </div>
               <div className="mt-4 grid w-full max-w-xl grid-cols-4 gap-2">
-                <CountPill label="entries" value={stats.total} />
-                <CountPill label="enabled" value={stats.enabled} />
-                <CountPill label="always" value={stats.always} />
-                <CountPill label="trigger" value={stats.trigger} />
+                <CountPill label={t("stats.entries")} value={stats.total} />
+                <CountPill label={t("stats.enabled")} value={stats.enabled} />
+                <CountPill label={t("stats.always")} value={stats.always} />
+                <CountPill label={t("stats.trigger")} value={stats.trigger} />
               </div>
             </header>
 
@@ -448,14 +451,12 @@ export function WorldbookPage() {
               <section className="flex min-w-0 flex-col overflow-hidden">
                 <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
                   <div>
-                    <h3 className="text-sm font-semibold">Entries</h3>
-                    <p className="text-xs text-muted-foreground">
-                      Sorted by priority. Higher entries are considered first.
-                    </p>
+                    <h3 className="text-sm font-semibold">{t("entriesSection.title")}</h3>
+                    <p className="text-xs text-muted-foreground">{t("entriesSection.description")}</p>
                   </div>
                   <Button size="sm" variant="outline" onClick={resetEntryForm}>
                     <Plus className="mr-1.5 h-3.5 w-3.5" />
-                    New Entry
+                    {t("entriesSection.newEntry")}
                   </Button>
                 </div>
 
@@ -605,9 +606,13 @@ export function WorldbookPage() {
               <aside className="flex min-h-0 flex-col overflow-hidden border-l bg-card/25">
                 <div className="flex shrink-0 items-start justify-between gap-3 border-b p-4">
                   <div>
-                    <h3 className="text-sm font-semibold">{editingEntryId ? "Edit Entry" : "New Entry"}</h3>
+                    <h3 className="text-sm font-semibold">
+                      {editingEntryId ? t("entryForm.editEntry") : t("entryForm.newEntry")}
+                    </h3>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      {selectedEntry ? `Editing ${selectedEntry.title}` : "Create reusable lore for this world book"}
+                      {selectedEntry
+                        ? t("entryForm.editHint", { title: selectedEntry.title })
+                        : t("entryForm.createHint")}
                     </p>
                   </div>
                   {editingEntryId && (
@@ -616,7 +621,7 @@ export function WorldbookPage() {
                       variant="ghost"
                       className="h-8 w-8"
                       onClick={resetEntryForm}
-                      title="Cancel editing"
+                      title={t("entryForm.cancelEdit")}
                     >
                       <X className="h-4 w-4" />
                     </Button>
@@ -626,16 +631,16 @@ export function WorldbookPage() {
                 <ScrollArea type="always" className="min-h-0 flex-1">
                   <div className="space-y-4 p-4 pr-6">
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Title</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.title")}</span>
                       <Input
                         value={entryTitle}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryTitle(event.target.value)}
-                        placeholder="Entry title"
+                        placeholder={t("entryForm.titlePlaceholder")}
                       />
                     </label>
 
                     <div className="space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Injection type</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.injectionType")}</span>
                       <div className="grid grid-cols-2 rounded-md border bg-background p-1">
                         <button
                           type="button"
@@ -646,7 +651,7 @@ export function WorldbookPage() {
                               : "text-muted-foreground hover:bg-accent"
                           }`}
                         >
-                          Always
+                          {t("entryForm.always")}
                         </button>
                         <button
                           type="button"
@@ -657,14 +662,14 @@ export function WorldbookPage() {
                               : "text-muted-foreground hover:bg-accent"
                           }`}
                         >
-                          Trigger
+                          {t("entryForm.trigger")}
                         </button>
                       </div>
                     </div>
 
                     {entryType === "trigger" && (
                       <div className="space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">Trigger mode</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("entryForm.triggerMode")}</span>
                         <div className="grid grid-cols-2 rounded-md border bg-background p-1">
                           <button
                             type="button"
@@ -675,7 +680,7 @@ export function WorldbookPage() {
                                 : "text-muted-foreground hover:bg-accent"
                             }`}
                           >
-                            AND all
+                            {t("entryForm.andAll")}
                           </button>
                           <button
                             type="button"
@@ -686,23 +691,23 @@ export function WorldbookPage() {
                                 : "text-muted-foreground hover:bg-accent"
                             }`}
                           >
-                            OR any
+                            {t("entryForm.orAny")}
                           </button>
                         </div>
                       </div>
                     )}
 
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Keywords</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.keywords")}</span>
                       <Input
                         value={entryKeys}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryKeys(event.target.value)}
-                        placeholder="Comma-separated keywords"
+                        placeholder={t("entryForm.keywordsPlaceholder")}
                       />
                     </label>
 
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Secondary keys</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.secondaryKeys")}</span>
                       <Input
                         value={entrySecondaryKeys}
                         onChange={(event: ChangeEvent<HTMLInputElement>) => setEntrySecondaryKeys(event.target.value)}
@@ -730,7 +735,7 @@ export function WorldbookPage() {
                           min="0"
                           max="100"
                           disabled={!entryUseProbability}
-                          placeholder="100"
+                          placeholder={t("entryForm.priorityPlaceholder")}
                         />
                       </label>
                     </div>
@@ -820,27 +825,29 @@ export function WorldbookPage() {
                     </div>
 
                     <label className="block space-y-1.5">
-                      <span className="text-xs font-medium text-muted-foreground">Content</span>
+                      <span className="text-xs font-medium text-muted-foreground">{t("entryForm.content")}</span>
                       <Textarea
                         value={entryContent}
                         onChange={(event: ChangeEvent<HTMLTextAreaElement>) => setEntryContent(event.target.value)}
-                        placeholder="Entry content..."
+                        placeholder={t("entryForm.contentPlaceholder")}
                         className="min-h-[260px] resize-none text-sm leading-6"
                       />
                     </label>
 
                     <div className="grid grid-cols-[1fr_auto] gap-3">
                       <label className="block space-y-1.5">
-                        <span className="text-xs font-medium text-muted-foreground">Priority</span>
+                        <span className="text-xs font-medium text-muted-foreground">{t("entryForm.priority")}</span>
                         <Input
                           value={entryPriority}
                           onChange={(event: ChangeEvent<HTMLInputElement>) => setEntryPriority(event.target.value)}
                           type="number"
-                          placeholder="100"
+                          placeholder={t("entryForm.priorityPlaceholder")}
                         />
                       </label>
                       <div className="space-y-1.5">
-                        <span className="block text-xs font-medium text-muted-foreground">Enabled</span>
+                        <span className="block text-xs font-medium text-muted-foreground">
+                          {t("entryForm.enabled")}
+                        </span>
                         <div className="flex h-9 items-center">
                           <SwitchButton
                             checked={entryEnabled}
@@ -855,7 +862,7 @@ export function WorldbookPage() {
 
                 <div className="flex shrink-0 items-center justify-between gap-2 border-t p-4">
                   <Button onClick={handleSaveEntry} className="flex-1">
-                    {editingEntryId ? "Update Entry" : "Add Entry"}
+                    {editingEntryId ? t("entryForm.updateEntry") : t("entryForm.addEntry")}
                   </Button>
                   {editingEntryId && (
                     <Button variant="outline" onClick={resetEntryForm}>

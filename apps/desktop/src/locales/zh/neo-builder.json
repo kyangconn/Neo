@@ -111,20 +111,25 @@
       "description": "Whale Builder 生成的世界书产出物。"
     },
     "evaluation": {
-      "title": "评估报告"
+      "title": "评估报告",
+      "description": "当前草稿的结构、质量和一致性检查。"
     },
     "creationPlan": {
-      "title": "创作规划"
+      "title": "创作规划",
+      "description": "Whale Builder 当前工作台的持久创作规划。"
     },
     "palette": {
-      "title": "性格调色盘"
+      "title": "性格调色盘",
+      "description": "底色、主色调、点缀和具体衍生。"
     }
   },
   "status": {
     "generated": "尚未生成",
     "evaluated": "尚未评估"
   },
-  "toast": {
-    "saveFailed": "保存角色失败"
+  "export": {
+    "toFolder": "导出到文件夹",
+    "success": "已导出到 {{folder}}",
+    "failed": "导出失败"
   }
 }
