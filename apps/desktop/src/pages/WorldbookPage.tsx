@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, BookOpen, CheckCircle2, FileText, KeyRound, Plus, Power, Save, Trash2, X } from "lucide-react";
@@ -149,8 +149,11 @@ export function WorldbookPage() {
     resetEntryForm();
   };
 
+  const hasAutoSelectedRef = useRef(false);
   useEffect(() => {
     if (!selectedId && worldbooks.length > 0) {
+      if (hasAutoSelectedRef.current) return;
+      hasAutoSelectedRef.current = true;
       handleSelect(worldbooks[0].id);
     }
   }, [worldbooks]);

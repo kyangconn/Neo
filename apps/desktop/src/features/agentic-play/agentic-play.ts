@@ -82,13 +82,15 @@ export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
     type: "function",
     function: {
       name: "update_game_state",
-      description: "Patch the structured game state after the current turn changes location, inventory, quests, NPCs, or flags.",
+      description:
+        "Patch the structured game state after the current turn changes location, inventory, quests, NPCs, or flags.",
       parameters: {
         type: "object",
         properties: {
           state_patch: {
             type: "object",
-            description: "A JSON patch-like object. Objects are deep-merged; arrays and primitives replace existing values.",
+            description:
+              "A JSON patch-like object. Objects are deep-merged; arrays and primitives replace existing values.",
           },
           reason: {
             type: "string",
@@ -295,7 +297,9 @@ function parseProbability(value: unknown): number | undefined {
 }
 
 function parseDiceExpression(value: unknown) {
-  const expression = String(value ?? "1d20").trim().toLowerCase();
+  const expression = String(value ?? "1d20")
+    .trim()
+    .toLowerCase();
   const match = expression.match(/^(\d*)d(\d+)$/);
   if (!match) throw new Error(`Invalid dice expression: ${expression}`);
   const count = Math.max(1, Math.min(20, parseInteger(match[1] || "1", 1)));
@@ -377,7 +381,10 @@ type ToolCallPart = {
   };
 };
 
-function appendToolCallDelta(parts: Map<number, ToolCallPart>, delta: NonNullable<GenerateChunk["toolCallDeltas"]>[number]) {
+function appendToolCallDelta(
+  parts: Map<number, ToolCallPart>,
+  delta: NonNullable<GenerateChunk["toolCallDeltas"]>[number],
+) {
   const index = typeof delta.index === "number" ? delta.index : parts.size;
   const current: ToolCallPart = parts.get(index) ?? { type: "function", function: { arguments: "" } };
   const nextFunction = {
@@ -506,7 +513,7 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
   gameState: AgenticGameState;
   finishReason?: string;
 }> {
-  let messages: GenerateMessage[] = [...options.builtPrompt.messages];
+  const messages: GenerateMessage[] = [...options.builtPrompt.messages];
   let gameState = normalizeAgenticGameState(options.gameState, options.character);
   let usage: MessageUsage | undefined;
   let reasoningContent = "";
@@ -524,18 +531,22 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
 
   for (let round = 0; round < AGENTIC_PLAY_MAX_TOOL_ROUNDS; round++) {
     let streamedContent = false;
-    const result: GenerateResult = await generateAgenticStep(options.provider, {
-      ...baseGenerateInput,
-      messages,
-      tools: AGENTIC_PLAY_TOOL_DEFINITIONS,
-      toolChoice: "auto",
-    }, {
-      onContentDelta: (delta) => {
-        streamedContent = true;
-        return options.onContentDelta?.(delta);
+    const result: GenerateResult = await generateAgenticStep(
+      options.provider,
+      {
+        ...baseGenerateInput,
+        messages,
+        tools: AGENTIC_PLAY_TOOL_DEFINITIONS,
+        toolChoice: "auto",
       },
-      onReasoningDelta: options.onReasoningDelta,
-    });
+      {
+        onContentDelta: (delta) => {
+          streamedContent = true;
+          return options.onContentDelta?.(delta);
+        },
+        onReasoningDelta: options.onReasoningDelta,
+      },
+    );
 
     usage = addUsage(usage, result.usage);
     reasoningContent = appendReasoning(reasoningContent, result.reasoningContent);
@@ -574,19 +585,23 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
   }
 
   options.onFinalRound?.();
-  const finalResult = await generateAgenticStep(options.provider, {
-    ...baseGenerateInput,
-    messages: [
-      ...messages,
-      {
-        role: "system",
-        content: "工具回合已经结束。请根据已经得到的工具结果，直接输出本回合的可见 Markdown 回复，不要再调用工具。",
-      },
-    ],
-  }, {
-    onContentDelta: options.onContentDelta,
-    onReasoningDelta: options.onReasoningDelta,
-  });
+  const finalResult = await generateAgenticStep(
+    options.provider,
+    {
+      ...baseGenerateInput,
+      messages: [
+        ...messages,
+        {
+          role: "system",
+          content: "工具回合已经结束。请根据已经得到的工具结果，直接输出本回合的可见 Markdown 回复，不要再调用工具。",
+        },
+      ],
+    },
+    {
+      onContentDelta: options.onContentDelta,
+      onReasoningDelta: options.onReasoningDelta,
+    },
+  );
 
   usage = addUsage(usage, finalResult.usage);
   reasoningContent = appendReasoning(reasoningContent, finalResult.reasoningContent);

@@ -111,6 +111,7 @@ interface SavedDebugPrompt {
 
 function sanitizeDebugPathPart(value: string, fallback: string) {
   const cleaned = value
+    // eslint-disable-next-line no-control-regex
     .replace(/[<>:"/\\|?*\x00-\x1F]/g, "_")
     .replace(/\s+/g, " ")
     .trim()
@@ -592,7 +593,7 @@ export function useSendMessage({
 
     if (!cacheReusable || shouldCompactMemoryBuffer(overflowMemoryMessages, settings.memorySummaryMaxChars)) {
       const messagesToSummarize = cacheReusable ? overflowMemoryMessages : memorySourceMessages;
-      let segmentSummary = "";
+      let segmentSummary: string;
 
       if (compressorConfig) {
         try {
@@ -1206,7 +1207,9 @@ export function useSendMessage({
             ? await agenticPlayStateRepository.getOrCreate(chatId, character, true)
             : null;
         const agenticBlock = agenticRecord ? createAgenticPlayContextBlock(agenticRecord.gameState) : null;
-        const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(Boolean) as ContextBlock[];
+        const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
+          Boolean,
+        ) as ContextBlock[];
         const effectivePresetItems = agenticRecord ? buildAgenticPlayPresetItems(character.name) : presetItems;
 
         const built = buildChatPrompt({
@@ -1352,7 +1355,9 @@ export function useSendMessage({
       const agenticRecord =
         agenticPlayEnabled && character ? await agenticPlayStateRepository.getOrCreate(chatId, character, true) : null;
       const agenticBlock = agenticRecord ? createAgenticPlayContextBlock(agenticRecord.gameState) : null;
-      const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(Boolean) as ContextBlock[];
+      const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
+        Boolean,
+      ) as ContextBlock[];
       const effectivePresetItems = agenticRecord ? buildAgenticPlayPresetItems(character.name) : presetItems;
 
       const built = buildChatPrompt({

@@ -37,10 +37,15 @@ export interface SettingsSectionProps {
   t: (key: string, params?: Record<string, string>) => string;
 }
 
-export interface ImageSectionProps extends SettingsSectionProps {}
+export interface ImageSectionProps {
+  t: (key: string, params?: Record<string, string>) => string;
+}
 
-export interface ApiSectionProps extends SettingsSectionProps {
+export interface ApiSectionProps {
+  t: (key: string, params?: Record<string, string>) => string;
   modelConfigs: Array<{ id: string; name: string; model: string }>;
 }
 
-export interface RegexSectionProps extends SettingsSectionProps {}
+export interface RegexSectionProps {
+  t: (key: string, params?: Record<string, string>) => string;
+}

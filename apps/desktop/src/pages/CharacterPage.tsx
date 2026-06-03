@@ -70,14 +70,16 @@ export function CharacterPage() {
   const [deleteTarget, setDeleteTarget] = useState<Character | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasAutoSelectedRef = useRef(false);
 
   useEffect(() => {
     loadCharacters();
   }, [loadCharacters]);
 
   useEffect(() => {
-    if (!selectedId && !editingId && !creating && characters.length > 0) {
+    if (!hasAutoSelectedRef.current && !selectedId && !editingId && !creating && characters.length > 0) {
       setSelectedId(characters[0].id);
+      hasAutoSelectedRef.current = true;
     }
   }, [characters, selectedId, editingId, creating]);
 
@@ -279,7 +281,9 @@ export function CharacterPage() {
       setCreating(false);
       setDetailOpen(true);
       setForm(emptyForm);
-    } catch {}
+    } catch {
+      // ignored
+    }
   };
 
   const handleStartEdit = (char?: Character) => {
@@ -343,7 +347,9 @@ export function CharacterPage() {
         setForm(emptyForm);
       }
       toast("info", `Deleted "${deleteTarget.name}"`);
-    } catch {}
+    } catch {
+      // ignored
+    }
   };
 
   const updateField = (field: keyof CreateCharacterInput, value: string) => {

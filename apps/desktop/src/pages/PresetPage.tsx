@@ -110,25 +110,25 @@ export function PresetPage() {
     };
   }, []);
 
+  const handleSelect = (id: string) => {
+    setSelectedId(id);
+    const preset = store.presets.find((p) => p.id === id);
+    if (preset) {
+      setEditName(preset.name);
+      setEditDesc(preset.description);
+    }
+  };
+
+  const hasAutoSelectedRef = useRef(false);
   useEffect(() => {
     if (!selectedId && store.presets.length > 0) {
+      if (hasAutoSelectedRef.current) return;
+      hasAutoSelectedRef.current = true;
       handleSelect(store.presets[0].id);
     }
   }, [store.presets]);
 
-  useEffect(() => {
-    if (selectedId) {
-      const preset = store.presets.find((p) => p.id === selectedId);
-      if (preset) {
-        setEditName(preset.name);
-        setEditDesc(preset.description);
-      }
-    }
-  }, [selectedId, store.presets]);
-
   const selected = store.presets.find((p) => p.id === selectedId) ?? null;
-
-  const handleSelect = (id: string) => setSelectedId(id);
 
   const handleCreate = async () => {
     try {
@@ -289,6 +289,7 @@ export function PresetPage() {
     };
 
     const previousUserSelect = document.body.style.userSelect;
+    // eslint-disable-next-line react-hooks/immutability
     document.body.style.userSelect = "none";
     setDraggedItemId(itemId);
     setDragOverItemId(itemId);

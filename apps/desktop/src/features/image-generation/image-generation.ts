@@ -456,7 +456,9 @@ async function invokeComfy<T>(command: string, args: Record<string, unknown>): P
     return await invoke<T>(command, args);
   } catch (error) {
     if (canFallbackToDirectFetch(error)) return undefined;
-    throw new Error(getErrorMessage(error));
+    const err = new Error(getErrorMessage(error));
+    (err as Error & { cause: unknown }).cause = error;
+    throw err;
   }
 }
 

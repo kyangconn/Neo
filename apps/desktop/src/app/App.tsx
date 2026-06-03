@@ -21,7 +21,9 @@ let seeded = false;
 function AppContent() {
   const { toasts, addToast, removeToast } = useToast();
   const themeInit = useThemeStore((s) => s.init);
-  window.__toast = addToast;
+  useEffect(() => {
+    window.__toast = addToast;
+  }, [addToast]);
 
   useEffect(() => {
     themeInit();

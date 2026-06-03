@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Plus, Trash2, CheckCircle2, Globe } from "lucide-react";
 import {
   Button,
@@ -20,6 +20,10 @@ export function RegexSection({ t }: RegexSectionProps) {
   const regexPresets = useSettingsStore((s) => s.regexPresets);
   const activeRegexPresetId = useSettingsStore((s) => s.activeRegexPresetId);
   const loadRegexRules = useSettingsStore((s) => s.loadRegexRules);
+
+  useEffect(() => {
+    loadRegexRules();
+  }, [loadRegexRules]);
   const createRegexPreset = useSettingsStore((s) => s.createRegexPreset);
   const updateRegexPreset = useSettingsStore((s) => s.updateRegexPreset);
   const deleteRegexPresetFromStore = useSettingsStore((s) => s.deleteRegexPreset);

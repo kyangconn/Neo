@@ -597,7 +597,7 @@ function isLegacySeedLunaWorldbook(worldbook: Worldbook) {
 export async function seedLunaWorldbook() {
   const all = await worldbookRepository.list(true);
   const now = new Date().toISOString();
-  let changed = false;
+  const changed = true;
 
   const cnIndex = all.findIndex((w) => w.id === LUNA_WB_ID);
   if (cnIndex === -1) {
@@ -611,7 +611,6 @@ export async function seedLunaWorldbook() {
         now,
       ),
     );
-    changed = true;
   } else if (isLegacySeedLunaWorldbook(all[cnIndex])) {
     all[cnIndex] = buildSeedWorldbook(
       LUNA_WB_ID,
@@ -622,10 +621,8 @@ export async function seedLunaWorldbook() {
       now,
       all[cnIndex].createdAt,
     );
-    changed = true;
   } else if (all[cnIndex].hidden) {
     all[cnIndex] = { ...all[cnIndex], hidden: false, updatedAt: now };
-    changed = true;
   }
 
   const enIndex = all.findIndex((w) => w.id === LUNA_ENGLISH_WB_ID);
@@ -643,7 +640,6 @@ export async function seedLunaWorldbook() {
   } else {
     all[enIndex] = englishWorldbook;
   }
-  changed = true;
 
   try {
     if (changed) await worldbookRepository.save(all, true);
@@ -651,6 +647,7 @@ export async function seedLunaWorldbook() {
     if (!activeId || activeId === LUNA_ENGLISH_WB_ID) {
       await worldbookRepository.setActiveId(LUNA_WB_ID);
     }
+    // eslint-disable-next-line no-empty
   } catch {}
 }
 
@@ -724,6 +721,7 @@ export async function seedEldoriaWorldbook() {
     const all = await worldbookRepository.list();
     all.push(wb);
     await worldbookRepository.save(all);
+    // eslint-disable-next-line no-empty
   } catch {}
 }
 
@@ -897,5 +895,6 @@ export async function seedWritingPreset() {
     const all = await presetRepository.list();
     all.push(preset);
     await presetRepository.save(all);
+    // eslint-disable-next-line no-empty
   } catch {}
 }

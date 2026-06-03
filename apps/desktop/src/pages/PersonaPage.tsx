@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Sparkles } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -27,11 +27,16 @@ export function PersonaPage() {
 
   const [name, setName] = useState(personaName);
   const [desc, setDesc] = useState(personaDesc);
+  const hasSyncedStoreRef = useRef(false);
 
   useEffect(() => {
     loadPersona();
   }, [loadPersona]);
   useEffect(() => {
+    if (!hasSyncedStoreRef.current) {
+      hasSyncedStoreRef.current = true;
+      return;
+    }
     setName(personaName);
     setDesc(personaDesc);
   }, [personaName, personaDesc]);

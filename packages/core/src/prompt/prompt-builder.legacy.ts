@@ -1,173 +1,185 @@
-import type { BuildPromptInput, BuiltPrompt, GenerateMessage, ContextBlock } from '@neo-tavern/shared'
+import type { BuildPromptInput, BuiltPrompt, GenerateMessage, ContextBlock } from "@neo-tavern/shared";
 
 const DEFAULT_SYSTEM_RULES = [
-  '你正在扮演所选角色。',
-  '始终与角色设定和场景保持一致。',
-  '除非用户明确要求，否则不要替用户说话或行动。',
-  '保持与最近的对话消息一致。',
-  '遵守适用的安全规则，避免不当内容。',
-].join('\n')
+  "你正在扮演所选角色。",
+  "始终与角色设定和场景保持一致。",
+  "除非用户明确要求，否则不要替用户说话或行动。",
+  "保持与最近的对话消息一致。",
+  "遵守适用的安全规则，避免不当内容。",
+].join("\n");
 
 const DIALOGUE_FORMAT_RULES = [
-  '',
-  '对话格式要求：',
+  "",
+  "对话格式要求：",
   '当角色说话时，在每句对话前加上角色名和冒号，格式如：角色名："对话内容"',
-  '每句对话独占一行，与叙述文字分开。',
-  '此格式仅用于实际说出声的对话。叙述和内心活动保持普通文本格式。',
-].join('\n')
+  "每句对话独占一行，与叙述文字分开。",
+  "此格式仅用于实际说出声的对话。叙述和内心活动保持普通文本格式。",
+].join("\n");
 
 function estTokens(text: string): number {
-  return Math.ceil(text.length / 4)
+  return Math.ceil(text.length / 4);
 }
 
-export function trimMessagesByTokens(messages: { role: string; content: string }[], maxTokens: number): { role: string; content: string }[] {
-  if (messages.length === 0) return []
-  if (maxTokens <= 0) return [...messages]
-  let total = 0
-  const kept: (typeof messages) = []
+export function trimMessagesByTokens(
+  messages: { role: string; content: string }[],
+  maxTokens: number,
+): { role: string; content: string }[] {
+  if (messages.length === 0) return [];
+  if (maxTokens <= 0) return [...messages];
+  let total = 0;
+  const kept: typeof messages = [];
   for (let i = messages.length - 1; i >= 0; i--) {
-    const tokens = Math.ceil(messages[i].content.length / 4)
-    if (total + tokens > maxTokens && kept.length > 0) break
-    kept.unshift(messages[i])
-    total += tokens
+    const tokens = Math.ceil(messages[i].content.length / 4);
+    if (total + tokens > maxTokens && kept.length > 0) break;
+    kept.unshift(messages[i]);
+    total += tokens;
   }
-  return kept
+  return kept;
 }
 
 function contextBlockToMessage(block: ContextBlock, safeReplace: (value: string) => string): GenerateMessage {
   return {
-    role: block.role ?? 'system',
+    role: block.role ?? "system",
     content: safeReplace(`[${block.source}] ${block.title}\n${block.content}`),
-  }
+  };
 }
 
 function insertDepthBlocks(history: GenerateMessage[], blocks: ContextBlock[], safeReplace: (value: string) => string) {
-  const next = [...history]
+  const next = [...history];
   for (const block of blocks) {
-    const depth = Math.max(0, Math.floor(block.depth ?? 0))
-    const index = Math.max(0, next.length - depth)
-    next.splice(index, 0, contextBlockToMessage(block, safeReplace))
+    const depth = Math.max(0, Math.floor(block.depth ?? 0));
+    const index = Math.max(0, next.length - depth);
+    next.splice(index, 0, contextBlockToMessage(block, safeReplace));
   }
-  return next
+  return next;
 }
 
 export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
-  const messages: GenerateMessage[] = []
-  const uname = input.userName || 'User'
+  const messages: GenerateMessage[] = [];
+  const uname = input.userName || "User";
 
-  const safeReplace = (s: string) => s.replace(/\{\{user\}\}/gi, uname).replace(/<user>/gi, uname)
+  const safeReplace = (s: string) => s.replace(/\{\{user\}\}/gi, uname).replace(/<user>/gi, uname);
 
-  const systemRules = input.systemRules ?? DEFAULT_SYSTEM_RULES
-  const characterBlock = safeReplace([
-    `Character Name: ${input.character.name}`,
-    `Description: ${input.character.description}`,
-    `Personality: ${input.character.personality}`,
-    `Scenario: ${input.character.scenario}`,
-    input.character.exampleDialogues
-      ? `Example Dialogues:\n${input.character.exampleDialogues}`
-      : '',
-  ].filter(Boolean).join('\n\n'))
+  const systemRules = input.systemRules ?? DEFAULT_SYSTEM_RULES;
+  const characterBlock = safeReplace(
+    [
+      `Character Name: ${input.character.name}`,
+      `Description: ${input.character.description}`,
+      `Personality: ${input.character.personality}`,
+      `Scenario: ${input.character.scenario}`,
+      input.character.exampleDialogues ? `Example Dialogues:\n${input.character.exampleDialogues}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  );
 
-  const sortedPresetItems = (input.presetItems ?? [])
-    .slice()
-    .sort((a, b) => a.injectionOrder - b.injectionOrder)
+  const sortedPresetItems = (input.presetItems ?? []).slice().sort((a, b) => a.injectionOrder - b.injectionOrder);
 
-  const hasSystemPreset = sortedPresetItems.some(p => p.role === 'system')
+  const hasSystemPreset = sortedPresetItems.some((p) => p.role === "system");
   const presetContent = sortedPresetItems
     .map((item) => safeReplace(item.content))
     .filter((content) => content.trim().length > 0)
-    .join('\n\n')
+    .join("\n\n");
   const presetMessage: GenerateMessage | null = presetContent
     ? {
-        role: hasSystemPreset ? 'system' : sortedPresetItems[0]?.role ?? 'system',
+        role: hasSystemPreset ? "system" : (sortedPresetItems[0]?.role ?? "system"),
         content: presetContent,
       }
-    : null
+    : null;
 
   const sortedContextBlocks = [...(input.contextBlocks ?? [])].sort(
-    (a, b) => b.priority - a.priority || a.title.localeCompare(b.title) || a.id.localeCompare(b.id)
-  )
-  const beforeHistoryBlocks = sortedContextBlocks.filter((block) => (block.position ?? 'beforeHistory') === 'beforeHistory')
-  const atDepthBlocks = sortedContextBlocks.filter((block) => block.position === 'atDepth')
-  const afterHistoryBlocks = sortedContextBlocks.filter((block) => block.position === 'afterHistory')
+    (a, b) => b.priority - a.priority || a.title.localeCompare(b.title) || a.id.localeCompare(b.id),
+  );
+  const beforeHistoryBlocks = sortedContextBlocks.filter(
+    (block) => (block.position ?? "beforeHistory") === "beforeHistory",
+  );
+  const atDepthBlocks = sortedContextBlocks.filter((block) => block.position === "atDepth");
+  const afterHistoryBlocks = sortedContextBlocks.filter((block) => block.position === "afterHistory");
 
   if (!hasSystemPreset) {
     messages.push({
-      role: 'system',
+      role: "system",
       content: safeReplace(systemRules + DIALOGUE_FORMAT_RULES),
-    })
+    });
   }
 
-  if (presetMessage) messages.push(presetMessage)
+  if (presetMessage) messages.push(presetMessage);
 
-  messages.push({ role: 'system', content: characterBlock })
+  messages.push({ role: "system", content: characterBlock });
 
   if (input.userPersona) {
-    messages.push({ role: 'system', content: safeReplace(`User Persona:\n${input.userPersona}`) })
+    messages.push({ role: "system", content: safeReplace(`User Persona:\n${input.userPersona}`) });
   }
 
   for (const block of beforeHistoryBlocks) {
-    messages.push(contextBlockToMessage(block, safeReplace))
+    messages.push(contextBlockToMessage(block, safeReplace));
   }
 
-  const userInputMsg: GenerateMessage = { role: 'user', content: input.userInput }
+  const userInputMsg: GenerateMessage = { role: "user", content: input.userInput };
 
-  const contextTokenOverhead = sortedContextBlocks.reduce((sum, block) => sum + estTokens(block.title) + estTokens(block.content), 0)
-  const firstMessage = input.character.firstMessage && input.recentMessages.length === 0
-    ? { role: 'assistant' as const, content: safeReplace(input.character.firstMessage) }
-    : null
+  const contextTokenOverhead = sortedContextBlocks.reduce(
+    (sum, block) => sum + estTokens(block.title) + estTokens(block.content),
+    0,
+  );
+  const firstMessage =
+    input.character.firstMessage && input.recentMessages.length === 0
+      ? { role: "assistant" as const, content: safeReplace(input.character.firstMessage) }
+      : null;
 
-  let historyMessages: GenerateMessage[] = []
-  const maxTokens = input.maxTotalTokens && input.maxTotalTokens > 0 ? input.maxTotalTokens : 0
+  let historyMessages: GenerateMessage[];
+  const maxTokens = input.maxTotalTokens && input.maxTotalTokens > 0 ? input.maxTotalTokens : 0;
   if (maxTokens > 0) {
-    let overhead = estTokens(DIALOGUE_FORMAT_RULES)
-    if (!hasSystemPreset) overhead += estTokens(safeReplace(systemRules))
-    if (presetMessage) overhead += estTokens(presetMessage.content)
-    overhead += estTokens(characterBlock)
-    if (input.userPersona) overhead += estTokens(safeReplace(`User Persona:\n${input.userPersona}`))
-    overhead += estTokens(input.userInput)
-    overhead += contextTokenOverhead
-    if (firstMessage) overhead += estTokens(firstMessage.content)
+    let overhead = estTokens(DIALOGUE_FORMAT_RULES);
+    if (!hasSystemPreset) overhead += estTokens(safeReplace(systemRules));
+    if (presetMessage) overhead += estTokens(presetMessage.content);
+    overhead += estTokens(characterBlock);
+    if (input.userPersona) overhead += estTokens(safeReplace(`User Persona:\n${input.userPersona}`));
+    overhead += estTokens(input.userInput);
+    overhead += contextTokenOverhead;
+    if (firstMessage) overhead += estTokens(firstMessage.content);
 
-    const historyBudget = maxTokens - overhead - 100
-    const trimmed = historyBudget > 0
-      ? trimMessagesByTokens(input.recentMessages, historyBudget)
-      : input.recentMessages.slice(-2)
+    const historyBudget = maxTokens - overhead - 100;
+    const trimmed =
+      historyBudget > 0 ? trimMessagesByTokens(input.recentMessages, historyBudget) : input.recentMessages.slice(-2);
 
-    historyMessages = trimmed.map((message) => ({ role: message.role as 'user' | 'assistant' | 'system', content: message.content }))
+    historyMessages = trimmed.map((message) => ({
+      role: message.role as "user" | "assistant" | "system",
+      content: message.content,
+    }));
   } else {
-    historyMessages = input.recentMessages.map((message) => ({ role: message.role as 'user' | 'assistant' | 'system', content: message.content }))
+    historyMessages = input.recentMessages.map((message) => ({
+      role: message.role as "user" | "assistant" | "system",
+      content: message.content,
+    }));
   }
 
-  if (firstMessage) historyMessages.push(firstMessage)
+  if (firstMessage) historyMessages.push(firstMessage);
 
   for (const message of insertDepthBlocks(historyMessages, atDepthBlocks, safeReplace)) {
-    messages.push(message)
+    messages.push(message);
   }
 
   for (const block of afterHistoryBlocks) {
-    messages.push(contextBlockToMessage(block, safeReplace))
+    messages.push(contextBlockToMessage(block, safeReplace));
   }
 
-  messages.push(userInputMsg)
+  messages.push(userInputMsg);
 
-  const previewText = messages
-    .map((message) => `## ${message.role}\n${message.content}`)
-    .join('\n\n---\n\n')
+  const previewText = messages.map((message) => `## ${message.role}\n${message.content}`).join("\n\n---\n\n");
 
-  const tokenEstimate = estimateTokens(messages)
+  const tokenEstimate = estimateTokens(messages);
 
   return {
     messages,
     previewText,
     tokenEstimate,
     includedContextBlocks: sortedContextBlocks,
-  }
+  };
 }
 
 export function estimateTokens(messages: GenerateMessage[]): number {
-  const text = messages.map((m) => m.content).join('\n')
-  return Math.ceil(text.length / 4)
+  const text = messages.map((m) => m.content).join("\n");
+  return Math.ceil(text.length / 4);
 }
 
-export { DEFAULT_SYSTEM_RULES, DIALOGUE_FORMAT_RULES }
+export { DEFAULT_SYSTEM_RULES, DIALOGUE_FORMAT_RULES };
