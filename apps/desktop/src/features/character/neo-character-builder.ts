@@ -15,6 +15,7 @@ export {
   normalizeCreationPlan,
   normalizeWorldbookEntries,
   normalizeMvuConfig,
+  exportPackToFolder,
   REFERENCE_TEXTS,
 } from "./builder";
 
@@ -26,6 +27,7 @@ export type {
   NeoBuilderConversationMessage,
   NeoBuilderToolEvent,
   NeoBuilderChoice,
+  NeoBuilderQuestion,
   NeoBuilderWebSearchResult,
   NeoBuilderEvaluationReport,
   NeoCreationPlan,
@@ -33,4 +35,5 @@ export type {
   NeoPersonalityPalette,
   NeoMvuConfig,
   ValidationResult,
+  CharacterCardPack,
 } from "./builder";

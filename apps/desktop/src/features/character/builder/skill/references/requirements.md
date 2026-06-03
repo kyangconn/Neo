@@ -1,39 +1,71 @@
 # 需求对齐
 
-任何完整角色卡开始前都要先做信息收集。Whale Builder 不创建外部项目，但仍保留原 skill 的"先规划、再创作、再校验"节奏。
+任何项目开始前的信息收集阶段。先收集项目属性并创建项目，再收集世界/角色/条目信息，最后产出 `创作规划.yaml`。
 
 ## 铁律
 
-用户个人独特的想法和思路是内容独创性的保障。你的任务是忠实收集和整理需求；关键设定不确定时必须询问用户确认。可以用启发式选项帮助用户做决定，但不要把自己的猜测当成用户设定。
+用户个人独特的想法和思路是内容独创性的保障。
+你的任务是忠实地收集、记录用户需求，任何不确定之处都必须询问用户确认。
+即使用户没有确定的思路，也只能通过启发式提问引导用户，严禁猜测、推断用户想法。
 
 ## 对齐模式
 
-开头判断用户偏好：
+对齐阶段开头询问用户偏好：
 
-- 粗略规划：先确定骨架，细节在创作时补问。
-- 一次确认：尽量一次把核心信息定下来。
-- 直接生成：用户明确说"直接写"时，可减少追问，但必须避免编造关键专有名词。
+> 你希望先粗略规划、细节留到创作时再确认，还是一次性把所有信息都定下来？
+
+根据回答调整提问深度，规划文档的段落完整度自然反映模式：
+
+| 段落 | 粗略规划 | 一次确认 |
+|------|---------|---------|
+| project.* | 全部必填 | 全部必填 |
+| world.* | 全部必填 | 全部必填 |
+| characters.* | 全部必填 | 全部必填 |
+| style.* | 全部必填 | 全部必填 |
+| entries | 全部必填 | 全部必填 |
+| mvu | 只需 structure，可粗略 | structure + variables 完整 |
+| ejs | 只填 entries | preprocessing + entries 完整 |
+| first_message | 可只填 format | format + scene + opening_situation |
+
+粗略规划模式下，在 `创作规划.yaml` 中用 `# 待细化` YAML 注释标记需要创作阶段补全的字段。例如：
+
+```yaml
+variables:                    # 待细化：取值范围和格式约束待创作阶段补充
+  - path: 苏云.好感度
+    type: number
+```
+
+创作阶段遇到 `# 待细化` 注释时，必须先追问用户补全后再继续。
+
+创作阶段遇到规划文档中缺失的信息时，按需追问。
 
 ## 流程
 
-1. 读取 references/project-setup.md，确定 Whale Play 工作台属性。
-2. 读取 references/requirements/world-characters.md，收集世界与角色信息。
-3. 读取 references/requirements/entries-dynamics-style.md，规划世界书条目、动态阶段、风格与开场白。
-4. 读取 references/requirements/planning-yaml.md，调用 present_creation_plan 展示创作规划并等待用户确认。
-5. 用户确认后进入 references/composition.md。
+1. 读取 `references/project-setup.md`，完成项目属性收集并创建项目。
+2. 读取 `references/requirements/world-characters.md`，收集世界与角色信息。
+3. 读取 `references/requirements/entries-dynamics-style.md`，规划条目、MVU/EJS、写作风格与开场白。
+4. 读取 `references/requirements/planning-yaml.md`，编写项目目录下的 `创作规划.yaml`。
 
-## 必须追问的情况
+## 编写规划文档
 
-- 角色名、地名、组织名、关键称谓缺失。
-- 用户给了真实题材但未开启或未确认联网搜索。
-- 用户要求还原原作/真实资料，却没有给材料来源。
-- 角色和用户的关系入口不清楚。
-- 世界书是否需要前置/召回拆分不清楚。
+需求对齐完成后，**必须**产出编写规划文档。
 
-## 可默认处理的情况
+保存路径：项目目录下的 `创作规划.yaml`
 
-- tags 可根据题材生成 2-6 个短标签。
-- 没有头像时不生成 avatar。
-- 世界书名称可用"角色名 Worldbook"。
-- always 世界书 position 默认为 beforeHistory。
-- trigger 世界书 position 默认为 afterHistory。
+完整结构和示例见 `references/requirements/planning-yaml.md`。
+
+产出此文档后，**必须暂停并等待用户确认**。确认内容包括：
+- 条目类型和数量是否覆盖需求
+- 字符名、地名等关键名称是否正确（尤其检查繁体字/日文汉字）
+- 条目顺序是否符合预期
+- MVU/EJS 规划是否满足动态需求
+
+用户确认后，按 `entries` 数组顺序依次进行条目创作（`references/composition.md`）。
+
+## 参考
+
+- `references/project-setup.md`：项目属性收集、typeLists 调整与项目创建
+- `references/requirements/world-characters.md`：世界与角色信息收集
+- `references/requirements/entries-dynamics-style.md`：条目、MVU/EJS、风格与开场白规划
+- `references/requirements/planning-yaml.md`：`创作规划.yaml` 完整结构和示例
+- `references/requirements/entry-types.md`：条目类型说明

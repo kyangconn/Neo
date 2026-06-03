@@ -455,6 +455,82 @@ fn save_text_file(default_filename: String, content: String) -> Result<Option<St
 }
 
 #[tauri::command]
+fn pick_folder() -> Result<Option<String>, String> {
+    let path = rfd::FileDialog::new().pick_folder();
+    Ok(path.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
+fn write_file_to_path(path: String, content: String) -> Result<(), String> {
+    let p = PathBuf::from(&path);
+    if let Some(parent) = p.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create directory: {err}"))?;
+    }
+    fs::write(&p, content).map_err(|err| format!("Failed to write file: {err}"))
+}
+
+#[tauri::command]
+fn save_workspace_dir(
+    app: tauri::AppHandle,
+    session_id: String,
+    entries_json: String,
+) -> Result<(), String> {
+    let mut dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed to resolve app data directory: {err}"))?;
+    dir.push("worldbook_workspaces");
+    dir.push(&session_id);
+
+    // Clear existing workspace files
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .map_err(|err| format!("Failed to clear workspace dir: {err}"))?;
+    }
+    fs::create_dir_all(&dir)
+        .map_err(|err| format!("Failed to create workspace dir: {err}"))?;
+
+    let entries: Vec<serde_json::Value> = serde_json::from_str(&entries_json)
+        .map_err(|err| format!("Invalid entries JSON: {err}"))?;
+
+    for entry in &entries {
+        let path_str = entry["entryPath"].as_str().unwrap_or("");
+        let content = entry["content"].as_str().unwrap_or("");
+        if path_str.is_empty() || content.is_empty() { continue; }
+
+        let file_path = dir.join(path_str);
+        if let Some(parent) = file_path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|err| format!("Failed to create dir: {err}"))?;
+        }
+        fs::write(&file_path, content)
+            .map_err(|err| format!("Failed to write entry file {}: {err}", path_str))?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+fn delete_workspace_dir(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let mut dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|err| format!("Failed to resolve app data directory: {err}"))?;
+    dir.push("worldbook_workspaces");
+    dir.push(&session_id);
+
+    if dir.exists() {
+        fs::remove_dir_all(&dir)
+            .map_err(|err| format!("Failed to delete workspace dir: {err}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
 fn save_debug_prompt(
     app: tauri::AppHandle,
     folder: String,
@@ -800,6 +876,10 @@ pub fn run() {
             app_store_remove,
             app_store_entries,
             lan_server_status,
+            pick_folder,
+            write_file_to_path,
+            save_workspace_dir,
+            delete_workspace_dir,
             save_text_file,
             save_debug_prompt,
             sqlite_init_messages,

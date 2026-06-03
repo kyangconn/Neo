@@ -1,83 +1,192 @@
-# Whale Play 创作规划结构
+# 创作规划.yaml
 
-Whale Builder 不写外部文件，但完整项目必须生成等价的创作规划对象，并在右侧以"创作规划.yaml"产出物展示。该对象是断点续接、逐条产出和编辑评估的事实来源。
+需求对齐完成后，在项目目录下产出 `创作规划.yaml`。
 
-## present_creation_plan 参数建议
-
-- projectName：项目或角色名。
-- worldbookName：计划生成的世界书名称。
-- sourceType：原创 / 用户材料 / 联网资料 / 混合。
-- planningMode：粗略规划 / 一次确认 / 直接生成。
-- summary：一句话说明创作方向。
-- characterPlan / characters：角色名、身份、关系入口、核心冲突。
-- personalityPalette：底色、主色调、点缀、衍生。
-- worldPlan / world：世界观、地点、组织、规则。
-- entryPlan：计划生成的世界书条目列表，每条必须有 name、type、purpose，最好有 keys。
-- firstMessagePlan / firstMessage：开场方式。
-- openQuestions：必须用户确认的问题。
-- yaml：可选；不传时工具会自动生成。
-- options：确认或调整的可点击选项。
-
-## YAML 结构
-
-~~~yaml
+```yaml
 project:
   name: xxx
   worldbookName: xxx
   form: charactercard
-  sourceType: 原创
-  planningMode: 粗略规划
+  mvu: true
+  avatar: path/to/avatar.png
 
 world:
-  overview: xxx
+  overview: 现代都市修仙世界，灵气复苏后修仙者融入现代社会…
   regions:
-    - xxx
+    - name: 华东区
+      scenes: [学校, 商业街, 修仙协会分部]
+      description: 经济发达的东部沿海区域，修仙协会总部所在地  # 可选
+    - name: 西北区
+      scenes: [荒漠秘境]
   factions:
-    - xxx
+    - name: 修仙协会
+      description: 官方修仙管理组织，负责登记和监管修仙者
+      territory: 华东区           # 可选：势力主要活动区域
+      key_members: [张会长]       # 可选：关键成员
+    - name: 暗月教
+      description: 地下修仙势力，追求禁忌功法
+      territory: 西北区
 
 characters:
-  - name: xxx
-    identity: xxx
-    relationship: xxx
-    palette:
-      base: xxx
-      main:
-        - xxx
-      accents:
-        - xxx
+  - name: 苏云
+    basic:
+      age: 19
+      gender: 女
+      identity: 修仙协会华东分部见习执法者
+      relationship: 协会派来监视<user>的搭档
+    appearance: [左手腕有一道淡金色的灵纹疤痕，总是穿协会制服但会把袖口挽起来]
+    personality:
+      base: 冷静                        # 底色，不随阶段变化，写一次
+      # stages 数组的顺序和数量与 ejs.entries 中对应条目的 stages 一一对应
+      # 创作阶段时，base 写一次，各阶段的 main/accent 按 EJS 条件展开为完整调色盘
+      stages:                      # 可选：多阶段调色盘
+        - name: 初识期
+          main: [警惕, 克制]
+          accent: [好奇]
+          description: 以公务态度对待<user>，保持职业距离，暗中观察
+        - name: 熟悉期
+          main: [坦率, 倔强]
+          accent: [好奇]
+          description: 开始分享修仙界的见闻，偶尔流露对<user>的好奇
+        - name: 亲密期
+          main: [温柔, 依赖]
+          accent: [倔强]
+          description: 信任建立，在<user>面前卸下职业面具，展现柔软一面
+        - name: 深爱期
+          main: [依赖, 占有]
+          accent: [脆弱]
+          description: 深度羁绊，占有欲显现，脆弱坦露不再隐藏
+    tri_faceted: false
+  - name: 季清寒
+    basic:
+      age: 23
+      gender: 女
+      identity: 修仙协会华东分部资深执法者，苏云的前辈搭档
+      relationship: 苏云的导师，<user>的间接联络人
+    appearance: [总把长发束成低马尾，右手无名指戴着协会指环]
+    personality:
+      base: 冷静
+      main: [理性, 严苛]
+      accent: [温柔]
+    tri_faceted:
+      needed: true
+      facets:                    # 可选：如果用户已描述了各面
+        - trigger: 执行公务时
+          mode: 不苟言笑的资深执法者，决策果断不留情面
+        - trigger: 独处或与苏云私下相处
+          mode: 放下架子的前辈，偶尔流露对逝去搭档的怀念
+        - trigger: 面对<user>暴露自身弱点时
+          mode: 卸下所有防备，承认自己也会害怕
+  - name: 王老师
+    type: NPC
+    function: 提供修仙界信息
+    appearance: [总是穿深灰色西装，袖口沾粉笔灰]  # 可选
 
 style:
   perspective: 第三人称
-  tone: 克制、直接
-  mood: 悬疑
+  tone: 口语化、轻松
+  mood: 温馨
+  reference: 参考村上春树的文风  # 可选
 
-entries:
-  - id: entry_1
-    name: 世界设定
-    type: 世界观
-    path: 世界书/世界观/世界设定.yaml
-    purpose: 约束底层世界规则
-    status: planned
-    keywords:
-      - xxx
+entries:                         # 数组顺序即创作顺序，项目级事实来源
+  - name: 世界设定               # 必填：entryManifest 中的条目名
+    type: 世界观                  # 必填：条目类型，见类型说明表
+    path: 世界书/世界观/世界设定.yaml  # 必填
+  - name: 华东区
+    type: 地理
+    path: 世界书/地理/华东区.yaml
+  - name: 阶段指导
+    type: 阶段指导
+    path: 世界书/阶段指导/阶段指导.yaml
+    purpose: 根据当前阶段渲染主持目标、互动方式和推进边界
+  - name: 苏云_基础信息
+    type: 角色
+    path: 世界书/角色/苏云/基础信息.yaml
+    part: basic                   # 可选：角色类型的 part 子分类
+    scope: specific               # 可选
+    rephrase: false               # 可选
+    purpose: 苏云的基础档案       # 可选：给创作阶段用
+    source_chapters: [第1章, 第5章] # 可选：转化项目
+    keywords: [苏云, 小云]        # 可选：缺省时按 conventions 建议推导
 
-first_message:
+mvu:                             # 可选段落，project.mvu=true 时出现
+  structure: |
+    顶层结构：
+    ├── 世界
+    │   ├── 当前时间
+    │   ├── 当前区域
+    │   ├── 天气与灵气浓度
+    │   └── 近期事务
+    ├── 苏云
+    │   ├── 好感度
+    │   ├── 信任度
+    │   └── 任务进度
+    └── 主角
+        ├── 灵力值
+        └── 物品栏
+  variables:                     # 待细化：粗略规划时可省略或只写粗略结构
+    # type 字段默认 string，可省略；需要其他类型时显式声明
+    # ── 世界 ──
+    - path: 世界.当前时间
+      format: YYYY/MM/DD-HH:MM
+      description: 当前场景时间
+    - path: 世界.当前区域
+      description: 角色当前所在区域
+    - path: 世界.天气与灵气浓度
+      type: object
+      fields:
+        weather: string          # 晴/阴/雨
+        spiritual_density: number # 0-1，灵气浓度
+    - path: 世界.近期事务
+      type: z.array
+      description: 进行中的主线事件标记
+    # ── 苏云 ──
+    - path: 苏云.好感度
+      type: number
+      range: 0~100
+      check: 关键事件触发跳升，日常互动小幅增长，冷落则每日衰减2点  # 可选，仅特殊/复杂更新要求
+    - path: 苏云.信任度
+      type: number
+      range: 0~100
+      check: 与好感度独立；坦诚/帮助行为+5~10，欺骗行为-15~20，信任度影响苏云分享情报的深度
+    - path: 苏云.任务进度
+      enum: [待命, 调查中, 对峙, 结案]
+      description: 协会执法任务阶段
+    # ── 主角 ──
+    - path: 主角.灵力值
+      type: number
+      range: 0~100
+      description: 当前可用灵力
+    - path: 主角.物品栏
+      type: z.record
+
+ejs:                             # 可选段落，有 EJS 需求时出现
+  preprocessing:                 # 待细化：粗略规划时可省略，创作阶段推导变量映射
+    - name: current_location
+      variable: 世界.当前区域    # MVU 变量路径，不加 stat_data 前缀
+    - name: affection
+      variable: 苏云.好感度
+  entries:
+    - name: 华东区
+      complexity: 条目显隐
+      condition: "current_location?.includes('华东区')"
+    - name: 苏云_性格调色盘
+      complexity: 段落控制
+      stages:                        # 多阶段调色盘的阶段判定条件，与 characters 中 stages 一一对应
+        - name: 初识期
+          condition: affection < 10
+        - name: 熟悉期
+          condition: affection >= 10 && affection < 30
+        - name: 亲密期
+          condition: affection >= 30 && affection < 60
+        - name: 深爱期
+          condition: affection >= 60
+
+first_message:                   # 可选段落，角色卡时出现
   format: 叙事式
-  word_count: 120-350
-  scene: xxx
-  opening_situation: xxx
-~~~
-
-## 展示给用户的确认内容
-
-- 角色名、地名、组织名是否正确。
-- 性格调色盘的底色、主色调、点缀是否符合用户想法。
-- 哪些性格衍生需要用户亲自补。
-- 角色和用户的关系入口是否符合预期。
-- 世界书条目数量和类型是否合适。
-- 是否需要联网搜索补资料。
-- firstMessage 的切入点是否正确。
-
-## 何时可以跳过确认
-
-用户明确说"直接生成""不用问""你决定"，且没有关键专有名词缺失时，可以直接进入创作。但仍要生成 creationPlan，并在保存前调用 validate_character_draft。
+  word_count: 500~700            # 叙事式时的字数范围，大纲式不需要
+  scene: 协会分部门口，雨夜        # 待细化：粗略规划时可省略
+  opening_situation: |           # 待细化：粗略规划时可省略
+    苏云收到协会指令，前往华东分部报到时，在门口遇见<user>。
+    她没想到这次任务的搭档竟是个看起来完全不像修仙者的人。
+```

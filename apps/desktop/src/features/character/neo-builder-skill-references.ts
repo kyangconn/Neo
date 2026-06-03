@@ -26,6 +26,15 @@ import referencesContentsCreationWorldbuildingGeographyRaw from "./builder/skill
 import referencesContentsCreationFirstMessageRaw from "./builder/skill/references/contents-creation/first-message.md?raw";
 import referencesContentsCreationPresentationRaw from "./builder/skill/references/contents-creation/presentation.md?raw";
 import referencesContentsCreationStageGuidanceRaw from "./builder/skill/references/contents-creation/stage-guidance.md?raw";
+import referencesMvuGuideRaw from "./builder/skill/references/mvu/guide.md?raw";
+import referencesMvuInitvarRaw from "./builder/skill/references/mvu/initvar.md?raw";
+import referencesMvuSchemaRaw from "./builder/skill/references/mvu/schema.md?raw";
+import referencesMvuUpdateRulesGuideRaw from "./builder/skill/references/mvu/update-rules-guide.md?raw";
+import referencesMvuUpdateRulesRaw from "./builder/skill/references/mvu/update-rules.yaml?raw";
+import referencesMvuZodRuleRaw from "./builder/skill/references/mvu/zod-rule.yaml?raw";
+import referencesEjsGuideRaw from "./builder/skill/references/ejs/guide.md?raw";
+import referencesEjsReferenceRaw from "./builder/skill/references/ejs/reference.md?raw";
+import referencesEjsFeaturesRaw from "./builder/skill/references/ejs/features.md?raw";
 import referencesTypeStateRaw from "./builder/skill/references/type/state.ts?raw";
 import referencesTypeSettingsRaw from "./builder/skill/references/type/settings.ts?raw";
 
@@ -211,6 +220,61 @@ const referenceDefinitions: NeoBuilderSkillReference[] = [
     title: "阶段指导",
     summary: "无 MVU/EJS 时的关系阶段、剧情阶段和场景推进指导。",
     content: referencesContentsCreationStageGuidanceRaw,
+  },
+  {
+    id: "references/mvu/guide.md",
+    title: "MVU 变量系统",
+    summary: "MVU 编写流程：schema.ts → initvar.yaml → 变量更新规则.yaml。",
+    aliases: ["mvu-guide"],
+    content: referencesMvuGuideRaw,
+  },
+  {
+    id: "references/mvu/initvar.md",
+    title: "MVU 初始变量",
+    summary: "YAML 格式的初始变量值，需与 schema.ts 的 Schema 对应。",
+    content: referencesMvuInitvarRaw,
+  },
+  {
+    id: "references/mvu/schema.md",
+    title: "MVU 变量结构脚本",
+    summary: "schema.ts 的 Zod 4 编写规范：类型设计、幂等性、枚举克制。",
+    content: referencesMvuSchemaRaw,
+  },
+  {
+    id: "references/mvu/update-rules-guide.md",
+    title: "MVU 变量更新规则",
+    summary: "变量更新规则的字段说明、type/range/check 写法与示例。",
+    content: referencesMvuUpdateRulesGuideRaw,
+  },
+  {
+    id: "references/mvu/update-rules.yaml",
+    title: "MVU 更新规则参考",
+    summary: "变量更新规则的 YAML 参考示例（按需查阅）。",
+    content: referencesMvuUpdateRulesRaw,
+  },
+  {
+    id: "references/mvu/zod-rule.yaml",
+    title: "Zod 编写规则",
+    summary: "Zod 4 的编写约束：禁止项、transform 限制、prefault 规则。",
+    content: referencesMvuZodRuleRaw,
+  },
+  {
+    id: "references/ejs/guide.md",
+    title: "EJS 方案编写",
+    summary: "EJS 复杂度分级、@if 条目显隐、段落控制和动态文本（当前 Whale Builder 暂不支持，保留供参考）。",
+    content: referencesEjsGuideRaw,
+  },
+  {
+    id: "references/ejs/reference.md",
+    title: "EJS 语法参考",
+    summary: "EJS 语法参考手册（当前 Whale Builder 暂不支持，保留供参考）。",
+    content: referencesEjsReferenceRaw,
+  },
+  {
+    id: "references/ejs/features.md",
+    title: "EJS 可用特性",
+    summary: "EJS 可用特性与 API（当前 Whale Builder 暂不支持，保留供参考）。",
+    content: referencesEjsFeaturesRaw,
   },
   {
     id: "references/type/state.ts",

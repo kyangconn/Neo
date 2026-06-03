@@ -61,6 +61,10 @@ export interface CreateWorldbookEntryInput {
   priority: number
   type: WorldbookEntryType
   triggerMode: TriggerMode
+  /** 条目在文件系统中的相对路径, e.g. "世界书/角色/苏云/基础信息.txt" */
+  entryPath?: string
+  /** 条目分类名称, e.g. "角色", "世界观", "NPC" */
+  entryTypeName?: string
   selectiveLogic?: TriggerMode
   scanDepth?: number
   caseSensitive?: boolean
@@ -81,6 +85,8 @@ export interface UpdateWorldbookEntryInput {
   priority?: number
   type?: WorldbookEntryType
   triggerMode?: TriggerMode
+  entryPath?: string
+  entryTypeName?: string
   selectiveLogic?: TriggerMode
   scanDepth?: number
   caseSensitive?: boolean

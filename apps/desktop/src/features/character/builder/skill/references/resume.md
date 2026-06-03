@@ -1,25 +1,101 @@
 # 断点续接
 
-Whale Builder 的断点不依赖 entryManifest，而依赖本地工作台记录。
+当用户中断后返回时，检测进度并恢复。
 
-## 状态来源
+## 步骤
 
-- 当前对话消息
-- 已生成草稿 draft
-- 已生成世界书 worldbookDraft
-- 保存状态 savedCharacterId
-- 工具调用和 usage 记录
+1. **检测环境**：查找 `.cardrc.json`，确认工作区。未找到则提醒用户
+2. **读取编写规划文档**（`创作规划.yaml`）
+3. **批量查询进度**：用命令一次性获取所有已注册条目的摘要和状态
+4. **对比规划与注册**：将 entryManifest 中已有条目与 `创作规划.yaml` 对比，确定未完成条目
+5. **向用户展示进度概要**，确认从哪个部分/条目继续
+6. **继续创作流程**
 
-## 状态判断
+## 使用 forge CLI
 
-- 构思中：有对话或选择，但还没有 draft。
-- 待保存：已有 draft，但用户还没点击创建。
-- 已保存：已经写入 Whale Play 角色库。
+查询项目状态：
 
-## 续接流程
+```bash
+# 项目属性
+node scripts/tavern-cards-forge.mjs query {project} '$.mvu' '$.form'
 
-1. 读取当前对话里最后的用户目标。
-2. 如果已有 draft，先根据用户新反馈定位要修改的字段或世界书条目。
-3. 如果没有 draft，回到 requirements 或 composition 的对应阶段。
-4. 不要把已保存角色当成要修改的目标；当前版本只支持继续创作记录，不做角色库编辑。
-5. 继续时仍要按需读取 reference，不能只凭上一轮记忆。
+# 获取所有已注册条目的名称（类型+条目名）
+node scripts/tavern-cards-forge.mjs query {project} '$.entryManifest.*~' --format yaml
+
+# 批量获取所有条目的摘要
+node scripts/tavern-cards-forge.mjs query {project} '$.entryManifest[*][*].abstract' --format yaml
+```
+
+`query` 返回 JSON 到 stdout，用 `--format yaml` 可获取 YAML 输出。
+
+建议在向用户展示进度时，将条目名称与摘要组合为易读的列表，例如：
+
+```
+已完成条目：
+  世界观/世界设定：世界规则和物理法则的宏观框架
+  地理/华东区：包含上海、杭州、南京等主要城市
+  角色/苏云_基础信息：19岁修仙协会华东分部见习执法者
+未完成条目：
+  角色/苏云_性格调色盘
+  NPC/王老师
+```
+
+## 判断条目完成状态
+
+批量获取 entryManifest 中所有条目信息后，与 `创作规划.yaml` 的 `entries` 数组对照：
+
+- entryManifest 中存在该条目 → 已完成，跳过
+- entryManifest 中不存在该条目 → 未完成，从此条目继续
+
+文件存在但不被 entryManifest 引用的情况：
+- 该条目在 `创作规划.yaml` 的 entries 中 → 编写未完成（内容已写但未注册），继续编写并注册
+- 该条目不在 `创作规划.yaml` 的 entries 中 → 询问用户是否保留
+
+## 判断 MVU 完成状态（project.mvu: true 时）
+
+先确认 mvu 开关：
+
+```bash
+node scripts/tavern-cards-forge.mjs query {project} '$.mvu'
+```
+
+| 检查项 | 命令 | 完成条件 |
+|---|---|---|
+| schema.ts | 检查文件 | `schema.ts` 文件存在 |
+| initvar.yaml | `query {project} '$.entryManifest.MVU.*~'` | 有 part=initvar 条目且对应文件存在 |
+| 变量更新规则 | 同上 | 有 part=update_rules 条目且对应文件存在 |
+
+三项都存在 → MVU 完成。否则从第一个缺失项继续。
+
+## 判断 EJS 完成状态
+
+从 `创作规划.yaml` 的 `ejs.entries` 读取 EJS 条目列表：
+
+| 检查项 | 命令 | 完成条件 |
+|---|---|---|
+| EJS预处理 注册 | `query {project} '$.entryManifest.EJS预处理'` | EJS预处理 类型条目存在 |
+| 各 EJS 条目已处理 | — | 创作规划文档 ejs.entries 中每条，entryManifest 对应条目的 `contents` 首片段以 `@@if ` 开头，或对应内容文件正确使用 EJS 语句 |
+
+两项都满足 → EJS 完成。否则从第一个缺失项继续。
+
+## 判断开场白完成状态（project.form: charactercard 时）
+
+```bash
+node scripts/tavern-cards-forge.mjs query {project} '$.form'
+```
+
+| 检查项 | 方法 |
+|---|---|
+| 默认开场白 | `开场白/0.txt` 文件存在 |
+
+## 无编写规划文档时
+
+如果没有编写规划文档（旧项目或手动创建的项目），通过以下命令推断项目状态：
+
+```bash
+node scripts/tavern-cards-forge.mjs query {project} '$.form' '$.mvu'
+node scripts/tavern-cards-forge.mjs query {project} '$.entryManifest.*~' --format yaml
+node scripts/tavern-cards-forge.mjs query {project} '$.entryManifest[*][*].abstract' --format yaml
+```
+
+向用户展示已有条目列表和项目属性，确认后继续。

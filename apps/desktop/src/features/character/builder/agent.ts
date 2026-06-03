@@ -16,6 +16,7 @@ import type {
 } from "@neo-tavern/shared";
 import { withDeepSeekUsageCost } from "@/features/billing/deepseek-billing";
 import { getChatScopedDeepSeekUserId, shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
+import { persistWorkspaceEntries } from "./workspace-files";
 import type {
   NeoCharacterBuilderOptions,
   NeoCharacterBuilderResult,
@@ -23,6 +24,7 @@ import type {
   NeoBuilderTurnResult,
   NeoBuilderToolEvent,
   NeoBuilderChoice,
+  NeoBuilderQuestion,
   NeoCreationPlan,
   NeoPersonalityPalette,
   NeoBuilderEvaluationReport,
@@ -83,6 +85,7 @@ export async function runNeoCharacterBuilderTurn(
     mvu: options.currentMvu ?? undefined,
   };
   let pendingChoices: NeoBuilderChoice[] | undefined;
+  let pendingQuestions: NeoBuilderQuestion[] | undefined;
   let assistantContent = "";
   let textContinuations = 0;
 
@@ -116,6 +119,7 @@ export async function runNeoCharacterBuilderTurn(
       return {
         content: assistantContent || errMsg,
         choices: pendingChoices,
+        questions: pendingQuestions,
         draft: state.savedDraft,
         creationPlan: state.creationPlan,
         personalityPalette: state.personalityPalette,
@@ -176,13 +180,23 @@ export async function runNeoCharacterBuilderTurn(
           if (executed.evaluationReport) state.evaluationReport = executed.evaluationReport;
           if (executed.mvu) state.mvu = executed.mvu;
           if (executed.choices?.length) pendingChoices = executed.choices;
+          if (executed.questions?.length) pendingQuestions = executed.questions;
+
+          // Persist workspace files to disk when draft is saved
+          if (toolName === "save_character_draft" && executed.savedDraft?.worldbookEntries?.length) {
+            const sessionId = options.scopeId || "unknown";
+            persistWorkspaceEntries(sessionId, executed.savedDraft.worldbookEntries).catch(() => {});
+          }
 
           if (executed.stopForUser) {
-            const output = executed.output as Record<string, unknown>;
-            assistantContent = buildStopForUserContent(output);
+            const stopForUserContent =
+              executed.output && typeof executed.output === "object"
+                ? buildStopForUserContent(executed.output as Record<string, unknown>)
+                : "";
             return {
-              content: assistantContent || result.content || "我需要你再补一个选择。",
+              content: stopForUserContent || assistantContent || result.content || "我需要你再补一个选择。",
               choices: pendingChoices,
+              questions: pendingQuestions,
               draft: state.savedDraft,
               creationPlan: state.creationPlan,
               personalityPalette: state.personalityPalette,
@@ -252,6 +266,18 @@ export async function runNeoCharacterBuilderTurn(
       });
       continue;
     }
+
+    // About to break naturally but no draft yet — nudge LLM to save (only once)
+    if (!state.savedDraft && textContinuations === 0 && (state.creationPlan || options.currentDraft || options.currentWorldbookEntries?.length)) {
+      textContinuations = 5; // prevent re-nudge
+      messages.push({ role: "assistant", content: result.content || assistantContent });
+      messages.push({
+        role: "user",
+        content: "请不要只输出文本说明。你已经有了足够的产出物，请调用 save_character_draft 保存草稿（以 pack 形式传递完整产出），这样才能在右侧面板显示角色卡和世界书。",
+      });
+      continue;
+    }
+
     break;
   }
 
@@ -259,6 +285,7 @@ export async function runNeoCharacterBuilderTurn(
     content:
       assistantContent || (state.savedDraft ? `产出物已准备好：${state.savedDraft.character.name}。` : "我已经处理完这一轮。"),
     choices: pendingChoices,
+    questions: pendingQuestions,
     draft: state.savedDraft,
     creationPlan: state.creationPlan,
     personalityPalette: state.savedDraft?.personalityPalette ?? state.personalityPalette,
@@ -350,6 +377,11 @@ export async function buildNeoCharacterDraft(
           if (executed.personalityPalette) state.personalityPalette = executed.personalityPalette;
           if (executed.evaluationReport) state.evaluationReport = executed.evaluationReport;
           if (executed.mvu) state.mvu = executed.mvu;
+
+          if (toolName === "save_character_draft" && executed.savedDraft?.worldbookEntries?.length) {
+            const sessionId = options.scopeId || "unknown";
+            persistWorkspaceEntries(sessionId, executed.savedDraft.worldbookEntries).catch(() => {});
+          }
         } catch (err) {
           toolLog.push(toolName);
           messages.push({

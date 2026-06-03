@@ -1,4 +1,4 @@
-import type { NeoBuilderTurnOptions, NeoBuilderChoice, NeoCreationPlan } from "./types";
+import type { NeoBuilderTurnOptions, NeoBuilderChoice, NeoBuilderQuestion, NeoCreationPlan } from "./types";
 import type { CreateCharacterInput, GenerateMessage } from "@neo-tavern/shared";
 import { trimString, optionalString, normalizeStringArray } from "./utils";
 import { normalizePersonalityPalette } from "./validation";
@@ -7,85 +7,39 @@ import { normalizePersonalityPalette } from "./validation";
 
 export function buildSystemPrompt(): string {
   return [
-    "你是 Whale Play 内置角色卡 Builder。你通过工具调用生成 Whale Play 原生角色卡草稿。",
-    "你必须像使用本地 skill 一样工作：先读取 SKILL.md，再按场景路由读取 references/ 下的文档。",
-    "完整创建任务至少读取 references/requirements.md、references/composition.md、references/rules.md、references/conventions.md；再按需读取角色、世界观、开场白、世界书等创作文档。",
-    "角色性格必须使用性格调色盘：底色、主色调、点缀、每个性格点 2-3 条具体衍生。衍生不足时不要硬编，先追问用户。",
-    "如果用户要求 MVU 变量系统，按 references/mvu/guide.md 的完整流程产出 schema.ts、initvar.yaml、变量更新规则.yaml。",
-    "当前版本不支持 EJS 动态方案。",
-    "完成后调用 save_character_draft 保存最终草稿。不要只在普通文本里输出最终结果。",
-    "输出内容面向中文用户，除非用户材料要求其他语言。",
+    "你是 Whale Builder，一个基于 Skill 的角色卡生成 Agent。",
+    "你的 Skill 定义在 SKILL.md 及 references/ 下的创作规范文档中。",
+    "启动后必须先调用 read_skill_reference('SKILL.md') 加载 Skill 入口，再按 Skill 中的场景路由和流程执行。",
+    "Skill 是你唯一的事实来源——工作流、数据格式、写作规则均以 Skill 为准。",
+    "不确定读什么文档时调用 list_skill_references。",
+    "完成后必须调用 save_character_draft 保存最终草稿。只有调用这个工具，产出物才会显示在右侧面板。不要只在普通文本里输出结果。",
+    "输出内容面向中文用户。",
   ].join("\n");
 }
 
 export function buildUserPrompt(options: { concept: string; existingCharacter?: CreateCharacterInput | null }): string {
-  return JSON.stringify(
-    {
-      task: "根据用户材料生成 Whale Play 原生角色卡草稿。",
-      userConcept: options.concept,
-      existingCharacter: options.existingCharacter ?? null,
-      expectedOutput: {
-        character: {
-          name: "string",
-          description: "string",
-          personality: "string",
-          scenario: "string",
-          firstMessage: "string",
-          exampleDialogues: "string",
-          tags: ["string"],
-        },
-        personalityPalette: {
-          base: "string",
-          main: ["string"],
-          accents: ["string"],
-          derivatives: [{ color: "string", items: ["string"] }],
-          futureDerivatives: ["string"],
-        },
-        creationPlan: "optional NeoCreationPlan with entries status",
-        worldbookName: "optional string",
-        worldbookDescription: "optional string",
-        worldbookEntries: [
-          {
-            title: "string",
-            keys: "comma separated string; trigger entries require it",
-            content: "string",
-            priority: "number",
-            type: "always | trigger",
-            triggerMode: "and | or",
-            position: "beforeHistory for always, afterHistory for trigger",
-            role: "system",
-            enabled: true,
-          },
-        ],
-        notes: "optional short note for the user",
-      },
-    },
-    null,
-    2,
-  );
+  return JSON.stringify({
+    task: "根据用户材料生成角色卡草稿，格式以 Skill 规范为准。",
+    userConcept: options.concept,
+    existingCharacter: options.existingCharacter ?? null,
+  });
 }
 
 // ── Chat prompts ──
 
 export function buildChatSystemPrompt(options: NeoBuilderTurnOptions): string {
   return [
-    "你是 Whale Builder，一个像 Codex 一样协作的角色卡设计搭档。",
-    "你和用户通过多轮聊天共同完成 Whale Play 原生角色卡，而不是输出外部工程。",
-    "你必须像使用本地 skill 一样工作：先读取 SKILL.md，再根据场景路由读取 references/ 下的规则；不确定读什么时先调用 list_skill_references。",
-    "完整创建任务至少读取 references/requirements.md、references/composition.md、references/rules.md、references/conventions.md；局部任务读取对应 contents-creation 文档。",
-    "如果用户要求 MVU 变量系统，按 references/mvu/guide.md 的完整流程产出 schema.ts、initvar.yaml、变量更新规则.yaml，并通过 save_character_draft 的 mvu 字段保存。",
-    "当前版本不支持 EJS 动态方案。动态需求用 Whale Play 世界书和阶段指导表达。",
-    "你可以调用工具：列出/读取 Whale Play 规则、联网搜索、向用户给出选项追问、展示创作规划、校验草稿、保存草稿。",
-    "完整角色卡在进入正式创作前，优先调用 present_creation_plan 展示规划并等待确认；规划必须包含性格调色盘、世界书条目、firstMessage 切入点，并会持久化为创作规划.yaml。",
-    "创作时必须按 references/contents-creation/character/personality-palette.md 收集底色、主色调、点缀和衍生。不要只给性格标签；衍生不足时先追问用户。",
-    "完成或跳过规划中的条目时调用 record_entry_output。用户要求修改、审查或评估时调用 evaluate_character_draft。",
-    "如果用户信息不足，优先调用 ask_user_options，给出 2-4 个具体选项，引导用户补全会影响角色体验的细节。",
+    "你是 Whale Builder，一个基于 Skill 的角色卡生成 Agent。",
+    "你的 Skill 定义在 SKILL.md 及 references/ 下的创作规范文档中。",
+    "启动后必须先调用 read_skill_reference('SKILL.md') 加载 Skill 入口。Skill 是你唯一的事实来源——工作流、数据格式、写作规则均以 Skill 为准。",
+    "不确定读什么文档时调用 list_skill_references。",
+    "你可以调用工具：列出/读取 Skill 规则、联网搜索、向用户给出选项追问、展示创作规划、校验草稿、保存草稿。",
     options.webSearchEnabled
-      ? "联网搜索已开启。涉及真实地点、历史、职业、神话、作品风格、时代背景等资料时，可以调用 web_search；搜索后要把资料转化成角色设定，不要照抄网页。"
-      : "联网搜索未开启。不要调用 web_search，除非用户明确要求先打开联网搜索。",
-    "当信息足够时，调用 save_character_draft 保存 Whale Play 草稿。保存前可以调用 validate_character_draft。",
-    "回复要短、清楚、可操作。不要展示原始 JSON，除非用户要求。",
-    "输出内容默认中文。",
+      ? "联网搜索已开启。涉及真实地点、历史、职业、神话、作品风格、时代背景等资料时，可以调用 web_search。"
+      : "联网搜索未开启。不要调用 web_search。",
+    "同一创作阶段最多调用一次 ask_user_options；如果本阶段需要确认多个维度，把 2-5 个问题放进 questions 数组一次性询问。",
+    "当信息足够时，必须调用 save_character_draft 保存草稿。只有调用这个工具，右侧面板才会显示角色卡和世界书产出物。不要在普通文本里输出完成信息，必须通过工具调用保存。",
+    "回复要短、清楚、可操作。不展示原始 JSON。默认中文输出。",
   ].join("\n");
 }
 
@@ -113,6 +67,8 @@ export function buildChatContextPrompt(options: NeoBuilderTurnOptions): string {
           "position",
           "role",
           "enabled",
+          "entryPath",
+          "entryTypeName",
         ],
       },
     },
@@ -188,7 +144,7 @@ export function buildAutoContinueInstruction(options: {
     `当前创作规划进度：${progress.done}/${progress.total}。`,
     options.hasDraft ? "当前已有角色草稿。" : "当前还没有可保存的角色草稿。",
     options.hasWorldbookEntries ? "当前已有世界书条目。" : "当前还没有完整世界书条目。",
-    "如果确实需要用户决定，必须调用 ask_user_options 给出选项；不要用普通文本追问。",
+    "如果确实需要用户决定，必须调用 ask_user_options 给出选项；同一阶段有多个待确认点时，用 questions 数组一次性询问，不要拆成多轮普通文本追问。",
     "如果还在逐条产出，继续调用 record_entry_output 记录条目完成状态。",
     "如果条目已经完成，调用 validate_character_draft 校验；校验失败就修复并再次校验。",
     "校验通过后必须调用 save_character_draft 保存最终草稿。",
@@ -361,4 +317,38 @@ export function normalizeChoices(value: unknown): NeoBuilderChoice[] {
     })
     .filter((choice): choice is NeoBuilderChoice => !!choice)
     .slice(0, 4);
+}
+
+export function normalizeQuestionBundle(args: Record<string, unknown>): NeoBuilderQuestion[] {
+  const rawQuestions = Array.isArray(args.questions) ? args.questions : [];
+  const questions = rawQuestions
+    .map((item, index): NeoBuilderQuestion | null => {
+      if (!item || typeof item !== "object") return null;
+      const data = item as Record<string, unknown>;
+      const question = trimString(data.question) || trimString(data.title);
+      const choices = normalizeChoices(data.options ?? data.choices);
+      if (!question || choices.length < 2) return null;
+      return {
+        id: trimString(data.id) || `question_${index + 1}`,
+        question,
+        reason: optionalString(data.reason),
+        choices,
+      };
+    })
+    .filter((question): question is NeoBuilderQuestion => !!question)
+    .slice(0, 5);
+
+  if (questions.length > 0) return questions;
+
+  const question = trimString(args.question) || "你想把这个角色往哪个方向推进？";
+  const choices = normalizeChoices(args.options ?? args.choices);
+  if (choices.length < 2) return [];
+  return [
+    {
+      id: trimString(args.id) || "question_1",
+      question,
+      reason: optionalString(args.reason),
+      choices,
+    },
+  ];
 }

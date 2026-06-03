@@ -74,6 +74,7 @@ export interface NeoCharacterBuilderResult {
 export interface NeoBuilderTurnResult {
   content: string;
   choices?: NeoBuilderChoice[];
+  questions?: NeoBuilderQuestion[];
   draft?: Omit<NeoCharacterBuilderResult, "usage" | "toolLog">;
   creationPlan?: NeoCreationPlan;
   personalityPalette?: NeoPersonalityPalette;
@@ -90,6 +91,13 @@ export interface NeoBuilderChoice {
   label: string;
   value: string;
   description?: string;
+}
+
+export interface NeoBuilderQuestion {
+  id: string;
+  question: string;
+  reason?: string;
+  choices: NeoBuilderChoice[];
 }
 
 // ── Tool Events ──

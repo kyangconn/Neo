@@ -10,6 +10,7 @@ import {
   ChevronDown,
   ChevronRight,
   CircleDashed,
+  Download,
   Eye,
   FileText,
   Globe2,
@@ -32,6 +33,11 @@ import type {
   MessageUsage,
   Worldbook,
 } from "@neo-tavern/shared";
+import {
+  ChoiceInputPanel,
+  type ChoiceInputPanelChoice,
+  type ChoiceInputPanelQuestion,
+} from "@/components/ChoiceInputPanel";
 import { worldbookRepository } from "@/db/repositories";
 import { formatCnyCost } from "@/features/billing/deepseek-billing";
 import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
@@ -39,12 +45,17 @@ import {
   runNeoCharacterBuilderTurn,
   type NeoBuilderEvaluationReport,
   type NeoBuilderChoice,
+  type NeoBuilderQuestion,
   type NeoBuilderConversationMessage,
   type NeoBuilderToolEvent,
   type NeoBuilderTurnResult,
   type NeoCreationPlan,
+  type NeoCreationPlanEntry,
   type NeoPersonalityPalette,
+  type NeoMvuConfig,
 } from "@/features/character/neo-character-builder";
+import { exportPackToFolder, type CharacterCardPack } from "@/features/character/neo-character-builder";
+import { deleteWorkspaceDir } from "@/features/character/builder/workspace-files";
 import { searchWeb } from "@/features/character/web-search";
 import { toast } from "@/utils/toast";
 import { useCharacterStore } from "@/features/character/character.store";
@@ -68,10 +79,13 @@ type BuilderMessage = {
   role: "assistant" | "user";
   content: string;
   choices?: NeoBuilderChoice[];
+  questions?: NeoBuilderQuestion[];
   reasoningContent?: string;
   toolEvents?: NeoBuilderToolEvent[];
   usage?: MessageUsage;
   pending?: boolean;
+  hidden?: boolean;
+  backgroundCreation?: boolean;
   startedAt?: number;
   completedAt?: number;
 };
@@ -89,6 +103,7 @@ type BuilderWorkspaceSnapshot = {
   creationPlan: NeoCreationPlan | null;
   personalityPalette: NeoPersonalityPalette | null;
   evaluationReport: NeoBuilderEvaluationReport | null;
+  mvu: NeoMvuConfig | null;
   savedCharacterId: string | null;
   builderSessionId: string;
 };
@@ -133,6 +148,7 @@ function readBuilderWorkspaceSnapshot(): BuilderWorkspaceSnapshot | null {
       creationPlan: parsed.creationPlan ?? null,
       personalityPalette: parsed.personalityPalette ?? null,
       evaluationReport: parsed.evaluationReport ?? null,
+      mvu: parsed.mvu ?? null,
       savedCharacterId: parsed.savedCharacterId ?? null,
       builderSessionId: typeof parsed.builderSessionId === "string" ? parsed.builderSessionId : generateId(),
     };
@@ -153,7 +169,7 @@ function writeBuilderWorkspaceSnapshot(snapshot: BuilderWorkspaceSnapshot) {
 function getLatestUserMessage(messages: BuilderMessage[]) {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === "user" && message.content.trim()) return message.content.trim();
+    if (message.role === "user" && !message.hidden && message.content.trim()) return message.content.trim();
   }
   return "";
 }
@@ -212,6 +228,7 @@ function normalizeWorkspaceRecord(record: Partial<BuilderWorkspaceRecord>): Buil
     creationPlan: record.creationPlan ?? null,
     personalityPalette: record.personalityPalette ?? null,
     evaluationReport: record.evaluationReport ?? null,
+    mvu: record.mvu ?? null,
     savedCharacterId: record.savedCharacterId ?? null,
     builderSessionId,
   };
@@ -340,6 +357,84 @@ function formatToolSummary(events: NeoBuilderToolEvent[]) {
   if (running.length > 0) return `正在调用 ${running.length} 个工具${labels ? `：${labels}` : ""}`;
   if (failed.length > 0) return `已调用 ${events.length} 次工具，${failed.length} 个失败${labels ? `：${labels}` : ""}`;
   return `已调用 ${events.length} 次工具${labels ? `：${labels}` : ""}`;
+}
+
+function readRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+}
+
+function readString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizePlanStatus(value: unknown, fallback: NeoCreationPlanEntry["status"]): NeoCreationPlanEntry["status"] {
+  return value === "done" || value === "in_progress" || value === "skipped" || value === "planned" ? value : fallback;
+}
+
+function getPlanStatusLabel(status: NeoCreationPlanEntry["status"]) {
+  switch (status) {
+    case "done":
+      return "done";
+    case "in_progress":
+      return "running";
+    case "skipped":
+      return "skipped";
+    default:
+      return "planned";
+  }
+}
+
+function applyEntryProgressEvent(
+  plan: NeoCreationPlan | null,
+  event: NeoBuilderToolEvent,
+): NeoCreationPlan | null {
+  if (!plan || event.name !== "record_entry_output" || event.status === "error") return plan;
+
+  const args = readRecord(event.args);
+  const result = readRecord(event.result);
+  const summary = readRecord(result.summary);
+  const entryKey =
+    readString(args.entryId) ||
+    readString(args.id) ||
+    readString(args.name) ||
+    readString(summary.entry);
+  if (!entryKey) return plan;
+
+  const nextStatus =
+    event.status === "running"
+      ? "in_progress"
+      : normalizePlanStatus(args.status || summary.status, "done");
+  let changed = false;
+  const entries = plan.entries.map((entry) => {
+    if (entry.id !== entryKey && entry.name !== entryKey) return entry;
+    changed = true;
+    return {
+      ...entry,
+      status: nextStatus,
+      outputRef: readString(args.outputRef || args.output_ref) || entry.outputRef,
+      skipReason: readString(args.skipReason || args.skip_reason) || entry.skipReason,
+    };
+  });
+
+  return changed ? { ...plan, entries, updatedAt: new Date().toISOString() } : plan;
+}
+
+function shouldRunBuilderTurnInBackground(
+  content: string,
+  plan: NeoCreationPlan | null,
+  draft: CreateCharacterInput | null,
+  hiddenUserMessage: boolean,
+) {
+  if (!plan?.entries.length || draft) return false;
+  if (/调整|修改|改一下|补细节|先补|别生成|不要生成|暂停/.test(content)) return false;
+  if (hiddenUserMessage) return true;
+  return /确认|按规划|开始|继续|逐条|生成|创作|本阶段选项汇总|选项回答/.test(content);
+}
+
+function getBackgroundResultContent(result: NeoBuilderTurnResult) {
+  if (result.draft?.character?.name) return `后台创作已完成：${result.draft.character.name}。右侧可以查看角色卡与世界书。`;
+  if (result.draft) return "后台创作已完成。右侧可以查看产出物。";
+  return "后台创作已暂停。请查看右侧进度与产出物。";
 }
 
 function ToolTimeline({ events }: { events: NeoBuilderToolEvent[] | undefined }) {
@@ -548,13 +643,72 @@ function BuilderWorkspaceList({
   );
 }
 
-function BuilderChatMessage({
-  message,
-  onChoice,
+function getChoicePanelTitle(content: string): string {
+  const lines = content
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines.at(-1) ?? "请选择一个方向";
+}
+
+function BuilderBackgroundMonitor({
+  plan,
+  running,
 }: {
-  message: BuilderMessage;
-  onChoice: (choice: NeoBuilderChoice) => void;
+  plan: NeoCreationPlan | null;
+  running: boolean;
 }) {
+  const entries = plan?.entries ?? [];
+  const completed = entries.filter((entry) => entry.status === "done" || entry.status === "skipped").length;
+  const currentEntry = entries.find((entry) => entry.status === "in_progress") ?? entries.find((entry) => entry.status === "planned");
+  const percent = entries.length ? Math.round((completed / entries.length) * 100) : 0;
+
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            {running ? <Loader2 className="h-4 w-4 animate-spin text-primary" /> : <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
+            <span>{running ? "已转入后台创作" : "后台创作已完成"}</span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+            条目正文不在聊天区刷屏；请看右侧创作规划条目实时进度。
+          </p>
+        </div>
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+          {completed}/{entries.length || 0}
+        </span>
+      </div>
+
+      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${percent}%` }} />
+      </div>
+
+      {currentEntry ? (
+        <div className="mt-3 rounded-md border bg-background/70 p-3 text-xs">
+          <div className="text-muted-foreground">{running ? "当前条目" : "最后状态"}</div>
+          <div className="mt-1 flex min-w-0 items-center gap-2">
+            <span
+              className={`h-2 w-2 shrink-0 rounded-full ${
+                currentEntry.status === "done"
+                  ? "bg-emerald-500"
+                  : currentEntry.status === "in_progress"
+                    ? "bg-primary"
+                    : currentEntry.status === "skipped"
+                      ? "bg-amber-500"
+                      : "bg-muted-foreground/40"
+              }`}
+            />
+            <span className="min-w-0 flex-1 truncate font-medium">{currentEntry.name}</span>
+            <span className="shrink-0 text-muted-foreground">{getPlanStatusLabel(currentEntry.status)}</span>
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function BuilderChatMessage({ message, creationPlan }: { message: BuilderMessage; creationPlan: NeoCreationPlan | null }) {
   const { t } = useTranslation("neo-builder");
   const isUser = message.role === "user";
   return (
@@ -569,24 +723,11 @@ function BuilderChatMessage({
       >
         {!isUser && <BuilderActivityTimeline message={message} />}
 
-        {message.content ? (
-          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</div>
-        ) : null}
-
-        {message.choices?.length ? (
-          <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-            {message.choices.map((choice) => (
-              <Button
-                key={choice.id}
-                type="button"
-                variant="outline"
-                size="sm"
-                className="max-w-full whitespace-normal break-words text-left"
-                onClick={() => onChoice(choice)}
-              >
-                {choice.label}
-              </Button>
-            ))}
+        {!isUser && message.backgroundCreation ? (
+          <BuilderBackgroundMonitor plan={creationPlan} running={!!message.pending} />
+        ) : message.content ? (
+          <div className="whitespace-pre-wrap break-words text-sm leading-relaxed [overflow-wrap:anywhere]">
+            {message.content}
           </div>
         ) : null}
 
@@ -618,6 +759,7 @@ export function NeoBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => initialSnapshot?.webSearchEnabled ?? false);
   const [error, setError] = useState<string | null>(null);
+  const [dismissedChoiceMessageId, setDismissedChoiceMessageId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<NeoBuilderTurnResult | null>(() => initialSnapshot?.lastResult ?? null);
   const [draft, setDraft] = useState<CreateCharacterInput | null>(() => initialSnapshot?.draft ?? null);
   const [worldbookDraft, setWorldbookDraft] = useState<WorldbookDraft | null>(
@@ -630,6 +772,7 @@ export function NeoBuilderPage() {
   const [evaluationReport, setEvaluationReport] = useState<NeoBuilderEvaluationReport | null>(
     () => initialSnapshot?.evaluationReport ?? null,
   );
+  const [mvu, setMvu] = useState<NeoMvuConfig | null>(() => initialSnapshot?.mvu ?? null);
   const [artifactView, setArtifactView] = useState<ArtifactView>(null);
   const [savedCharacterId, setSavedCharacterId] = useState<string | null>(
     () => initialSnapshot?.savedCharacterId ?? null,
@@ -638,6 +781,7 @@ export function NeoBuilderPage() {
     readInitialBuilderRecords(initialSnapshot ?? null),
   );
   const [builderSessionId, setBuilderSessionId] = useState(() => initialSnapshot?.builderSessionId ?? generateId());
+  const visibleMessages = messages.filter((message) => !message.hidden);
 
   const {
     virtualizer: builderVirtualizer,
@@ -646,8 +790,8 @@ export function NeoBuilderPage() {
     handleScroll: handleBuilderScroll,
     scrollToIndex: builderScrollToIndex,
   } = useVirtualList({
-    count: messages.length,
-    getItemKey: (index) => messages[index]?.id ?? `msg-${index}`,
+    count: visibleMessages.length,
+    getItemKey: (index) => visibleMessages[index]?.id ?? `msg-${index}`,
     estimateSize: () => 240,
     overscan: 6,
   });
@@ -657,16 +801,16 @@ export function NeoBuilderPage() {
   }, [loadCharacters]);
 
   useLayoutEffect(() => {
-    if (messages.length === 0) return;
+    if (visibleMessages.length === 0) return;
     if (isNearBottomRef.current) {
-      builderScrollToIndex(messages.length - 1);
+      builderScrollToIndex(visibleMessages.length - 1);
     }
     // isNearBottomRef is a ref — intentionally excluded from deps
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, builderScrollToIndex]);
+  }, [visibleMessages.length, builderScrollToIndex]);
 
   useLayoutEffect(() => {
-    builderScrollToIndex(messages.length - 1);
+    builderScrollToIndex(Math.max(0, visibleMessages.length - 1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [builderSessionId]);
 
@@ -686,6 +830,7 @@ export function NeoBuilderPage() {
       creationPlan,
       personalityPalette,
       evaluationReport,
+      mvu,
       savedCharacterId,
       builderSessionId,
     };
@@ -705,6 +850,7 @@ export function NeoBuilderPage() {
     creationPlan,
     personalityPalette,
     evaluationReport,
+    mvu,
     savedCharacterId,
     builderSessionId,
   ]);
@@ -719,6 +865,7 @@ export function NeoBuilderPage() {
     setCreationPlan(null);
     setPersonalityPalette(null);
     setEvaluationReport(null);
+    setMvu(null);
     setArtifactView(null);
     setSavedCharacterId(null);
     setError(null);
@@ -741,6 +888,7 @@ export function NeoBuilderPage() {
     setCreationPlan(record.creationPlan);
     setPersonalityPalette(record.personalityPalette);
     setEvaluationReport(record.evaluationReport);
+    setMvu(record.mvu);
     setSavedCharacterId(record.savedCharacterId);
     setArtifactView(null);
     setError(null);
@@ -748,6 +896,7 @@ export function NeoBuilderPage() {
 
   const handleDeleteWorkspace = (record: BuilderWorkspaceRecord) => {
     setWorkspaceRecords((records) => records.filter((item) => item.id !== record.id));
+    deleteWorkspaceDir(record.builderSessionId).catch(() => {});
     if (record.id === builderSessionId) resetWorkspace();
   };
 
@@ -755,6 +904,7 @@ export function NeoBuilderPage() {
     if (result.creationPlan) setCreationPlan(result.creationPlan);
     if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
     if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
+    if (result.mvu) setMvu(result.mvu);
     if (!result.draft) return;
     setTargetId(NEW_TARGET);
     setSavedCharacterId(null);
@@ -762,6 +912,7 @@ export function NeoBuilderPage() {
     setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
     setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
     setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
+    if (result.draft.mvu) setMvu(result.draft.mvu);
     setWorldbookDraft(
       result.draft.worldbookEntries.length > 0
         ? {
@@ -773,7 +924,7 @@ export function NeoBuilderPage() {
     );
   };
 
-  const sendMessage = async (content: string, webSearchOverride = webSearchEnabled) => {
+  const sendMessage = async (content: string, webSearchOverride = webSearchEnabled, hiddenUserMessage = false) => {
     const clean = content.trim();
     if (!clean || running) return;
 
@@ -785,13 +936,15 @@ export function NeoBuilderPage() {
       return;
     }
 
-    const userMessage: BuilderMessage = { id: generateId(), role: "user", content: clean };
+    const userMessage: BuilderMessage = { id: generateId(), role: "user", content: clean, hidden: hiddenUserMessage };
     const assistantId = generateId();
+    const backgroundCreation = shouldRunBuilderTurnInBackground(clean, creationPlan, draft, hiddenUserMessage);
     const assistantMessage: BuilderMessage = {
       id: assistantId,
       role: "assistant",
       content: "",
       pending: true,
+      backgroundCreation,
       startedAt: Date.now(),
     };
     const nextMessages = [...messages, userMessage];
@@ -809,11 +962,13 @@ export function NeoBuilderPage() {
         currentWorldbookEntries: worldbookDraft?.entries ?? [],
         creationPlan,
         personalityPalette,
+        currentMvu: mvu,
         modelConfig: config,
         scopeId: builderSessionId,
         webSearchEnabled: webSearchOverride,
         searchWeb,
         onContentDelta: (delta) => {
+          if (backgroundCreation) return;
           setMessages((prev) =>
             prev.map((message) =>
               message.id === assistantId ? { ...message, content: `${message.content}${delta}` } : message,
@@ -830,6 +985,9 @@ export function NeoBuilderPage() {
           );
         },
         onToolEvent: (event) => {
+          if (event.name === "record_entry_output") {
+            setCreationPlan((prev) => applyEntryProgressEvent(prev, event));
+          }
           setMessages((prev) =>
             prev.map((message) =>
               message.id === assistantId
@@ -843,13 +1001,16 @@ export function NeoBuilderPage() {
       setLastResult(result);
       applyDraftFromResult(result);
       void recordUsageCostAndWarn(result.usage);
+      const keepBackgroundCreation = backgroundCreation && !result.choices?.length && !result.questions?.length;
       setMessages((prev) =>
         prev.map((message) =>
           message.id === assistantId
-            ? {
+              ? {
                 ...message,
-                content: result.content,
+                content: keepBackgroundCreation ? getBackgroundResultContent(result) : result.content,
                 choices: result.choices,
+                questions: result.questions,
+                backgroundCreation: keepBackgroundCreation,
                 reasoningContent: result.reasoningContent,
                 toolEvents: result.toolEvents,
                 usage: result.usage,
@@ -864,7 +1025,9 @@ export function NeoBuilderPage() {
       setError(message);
       setMessages((prev) =>
         prev.map((item) =>
-          item.id === assistantId ? { ...item, content: message, pending: false, completedAt: Date.now() } : item,
+          item.id === assistantId
+            ? { ...item, content: message, backgroundCreation: false, pending: false, completedAt: Date.now() }
+            : item,
         ),
       );
       toast("error", message);
@@ -873,10 +1036,12 @@ export function NeoBuilderPage() {
     }
   };
 
-  const handleChoice = (choice: NeoBuilderChoice) => {
-    const shouldEnableSearch = /联网|搜索|查资料|真实资料/.test(`${choice.label} ${choice.value}`);
+  const handleChoice = (value: string, choice?: ChoiceInputPanelChoice) => {
+    const shouldEnableSearch = /联网|搜索|查资料|真实资料/.test(`${choice?.label ?? ""} ${value}`);
     if (shouldEnableSearch) setWebSearchEnabled(true);
-    void sendMessage(choice.value, shouldEnableSearch ? true : webSearchEnabled);
+    const latestMessage = messages[messages.length - 1];
+    if (latestMessage?.choices?.length || latestMessage?.questions?.length) setDismissedChoiceMessageId(latestMessage.id);
+    void sendMessage(value, shouldEnableSearch ? true : webSearchEnabled, true);
   };
 
   const saveWorldbookForCharacter = async (character: Character, nextDraft: WorldbookDraft) => {
@@ -937,6 +1102,40 @@ export function NeoBuilderPage() {
     }
   };
 
+  const handleExport = async () => {
+    if (!draft?.name.trim()) return;
+    const pack: CharacterCardPack = {
+      project: {
+        name: draft.name,
+        worldbookName: worldbookDraft?.name,
+        form: "charactercard",
+        mvu: !!lastResult?.mvu,
+      },
+      character: {
+        name: draft.name,
+        description: draft.description,
+        personality: draft.personality,
+        scenario: draft.scenario,
+        firstMessage: draft.firstMessage,
+        exampleDialogues: draft.exampleDialogues,
+        tags: draft.tags,
+      },
+      personalityPalette: personalityPalette ?? undefined,
+      worldbook: worldbookDraft?.entries.length
+        ? { name: worldbookDraft.name, description: worldbookDraft.description, entries: worldbookDraft.entries.map((e) => ({ ...e, position: e.position ?? (e.type === "always" ? "beforeHistory" : "afterHistory"), role: e.role ?? "system" })) }
+        : undefined,
+      mvu: lastResult?.mvu ?? undefined,
+      creationPlan: creationPlan ?? undefined,
+    };
+
+    try {
+      const folder = await exportPackToFolder(pack);
+      if (folder) toast("success", `已导出到 ${folder}`);
+    } catch (err) {
+      toast("error", (err as Error).message || "导出失败");
+    }
+  };
+
   const allToolEvents = messages.flatMap((message) => message.toolEvents ?? []);
   const hasUserMessage = messages.some((message) => message.role === "user");
   const hasOptionPrompt = allToolEvents.some((event) => event.name === "ask_user_options" && event.status === "done");
@@ -951,6 +1150,40 @@ export function NeoBuilderPage() {
   const completedPlanEntries = planEntries.filter(
     (entry) => entry.status === "done" || entry.status === "skipped",
   ).length;
+  const latestBuilderMessage = messages[messages.length - 1];
+  const activeChoiceMessage: BuilderMessage | null =
+    latestBuilderMessage?.role === "assistant" &&
+    !latestBuilderMessage.pending &&
+    (!!latestBuilderMessage.choices?.length || !!latestBuilderMessage.questions?.length) &&
+    dismissedChoiceMessageId !== latestBuilderMessage.id
+      ? latestBuilderMessage
+      : null;
+  const activeChoicePanelQuestions: ChoiceInputPanelQuestion[] = activeChoiceMessage?.questions?.length
+    ? activeChoiceMessage.questions.map((question, index) => ({
+        id: question.id || `question_${index + 1}`,
+        title: question.question,
+        description: question.reason,
+        choices: question.choices.map((choice) => ({
+          id: choice.id,
+          label: choice.label,
+          value: choice.value,
+          description: choice.description,
+        })),
+      }))
+    : activeChoiceMessage?.choices?.length
+      ? [
+          {
+            id: "question_1",
+            title: getChoicePanelTitle(activeChoiceMessage.content),
+            choices: activeChoiceMessage.choices.map((choice) => ({
+              id: choice.id,
+              label: choice.label,
+              value: choice.value,
+              description: choice.description,
+            })),
+          },
+        ]
+      : [];
   const steps = [
     { label: t("steps.gatherDirection"), done: hasUserMessage, active: running && !hasUserMessage },
     {
@@ -1007,11 +1240,11 @@ export function NeoBuilderPage() {
             onScroll={handleBuilderScroll}
             containerClassName="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5"
             renderItem={(index) => {
-              const message = messages[index];
+              const message = visibleMessages[index];
               if (!message) return null;
               return (
                 <div className="mx-auto w-full min-w-0 max-w-4xl pb-5">
-                  <BuilderChatMessage message={message} onChoice={handleChoice} />
+                  <BuilderChatMessage message={message} creationPlan={creationPlan} />
                 </div>
               );
             }}
@@ -1035,35 +1268,49 @@ export function NeoBuilderPage() {
                 {lastResult?.draft && (
                   <span className="inline-flex items-center gap-1 text-xs text-emerald-500">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    {t("chat.draftReady")}
+                  {t("chat.draftReady")}
                   </span>
                 )}
               </div>
-              <div className="flex min-w-0 items-end gap-2">
-                <Textarea
-                  value={input}
-                  onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
-                  onKeyDown={(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      void sendMessage(input);
-                    }
-                  }}
-                  placeholder={t("chat.placeholder")}
-                  rows={3}
-                  disabled={running || saving}
-                  className="min-w-0 flex-1 resize-none"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  className="h-10 w-10 shrink-0"
-                  onClick={() => sendMessage(input)}
-                  disabled={running || saving || !input.trim()}
-                >
-                  <Send className="h-4 w-4" />
-                </Button>
-              </div>
+              {activeChoiceMessage && activeChoicePanelQuestions.length > 0 ? (
+                <div className="mb-3">
+                  <ChoiceInputPanel
+                    key={activeChoiceMessage.id}
+                    title={getChoicePanelTitle(activeChoiceMessage.content)}
+                    questions={activeChoicePanelQuestions}
+                    disabled={running || saving}
+                    onSubmit={handleChoice}
+                    onCancel={() => setDismissedChoiceMessageId(activeChoiceMessage.id)}
+                  />
+                </div>
+              ) : null}
+              {!activeChoiceMessage ? (
+                <div className="flex min-w-0 items-end gap-2">
+                  <Textarea
+                    value={input}
+                    onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setInput(event.target.value)}
+                    onKeyDown={(event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendMessage(input);
+                      }
+                    }}
+                    placeholder={t("chat.placeholder")}
+                    rows={3}
+                    disabled={running || saving}
+                    className="min-w-0 flex-1 resize-none"
+                  />
+                  <Button
+                    type="button"
+                    size="icon"
+                    className="h-10 w-10 shrink-0"
+                    onClick={() => sendMessage(input)}
+                    disabled={running || saving || !input.trim()}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : null}
             </div>
           </div>
         </section>
@@ -1122,8 +1369,8 @@ export function NeoBuilderPage() {
                         {completedPlanEntries}/{planEntries.length}
                       </span>
                     </div>
-                    <div className="space-y-1">
-                      {planEntries.slice(0, 10).map((entry) => (
+                    <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+                      {planEntries.map((entry) => (
                         <div key={entry.id} className="flex min-w-0 items-center gap-2 text-xs">
                           <span
                             className={`h-2 w-2 shrink-0 rounded-full ${
@@ -1137,7 +1384,7 @@ export function NeoBuilderPage() {
                             }`}
                           />
                           <span className="min-w-0 flex-1 truncate">{entry.name}</span>
-                          <span className="shrink-0 text-muted-foreground">{entry.status}</span>
+                          <span className="shrink-0 text-muted-foreground">{getPlanStatusLabel(entry.status)}</span>
                         </div>
                       ))}
                     </div>
@@ -1302,10 +1549,20 @@ export function NeoBuilderPage() {
                     <Save className="mr-1 h-4 w-4" />
                     {savedCharacterId ? t("save.saved") : saving ? t("save.saving") : t("save.create")}
                   </Button>
-                </div>
-              </section>
-            </div>
-          </aside>
+
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={handleExport}
+                  disabled={!draft?.name.trim() || running}
+                >
+                  <Download className="mr-1 h-4 w-4" />
+                  导出到文件夹
+                </Button>
+              </div>
+            </section>
+          </div>
+        </aside>
         </div>
       </div>
 

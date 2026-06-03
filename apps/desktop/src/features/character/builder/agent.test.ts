@@ -91,6 +91,98 @@ describe("Whale Builder agent", () => {
 
     expect(result.content).toBe("你想让角色的核心冲突落在哪里？");
     expect(result.choices).toHaveLength(2);
+    expect(result.questions).toHaveLength(1);
+  });
+
+  it("returns a batched question bundle for one creation stage", async () => {
+    const provider: ModelProvider = {
+      id: "fake",
+      name: "Fake",
+      generate: vi.fn().mockResolvedValue({
+        content: "",
+        toolCalls: [
+          {
+            id: "choice-batch-1",
+            type: "function",
+            function: {
+              name: "ask_user_options",
+              arguments: JSON.stringify({
+                questions: [
+                  {
+                    question: "角色性别与年龄段？",
+                    options: [
+                      { label: "青年男性", value: "青年男性，街头出身。" },
+                      { label: "青年女性", value: "青年女性，格斗风格灵活。" },
+                    ],
+                  },
+                  {
+                    question: "开局身份底色？",
+                    options: [
+                      { label: "无名英雄", value: "以无名英雄身份开局。" },
+                      { label: "落魄继承人", value: "以落魄继承人身份开局。" },
+                    ],
+                  },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    };
+    mocks.provider = provider;
+
+    const result = await runNeoCharacterBuilderTurn({
+      conversation: [{ role: "user", content: "做一个热血冒险角色。" }],
+      modelConfig,
+    });
+
+    expect(result.content).toContain("我需要先一次性确认这组问题");
+    expect(result.content).toContain("1. 角色性别与年龄段？");
+    expect(result.content).toContain("2. 开局身份底色？");
+    expect(result.questions).toHaveLength(2);
+    expect(result.questions?.[0]?.choices).toHaveLength(2);
+  });
+
+  it("keeps creation plan details visible before asking for confirmation", async () => {
+    const provider: ModelProvider = {
+      id: "fake",
+      name: "Fake",
+      generate: vi.fn().mockResolvedValue({
+        content: "",
+        toolCalls: [
+          {
+            id: "plan-1",
+            type: "function",
+            function: {
+              name: "present_creation_plan",
+              arguments: JSON.stringify({
+                summary: "先做热血成长向角色，并配套世界书条目。",
+                characterPlan: "主角从普通人逐步卷入冒险。",
+                personalityPalette: {
+                  base: "责任感",
+                  main: ["热血"],
+                  accents: ["谨慎"],
+                },
+                worldPlan: "保留起始城市、组织与冲突规则。",
+                entryPlan: [{ title: "起始城市", type: "world", purpose: "承载开局地点" }],
+              }),
+            },
+          },
+        ],
+      }),
+    };
+    mocks.provider = provider;
+
+    const result = await runNeoCharacterBuilderTurn({
+      conversation: [{ role: "user", content: "做一张冒险角色卡。" }],
+      modelConfig,
+    });
+
+    expect(result.content).toContain("我先把创作规划对齐一下：");
+    expect(result.content).toContain("先做热血成长向角色");
+    expect(result.content).toContain("世界书条目：");
+    expect(result.content.trim().endsWith("这个规划可以继续吗？")).toBe(true);
+    expect(result.choices).toHaveLength(3);
   });
 
   it("passes abort signals into chat provider calls", async () => {

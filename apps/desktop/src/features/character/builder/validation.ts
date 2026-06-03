@@ -73,6 +73,8 @@ export function normalizeWorldbookEntries(value: unknown): CreateWorldbookEntryI
         content: trimString(data.content),
         priority: Number.isFinite(priority) ? priority : Math.max(10, 100 - index * 5),
         type,
+        entryPath: optionalString(data.entryPath || data.entry_path),
+        entryTypeName: optionalString(data.entryTypeName || data.entry_type_name || data.typeName),
         triggerMode: data.triggerMode === "and" ? "and" : "or",
         selectiveLogic: data.selectiveLogic === "and" ? "and" : data.selectiveLogic === "or" ? "or" : undefined,
         scanDepth:
@@ -451,11 +453,11 @@ export function normalizeDraft(
     if (!personalityPalette.base) issues.push("性格调色盘需要底色");
     if (personalityPalette.main.length === 0) issues.push("性格调色盘需要至少一个主色调");
     if (personalityPalette.derivatives.length === 0) {
-      issues.push("性格调色盘需要衍生，不能只写底色/主色调标签");
+      issues.push("性格调色盘需要衍生（[{color:\"性格名\", items:[\"场景描述1\", \"场景描述2\"]}] 或 {\"性格名\": [\"描述1\", \"描述2\"]} 格式，每个性格 ≥2 条）");
     }
     for (const derivative of personalityPalette.derivatives) {
       if (derivative.items.length < 2) {
-        issues.push(`性格"${derivative.color}"至少需要 2 条具体衍生`);
+        issues.push(`性格"${derivative.color}"至少需要 2 条具体衍生，当前 ${derivative.items.length} 条`);
       }
     }
   }

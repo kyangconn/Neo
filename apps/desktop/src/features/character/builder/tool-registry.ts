@@ -6,9 +6,9 @@
  */
 import type { GenerateToolDefinition, CreateCharacterInput } from "@neo-tavern/shared";
 import type {
-  DraftPayload,
   NeoBuilderTurnOptions,
   NeoBuilderChoice,
+  NeoBuilderQuestion,
   NeoCharacterBuilderResult,
   NeoCreationPlan,
   NeoPersonalityPalette,
@@ -32,7 +32,7 @@ import {
   normalizeEvaluationReport,
   updatePlanEntryStatus,
 } from "./validation";
-import { normalizeChoices, formatCreationPlan, defaultPlanChoices } from "./prompt";
+import { normalizeChoices, normalizeQuestionBundle, formatCreationPlan, defaultPlanChoices } from "./prompt";
 
 // ── Tool result type ──
 
@@ -44,6 +44,7 @@ export interface ToolExecResult {
   evaluationReport?: NeoBuilderEvaluationReport;
   mvu?: NeoMvuConfig;
   choices?: NeoBuilderChoice[];
+  questions?: NeoBuilderQuestion[];
   stopForUser?: boolean;
 }
 
@@ -178,11 +179,19 @@ export class WhaleBuilderToolRegistry {
   }
 
   private _handleAskUserOptions(args: Record<string, unknown>): ToolExecResult {
-    const question = trimString(args.question) || "你想把这个角色往哪个方向推进？";
-    const choices = normalizeChoices(args.options);
+    const questions = normalizeQuestionBundle(args);
+    const firstQuestion = questions[0];
+    const choices = firstQuestion?.choices ?? [];
     return {
-      output: { ok: true, question, reason: optionalString(args.reason), choices },
+      output: {
+        ok: true,
+        question: firstQuestion?.question ?? "你想把这个角色往哪个方向推进？",
+        reason: firstQuestion?.reason ?? optionalString(args.reason),
+        choices,
+        questions,
+      },
       choices,
+      questions,
       stopForUser: true,
     };
   }
@@ -192,6 +201,14 @@ export class WhaleBuilderToolRegistry {
     options: NeoBuilderTurnOptions & { creationPlan?: NeoCreationPlan },
   ): ToolExecResult {
     const choices = normalizeChoices(args.options);
+    const planChoices = choices.length ? choices : defaultPlanChoices();
+    const questions: NeoBuilderQuestion[] = [
+      {
+        id: "confirm_creation_plan",
+        question: "这个规划可以继续吗？",
+        choices: planChoices,
+      },
+    ];
     const creationPlan = normalizeCreationPlan(args, options.creationPlan);
     const personalityPalette = normalizePersonalityPalette(args.personalityPalette);
     return {
@@ -201,11 +218,13 @@ export class WhaleBuilderToolRegistry {
         summaryText: formatCreationPlan(args),
         creationPlan,
         personalityPalette,
-        choices: choices.length ? choices : defaultPlanChoices(),
+        choices: planChoices,
+        questions,
       },
       creationPlan,
       personalityPalette,
-      choices: choices.length ? choices : defaultPlanChoices(),
+      choices: planChoices,
+      questions,
       stopForUser: true,
     };
   }
@@ -238,16 +257,24 @@ export class WhaleBuilderToolRegistry {
       personalityPalette?: NeoPersonalityPalette;
     },
   ): ToolExecResult {
+    const pack = args.pack as Record<string, unknown> | undefined;
     const characterArg =
-      args.character && typeof args.character === "object"
-        ? (args.character as Partial<CreateCharacterInput>)
-        : (options.currentDraft ?? options.existingCharacter ?? undefined);
+      pack?.character && typeof pack.character === "object"
+        ? (pack.character as Partial<CreateCharacterInput>)
+        : args.character && typeof args.character === "object"
+          ? (args.character as Partial<CreateCharacterInput>)
+          : (options.currentDraft ?? options.existingCharacter ?? undefined);
+    const worldbookEntries =
+      pack?.worldbook && typeof pack.worldbook === "object"
+        ? (pack.worldbook as Record<string, unknown>).entries
+        : args.worldbookEntries ?? options.currentWorldbookEntries ?? [];
     const validation = normalizeDraft(
       {
         character: characterArg,
-        worldbookEntries: args.worldbookEntries ?? options.currentWorldbookEntries ?? [],
-        personalityPalette: args.personalityPalette ?? options.personalityPalette ?? undefined,
-        creationPlan: args.creationPlan ?? options.creationPlan ?? undefined,
+        worldbookEntries,
+        personalityPalette: pack?.personalityPalette ?? args.personalityPalette ?? options.personalityPalette ?? undefined,
+        creationPlan: pack?.creationPlan ?? args.creationPlan ?? options.creationPlan ?? undefined,
+        mvu: pack?.mvu ?? args.mvu ?? undefined,
       },
       options.existingCharacter,
     );
@@ -273,12 +300,24 @@ export class WhaleBuilderToolRegistry {
       personalityPalette?: NeoPersonalityPalette;
     },
   ): ToolExecResult {
+    // If pack is provided, use it directly (Skill-native format)
+    const pack = args.pack as Record<string, unknown> | undefined;
     const validation = normalizeDraft(
       {
-        ...(args as DraftPayload),
-        personalityPalette: args.personalityPalette ?? options.personalityPalette ?? undefined,
-        creationPlan: args.creationPlan ?? options.creationPlan ?? undefined,
-        mvu: args.mvu ?? undefined,
+        character: (pack?.character ?? args.character) as Record<string, unknown> | undefined,
+        worldbookEntries: pack?.worldbook && typeof pack.worldbook === "object"
+          ? (pack.worldbook as Record<string, unknown>).entries
+          : args.worldbookEntries,
+        worldbookName: pack?.worldbook && typeof pack.worldbook === "object"
+          ? (pack.worldbook as Record<string, unknown>).name
+          : args.worldbookName,
+        worldbookDescription: pack?.worldbook && typeof pack.worldbook === "object"
+          ? (pack.worldbook as Record<string, unknown>).description
+          : args.worldbookDescription,
+        personalityPalette: pack?.personalityPalette ?? args.personalityPalette ?? options.personalityPalette ?? undefined,
+        creationPlan: pack?.creationPlan ?? args.creationPlan ?? options.creationPlan ?? undefined,
+        mvu: pack?.mvu ?? args.mvu ?? undefined,
+        notes: pack?.notes ?? args.notes,
       },
       options.existingCharacter,
     );
@@ -331,15 +370,54 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
     type: "function",
     function: {
       name: "validate_character_draft",
-      description: "检查 Whale Play 角色卡草稿是否满足字段、世界书和质量要求。",
+      description: "检查 Whale Play 角色卡草稿是否满足字段、世界书和质量要求。接受 pack 对象或独立字段。",
       parameters: {
         type: "object",
         properties: {
+          pack: { type: "object", description: "Skill 兼容的完整数据包（与 save_character_draft 相同格式）。" },
           character: { type: "object" },
           worldbookName: { type: "string" },
           worldbookDescription: { type: "string" },
-          worldbookEntries: { type: "array", items: { type: "object" } },
-          personalityPalette: { type: "object" },
+          worldbookEntries: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", description: "条目名称" },
+                keys: { type: "string", description: "逗号分隔的关键词" },
+                content: { type: "string", description: "条目正文" },
+                type: { type: "string", enum: ["always", "trigger"] },
+                entryPath: { type: "string", description: "文件路径, e.g. 世界书/角色/苏云/基础信息.txt" },
+                entryTypeName: { type: "string", description: "分类名, e.g. 角色、世界观、NPC" },
+                priority: { type: "number", description: "优先级" },
+                triggerMode: { type: "string", enum: ["and", "or"] },
+                position: { type: "string", enum: ["beforeHistory", "afterHistory", "atDepth"] },
+                role: { type: "string", enum: ["system", "user", "assistant"] },
+              },
+            },
+          },
+          personalityPalette: {
+            type: "object",
+            properties: {
+              base: { type: "string", description: "底色：最深层性格基调" },
+              main: { type: "array", items: { type: "string" }, description: "主色调" },
+              accents: { type: "array", items: { type: "string" }, description: "点缀" },
+              derivatives: {
+                type: "array",
+                description: "衍生数组。每个条目包含 color（性格名）和 items（≥2 条场景行为描述）。也接受 {\"性格名\": [\"描述1\", \"描述2\"]} 格式。",
+                items: {
+                  type: "object",
+                  properties: {
+                    color: { type: "string", description: "性格名称，必须匹配 main/accents" },
+                    items: { type: "array", items: { type: "string" }, description: "具体场景行为，每性格 ≥2 条" },
+                  },
+                },
+              },
+              futureDerivatives: { type: "array", items: { type: "string" } },
+              notes: { type: "string" },
+              compiledText: { type: "string" },
+            },
+          },
           creationPlan: { type: "object" },
           mvu: {
             type: "object",
@@ -351,7 +429,6 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
           },
           notes: { type: "string" },
         },
-        required: ["character"],
       },
     },
   },
@@ -359,10 +436,94 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
     type: "function",
     function: {
       name: "save_character_draft",
-      description: "保存最终 Whale Play 角色卡草稿。草稿必须已经满足 Whale Play 字段和世界书规则。",
+      description: "保存最终 Whale Play 角色卡草稿为 Skill 兼容格式。推荐使用 pack 对象。",
       parameters: {
         type: "object",
         properties: {
+          pack: {
+            type: "object",
+            description: "Skill 兼容的完整角色卡数据包。",
+            properties: {
+              project: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  worldbookName: { type: "string" },
+                  form: { type: "string", enum: ["charactercard", "worldbook"] },
+                  mvu: { type: "boolean" },
+                },
+              },
+              character: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  personality: { type: "string" },
+                  scenario: { type: "string" },
+                  firstMessage: { type: "string" },
+                  exampleDialogues: { type: "string" },
+                  tags: { type: "array", items: { type: "string" } },
+                },
+              },
+              personalityPalette: {
+                type: "object",
+                properties: {
+                  base: { type: "string", description: "底色：最深层性格基调，始终存在" },
+                  main: { type: "array", items: { type: "string" }, description: "主色调：日常最突出的性格（1-2 个）" },
+                  accents: { type: "array", items: { type: "string" }, description: "点缀：特定条件下才显现的性格" },
+                  derivatives: {
+                    type: "array",
+                    description: "衍生：每个性格在具体场景中的行为。每条包含 color（性格名，须匹配 main/accents）和 items（≥2 条具体场景描述）。也接受 key-value map 格式 {\"性格名\": [\"衍生一\", \"衍生二\"]}。",
+                    items: {
+                      type: "object",
+                      properties: {
+                        color: { type: "string", description: "性格名称，必须与 main 或 accents 中某个条目一致" },
+                        items: { type: "array", items: { type: "string" }, description: "该性格在具体场景中的行为描述，每个性格至少 2 条" },
+                      },
+                    },
+                  },
+                  futureDerivatives: { type: "array", items: { type: "string" } },
+                  notes: { type: "string" },
+                  compiledText: { type: "string" },
+                },
+              },
+              worldbook: {
+                type: "object",
+                properties: {
+                  name: { type: "string" },
+                  description: { type: "string" },
+                  entries: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        title: { type: "string", description: "条目名称" },
+                        keys: { type: "string", description: "逗号分隔关键词（trigger必填）" },
+                        content: { type: "string", description: "条目正文" },
+                        type: { type: "string", enum: ["always", "trigger"] },
+                        entryPath: { type: "string", description: "磁盘文件路径, e.g. 世界书/角色/苏云/基础信息.txt" },
+                        entryTypeName: { type: "string", description: "分类名, e.g. 角色、世界观、NPC" },
+                        priority: { type: "number" },
+                        triggerMode: { type: "string", enum: ["and", "or"] },
+                        position: { type: "string", enum: ["beforeHistory", "afterHistory", "atDepth"] },
+                        role: { type: "string", enum: ["system", "user", "assistant"] },
+                        enabled: { type: "boolean" },
+                      },
+                    },
+                  },
+                },
+              },
+              mvu: {
+                type: "object",
+                properties: {
+                  schemaTs: { type: "string" },
+                  initvarYaml: { type: "string" },
+                  updateRulesYaml: { type: "string" },
+                },
+              },
+              creationPlan: { type: "object" },
+            },
+          },
           character: {
             type: "object",
             properties: {
@@ -378,14 +539,41 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
           },
           worldbookName: { type: "string" },
           worldbookDescription: { type: "string" },
-          worldbookEntries: { type: "array", items: { type: "object" } },
+          worldbookEntries: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", description: "条目名称" },
+                keys: { type: "string", description: "逗号分隔的关键词" },
+                content: { type: "string", description: "条目正文" },
+                type: { type: "string", enum: ["always", "trigger"] },
+                entryPath: { type: "string", description: "文件路径, e.g. 世界书/角色/苏云/基础信息.txt" },
+                entryTypeName: { type: "string", description: "分类名, e.g. 角色、世界观、NPC" },
+                priority: { type: "number" },
+                triggerMode: { type: "string", enum: ["and", "or"] },
+                position: { type: "string", enum: ["beforeHistory", "afterHistory", "atDepth"] },
+                role: { type: "string", enum: ["system", "user", "assistant"] },
+              },
+            },
+          },
           personalityPalette: {
             type: "object",
             properties: {
-              base: { type: "string" },
-              main: { type: "array", items: { type: "string" } },
-              accents: { type: "array", items: { type: "string" } },
-              derivatives: { type: "array", items: { type: "object" } },
+              base: { type: "string", description: "底色" },
+              main: { type: "array", items: { type: "string" }, description: "主色调" },
+              accents: { type: "array", items: { type: "string" }, description: "点缀" },
+              derivatives: {
+                type: "array",
+                description: "衍生数组。每个条目包含 color（性格名）和 items（≥2 条场景行为描述）。也接受 {\"性格名\": [\"描述1\", \"描述2\"]} 格式。",
+                items: {
+                  type: "object",
+                  properties: {
+                    color: { type: "string", description: "性格名称，必须匹配 main/accents" },
+                    items: { type: "array", items: { type: "string" }, description: "具体场景行为，每性格 ≥2 条" },
+                  },
+                },
+              },
               futureDerivatives: { type: "array", items: { type: "string" } },
               notes: { type: "string" },
               compiledText: { type: "string" },
@@ -415,10 +603,11 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
     type: "function",
     function: {
       name: "evaluate_character_draft",
-      description: "评估当前 Whale Play 角色卡、性格调色盘、世界书和创作规划，输出可执行修改建议。",
+      description: "评估当前 Whale Play 角色卡、性格调色盘、世界书和创作规划，输出可执行修改建议。接受 pack 对象或独立字段。",
       parameters: {
         type: "object",
         properties: {
+          pack: { type: "object", description: "Skill 兼容的完整数据包（与 save_character_draft 相同格式）。" },
           character: { type: "object" },
           worldbookEntries: { type: "array", items: { type: "object" } },
           personalityPalette: { type: "object" },
@@ -462,8 +651,38 @@ const CHAT_ONLY_TOOLS: GenerateToolDefinition[] = [
         properties: {
           question: { type: "string", description: "要问用户的问题。" },
           reason: { type: "string", description: "为什么这个信息会影响角色卡。" },
+          questions: {
+            type: "array",
+            description: "同一创作阶段需要一次性确认的 2-5 个问题。每个问题都有自己的选项；不要把同一阶段拆成多轮追问。",
+            minItems: 2,
+            maxItems: 5,
+            items: {
+              type: "object",
+              properties: {
+                id: { type: "string" },
+                question: { type: "string" },
+                reason: { type: "string" },
+                options: {
+                  type: "array",
+                  minItems: 2,
+                  maxItems: 4,
+                  items: {
+                    type: "object",
+                    properties: {
+                      label: { type: "string" },
+                      value: { type: "string" },
+                      description: { type: "string" },
+                    },
+                    required: ["label", "value"],
+                  },
+                },
+              },
+              required: ["question", "options"],
+            },
+          },
           options: {
             type: "array",
+            description: "单个问题的选项。若本阶段有多个问题，改用 questions 数组。",
             minItems: 2,
             maxItems: 4,
             items: {
@@ -477,7 +696,6 @@ const CHAT_ONLY_TOOLS: GenerateToolDefinition[] = [
             },
           },
         },
-        required: ["question", "options"],
       },
     },
   },

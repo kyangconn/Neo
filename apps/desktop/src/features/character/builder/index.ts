@@ -4,6 +4,10 @@ export { runNeoCharacterBuilderTurn, buildNeoCharacterDraft } from "./agent";
 // ── Tool Registry ──
 export { WhaleBuilderToolRegistry, builderToolRegistry } from "./tool-registry";
 
+// ── Pack export ──
+export { exportPackToFolder } from "./pack";
+export type { CharacterCardPack } from "./pack";
+
 // ── Types (re-export all public types) ──
 export type {
   NeoCharacterBuilderOptions,
@@ -13,6 +17,7 @@ export type {
   NeoBuilderConversationMessage,
   NeoBuilderToolEvent,
   NeoBuilderChoice,
+  NeoBuilderQuestion,
   NeoBuilderWebSearchResult,
   NeoBuilderEvaluationReport,
   NeoCreationPlan,

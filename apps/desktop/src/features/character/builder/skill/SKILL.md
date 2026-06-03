@@ -1,64 +1,56 @@
 ---
-name: neo-character-builder
-description: "创建、补全、评估 Whale Play 原生角色卡和世界书。覆盖角色基础信息、世界观、NPC、场景、事件、文风、开场白、前置世界书和关键词召回世界书。支持从零创作、从现有材料转化、联网资料辅助和断点续接。确保在用户提到角色设定、人设卡、character card、角色卡、世界书、世界观设定、NPC 设定、文风指导、开场白、创作规划等需求时使用。当前 Whale Builder 不生成 MVU、EJS、SillyTavern forge、外部项目目录、脚本文件或打包说明。"
+name: whaleplay-character-builder
+description: "创建、编辑、评估 WhalePlay 角色卡和世界书（角色信息、世界观、NPC、场景、事件、文风、MVU 变量、EJS 方案等）。覆盖角色卡内嵌世界书和独立世界书，支持从零创作和从现有材料转化。确保在以下情况也使用此 skill：用户提到'角色设定'、'人设卡'、'worldlore'、'character card'、'角色卡'、'酒馆世界书'、'WhalePlay'、'世界书条目'、'世界书配置'、'蓝灯'、'绿灯'、'角色条目'、'世界观设定'、'NPC设定'等关键词时，即使用户没有明确说'世界书'也应触发。当用户要编写角色基础信息、性格调色盘、三面性、二次解释、多阶段调色盘、世界观、文风指导等创作流程时也应触发。当用户提到'MVU'、'变量系统'、'schema.ts'、'变量更新'、'initvar'、'变量结构'、'tavern-cards-forge'等关键词时也应触发。"
 ---
 
-# Whale Play 角色卡与世界书编写
+# WhalePlay 角色卡与世界书编写
 
 帮助用户创建 Whale Play 原生角色卡与可绑定世界书。这个 skill 复刻 tavern-cards 的分层能力：先用 SKILL.md 路由，再按阶段读取 references/ 下的规则；区别是所有产出都落在 Whale Builder 的草稿、世界书条目和本地创作记录里，不写外部工程文件。
 
 ## 术语说明
 
-"角色卡"在 Whale Builder 中指 Whale Play 角色库里可保存的一张角色实体，字段包括 name, description, personality, scenario, firstMessage, exampleDialogues, tags。一个 Builder 工作台可以同时产出世界书条目，用户点击创建后绑定到该角色。
+"角色卡"在 Whale Builder 中指 Whale Play 不是"一张卡 = 一个角色"的意思。一个角色卡项目可以包含多个角色、NPC、世界观等完整内容，最终打包为一个角色卡文件。本文档中"角色卡"均指打包格式，不暗示角色数量。
 
-"世界书"指长期背景和召回规则。always 条目是前置世界书，默认 position 为 beforeHistory；trigger 条目是关键词召回世界书，默认 position 为 afterHistory。
 
 ## 用户占位约定
 
-默认不要替用户决定身份、动作或情绪。若用户明确要求使用 {{user}} 或 <user>，可以在 firstMessage、exampleDialogues 或世界书内容中保留占位。
+`{{user}}` 或 `<user>` 是 WhalePlay 提供的宏，在运行时自动替换为玩家角色的名称。在条目内容中可使用此宏来表示玩家角色，无需关心具体名称。
 
 ## 场景路由
 
 判断三个维度，组合决定流程：
 
 1. 任务阶段：创建 / 修改草稿 / 评估
-2. 创建来源：从零 / 从材料转化 / 联网资料辅助
-3. 任务范围：完整角色卡 / 局部字段 / 世界书条目 / 开场白
+2. 创建来源：（仅创建阶段）：从零 / 从材料转化 / 联网资料辅助
+3. 任务范围：完整角色卡 / 局部字段 
 
 | 组合 | 流程 |
 |------|------|
-| 创建 + 从零 + 完整角色卡 | 需求对齐：项目属性 -> 需求对齐：世界/角色/条目 -> 创作规划确认 -> 条目与字段创作 -> 开场白 -> 校验 -> 保存草稿 |
-| 创建 + 从材料 + 完整角色卡 | 材料转化 -> 需求对齐缺口 -> 创作规划确认 -> 条目与字段创作 -> 开场白 -> 校验 -> 保存草稿 |
-| 创建 + 联网资料辅助 | 联网搜索 -> 资料提炼 -> 创作规划确认 -> 转化为角色字段和世界书 -> 校验 -> 保存草稿 |
-| 创建 + 局部任务 | 直接定位对应规则文档，不强制完整流程 |
-| 修改草稿 + 局部任务 | 读取当前对话、草稿和用户反馈 -> 定位字段或条目 -> 加载对应规则 -> 修正并校验 |
-| 修改草稿 + 完整项目 | 断点续接 -> 检查进度与产出物 -> 回到对应步骤继续 |
-| 评估 | 分析字段完整性、世界书召回、写作质量和一致性，给出修正建议 |
+| 创建 + 从零 + 完整项目 | 需求对齐：项目属性 → 项目创建(init) → 需求对齐：世界/角色/条目 → 条目创作 |
+| 创建 + 从材料 + 完整项目 | 转化标注（`references/conversion.md`）→ 需求对齐：项目属性 → 项目创建(init) → 需求对齐：世界/角色/条目 → 条目创作 |
+| 创建 + 局部任务 | 直接定位创作规则文档，不走项目流程 |
+| 修改 + 局部任务 | 定位条目 → 加载创作规则文档 |
+| 修改 + 完整项目 | 断点续接（`references/resume.md`） → 检测进度后回到完整项目流程对应步骤继续 |
+| 评估 | 评估流程：分析结构、检查配置、抽查写作质量，生成评估报告 |
 
 ## 完整项目流程
 
-1. 需求对齐：项目属性 -> references/requirements.md
-2. 从材料转化时先执行 -> references/conversion.md
-3. 需求对齐：世界/角色/条目 -> references/requirements/world-characters.md 与 references/requirements/entries-dynamics-style.md
-4. 产出 Whale Play 创作规划并等待用户确认 -> references/requirements/planning-yaml.md
-5. 按规划创作角色字段和世界书条目 -> references/composition.md
-6. 按条目类型读取对应创作文档：
-   - 角色：references/contents-creation/character/
-   - 世界观：references/contents-creation/worldbuilding/
-   - 开场白：references/contents-creation/first-message.md
-   - 扮演准则和阶段指导：references/contents-creation/presentation.md 与 references/contents-creation/stage-guidance.md
-7. 运行 Whale Play 校验 -> validate_character_draft
-8. 保存 Builder 产出物 -> save_character_draft
+1. **需求对齐：项目属性**：收集项目属性（名称、形式、MVU、typeLists 调整等）→ `references/requirements.md`
+   - 从材料转化时先执行 → `references/conversion.md`
+2. **项目创建**：`node scripts/tavern-cards-forge.mjs init {project}` → `references/project-setup.md`
+3. **需求对齐：世界/角色/条目**：收集世界信息、角色信息、条目规划、写作风格，产出编写规划文档 `创作规划.yaml`（项目目录下）→ `references/requirements.md`
+4. **创建条目**：按创作规划依次编写，每条写完立即注册（禁词扫描 + DoubleCheck）→ `references/composition.md`
+5. **编写 MVU 变量**（如需）→ `references/mvu/guide.md`，完成后按收尾步骤复制模板、应用 patch、校验
+6. **创建 EJS预处理 条目 + EJS 收尾检查**（如需 EJS）→ `references/ejs/guide.md`
+    - 以上两步完成后 → **MVU 一致性检查**，见 `references/mvu/guide.md` 收尾步骤第 4 步
+7. **运行 configure**：`node scripts/tavern-cards-forge.mjs configure {project}`，自动推导运行时字段 → `references/configuration.md`（仅特殊需求时读取）
+8. **编写开场白**（角色卡）→ `references/contents-creation/first-message.md`
+9. **打包输出**：`node scripts/tavern-cards-forge.mjs pack {project}`
 
-## Whale Play 与原 tavern-cards 的映射
+## 状态文件
 
-- tavern-cards 的项目目录 -> Whale Builder 本地工作台记录
-- 创作规划.yaml -> present_creation_plan 工具展示的创作规划
-- entryManifest 注册 -> save_character_draft 的 worldbookEntries
-- 蓝灯/常驻条目 -> always + beforeHistory
-- 绿灯/关键词条目 -> trigger + afterHistory
-- pack/configure/forge -> 不生成；由 Whale Play 的创建按钮保存角色和世界书
-- MVU/EJS -> 当前不生成；动态阶段用普通世界书条目和场景指导表达
+每个项目在根目录维护 `tavern-cards-state.json`，记录项目属性和条目清单。完整字段定义见 `references/type/state.ts`。
+
 
 ## 工具参考
 
@@ -74,42 +66,52 @@ description: "创建、补全、评估 Whale Play 原生角色卡和世界书。
 
 ## 参考资料
 
-此索引是 Whale Builder 内置 references 的权威来源。标注"按需查阅"的为参考层，其余为主动加载文档。
+此索引是 `references/` 文档列表的权威来源。标注「按需查阅」的为参考资料层，其余为主动加载文档。
 
-~~~
+```
 references/
-├── requirements.md
-├── composition.md
-├── rules.md
-├── conventions.md
-├── conversion.md
-├── project-setup.md
-├── resume.md
-├── configuration.md
-├── manual.md
+├── requirements.md              —— 需求对齐 + 创作规划.yaml schema
+├── composition.md               —— 条目编排、创作循环、DoubleCheck
+├── rules.md                     —— 写作规则（前置必读）
+├── conventions.md               —— 注册约定与文件格式（前置必读）
+├── conversion.md                —— 从材料转化流程
+├── project-setup.md             —— 项目创建
+├── resume.md                    —— 断点续接
+├── configuration.md             —— 条目运行时配置（仅特殊需求时读取）
+├── manual.md                    —— 操作命令完整参考（按需查阅）
 ├── requirements/
-│   ├── world-characters.md
-│   ├── entries-dynamics-style.md
-│   ├── planning-yaml.md
-│   └── entry-types.md
+│   ├── world-characters.md      —— 世界与角色信息收集
+│   ├── entries-dynamics-style.md —— 条目、MVU/EJS、风格与开场白规划
+│   ├── planning-yaml.md         —— 创作规划.yaml 完整结构和示例
+│   └── entry-types.md           —— 条目类型说明
 ├── contents-creation/
-│   ├── worldbook.md
-│   ├── first-message.md
-│   ├── presentation.md
-│   ├── stage-guidance.md
 │   ├── character/
-│   │   ├── basic-info.md
-│   │   ├── personality-palette.md
-│   │   ├── multi-stage.md
-│   │   ├── tri-faceted.md
-│   │   ├── rephrase.md
-│   │   ├── npc.md
-│   │   └── character-catalog.md
-│   └── worldbuilding/
-│       ├── worldview.md
-│       ├── timeline.md
-│       └── geography.md
+│   │   ├── basic-info.md          —— 角色基础信息
+│   │   ├── personality-palette.md —— 性格调色盘
+│   │   ├── multi-stage.md —— 多阶段调色盘
+│   │   ├── tri-faceted.md         —— 三面性
+│   │   ├── rephrase.md            —— 二次解释
+│   │   ├── npc.md                 —— NPC 编写
+│   │   └── character-catalog.md   —— 角色速览
+│   ├── worldbuilding/
+│   │   ├── worldview.md         —— 世界观条目
+│   │   ├── timeline.md          —— 时间线条目
+│   │   └── geography.md         —— 区域条目
+│   ├── first-message.md         —— 开场白创作
+│   ├── presentation.md          —— 呈现方式（扮演准则）
+│   └── stage-guidance.md        —— 阶段指导条目编写
+├── mvu/
+│   ├── guide.md                 —— MVU 编写流程
+│   ├── initvar.md               —— 初始变量编写
+│   ├── schema.md                —— MVU 变量类型定义与 schema 写法
+│   ├── update-rules-guide.md    —— 变量更新规则编写指南
+│   ├── update-rules.yaml        —— 更新规则 YAML 参考示例（按需查阅）
+│   └── zod-rule.yaml            —— Zod 校验规则参考（按需查阅）
+├── ejs/
+│   ├── guide.md                 —— EJS 方案编写流程、@@if 条目显隐、段落级条件渲染
+│   ├── reference.md             —— EJS 语法参考手册（按需查阅）
+│   └── features.md              —— EJS 可用特性与 API（按需查阅）
 └── type/
-    ├── state.ts
-    └── settings.ts
-~~~
+    ├── state.ts                 —— 状态文件类型定义（按需查阅）
+    └── settings.ts              —— .cardrc.json 类型定义（按需查阅）
+```

@@ -10,7 +10,7 @@ describe("Whale Builder skill references", () => {
     const workflow = readNeoBuilderSkillReference("workflow");
 
     expect(workflow?.id).toBe("SKILL.md");
-    expect(workflow?.content).toContain("# Whale Play 角色卡与世界书编写");
+    expect(workflow?.content).toContain("角色卡与世界书编写");
     expect(workflow?.content).toContain("references/requirements.md");
   });
 

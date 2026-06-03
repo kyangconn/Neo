@@ -118,8 +118,21 @@ export function buildStopForUserContent(output: Record<string, unknown>): string
   const question = typeof output.question === "string" ? output.question : "";
   const summaryText = typeof output.summaryText === "string" ? output.summaryText : "";
   const reason = typeof output.reason === "string" ? output.reason : "";
-  if (question) return question;
+  if (summaryText && question) return `${summaryText.trimEnd()}\n\n${question.trim()}`;
+  const questions = Array.isArray(output.questions)
+    ? output.questions
+        .map((item) => {
+          if (!item || typeof item !== "object") return "";
+          const value = (item as Record<string, unknown>).question;
+          return typeof value === "string" ? value.trim() : "";
+        })
+        .filter(Boolean)
+    : [];
+  if (questions.length > 1) {
+    return ["我需要先一次性确认这组问题：", ...questions.map((item, index) => `${index + 1}. ${item}`)].join("\n");
+  }
   if (summaryText) return summaryText;
+  if (question) return question;
   if (reason) return reason;
   return "请选择一个选项。";
 }

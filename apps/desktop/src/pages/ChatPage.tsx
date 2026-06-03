@@ -46,6 +46,7 @@ import {
 import type { DisplayBlock } from "@neo-tavern/core";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
+import { ChoiceInputPanel, type ChoiceInputPanelChoice } from "@/components/ChoiceInputPanel";
 import { type BuiltPrompt, type ContextBlock, type Message, type MessageImage } from "@neo-tavern/shared";
 import {
   createGeneratingImages,
@@ -64,7 +65,7 @@ import {
   createAgenticPlayContextBlock,
   type AgenticGameState,
 } from "@/features/agentic-play/agentic-play";
-import { extractAgenticOptions, type AgenticActionOption } from "@/features/agentic-play/agentic-options";
+import { extractAgenticOptions } from "@/features/agentic-play/agentic-options";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatSidebar } from "@/pages/chat/ChatSidebar";
 import { ChatRightPanel } from "@/pages/chat/ChatRightPanel";
@@ -183,41 +184,6 @@ function ChatActivityTimeline({
   );
 }
 
-function AgenticOptionsView({
-  options,
-  disabled,
-  onChoose,
-}: {
-  options: AgenticActionOption[];
-  disabled: boolean;
-  onChoose: (option: AgenticActionOption) => void;
-}) {
-  if (!options.length) return null;
-
-  return (
-    <div className="mt-3 flex min-w-0 flex-wrap gap-2">
-      {options.map((option) => (
-        <Button
-          key={option.id}
-          type="button"
-          variant="outline"
-          size="sm"
-          className="max-w-full justify-start whitespace-normal break-words text-left [overflow-wrap:anywhere]"
-          onClick={() => onChoose(option)}
-          disabled={disabled}
-        >
-          <span className="min-w-0">{option.label}</span>
-          {option.probability !== undefined && (
-            <span className="ml-2 shrink-0 rounded border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {option.probability}%
-            </span>
-          )}
-        </Button>
-      ))}
-    </div>
-  );
-}
-
 export function ChatPage() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
@@ -298,6 +264,7 @@ export function ChatPage() {
   const [restoringSavepointId, setRestoringSavepointId] = useState<string | null>(null);
   const [agenticPlayEnabled, setAgenticPlayEnabled] = useState(false);
   const [agenticGameState, setAgenticGameState] = useState<AgenticGameState | null>(null);
+  const [dismissedAgenticChoiceMessageId, setDismissedAgenticChoiceMessageId] = useState<string | null>(null);
 
   const characterId = searchParams.get("characterId");
   const character = characters.find((c) => c.id === (currentChat?.characterId ?? characterId));
@@ -552,8 +519,9 @@ export function ChatPage() {
     [currentChat, sending, messages.length, character?.firstMessage, addMessage, personaName, sendMessage],
   );
 
-  const handleAgenticOptionChoice = (option: AgenticActionOption) => {
-    void submitContent(option.action, { label: option.label });
+  const handleAgenticChoiceSubmit = (value: string, choice?: ChoiceInputPanelChoice) => {
+    if (lastAssistantId) setDismissedAgenticChoiceMessageId(lastAssistantId);
+    void submitContent(value, { hiddenUserMessage: true, label: choice?.label });
   };
 
   const handleSend = async () => {
@@ -1131,6 +1099,22 @@ export function ChatPage() {
       }),
     [activeRegexRules, agenticPlayEnabled, isGeneratingCurrentChat, lastAssistantId, streamingMessageId, messages],
   );
+  const activeAgenticChoiceBlock = useMemo(() => {
+    const latest = renderedMessages[renderedMessages.length - 1];
+    if (!agenticPlayEnabled || !latest || latest.isUser) return null;
+    if (latest.msg.id !== lastAssistantId) return null;
+    if (latest.isStreamingAi || isGeneratingCurrentChat) return null;
+    if (!latest.agenticOptions.length) return null;
+    if (dismissedAgenticChoiceMessageId === latest.msg.id) return null;
+    return latest;
+  }, [agenticPlayEnabled, dismissedAgenticChoiceMessageId, isGeneratingCurrentChat, lastAssistantId, renderedMessages]);
+  const activeAgenticPanelChoices: ChoiceInputPanelChoice[] =
+    activeAgenticChoiceBlock?.agenticOptions.map((option) => ({
+      id: option.id,
+      label: option.action,
+      value: option.action,
+      description: option.probability !== undefined ? `成功率 ${option.probability}%` : undefined,
+    })) ?? [];
 
   const isNearBottomRef = useRef(true);
 
@@ -1266,7 +1250,6 @@ export function ChatPage() {
                     isFinalAi,
                     split,
                     displayContent,
-                    agenticOptions,
                     isStreamingAi,
                     hasDisplayContent,
                   } = renderedMessages[virtualItem.index];
@@ -1523,12 +1506,6 @@ export function ChatPage() {
                               </p>
                             )}
 
-                            <AgenticOptionsView
-                              options={isFinalAi ? agenticOptions : []}
-                              disabled={!currentChat || isGeneratingCurrentChat}
-                              onChoose={handleAgenticOptionChoice}
-                            />
-
                             {split?.sideBlocks.map((side, si) => (
                               <div key={si} style={{ fontSize: `${fontSize}px` }}>
                                 <SideBlockView side={side} fontSize={fontSize} onAction={setInput} />
@@ -1580,47 +1557,62 @@ export function ChatPage() {
             </div>
           </div>
 
-          <ChatInputArea
-            displayError={sendError || chatError}
-            onDismissError={() => {
-              clearSendError();
-              clearError();
-            }}
-            pendingSendCount={pendingSendCount}
-            hasChat={!!currentChat}
-            pendingSendQueue={pendingSendQueue}
-            currentChatId={currentChat?.id}
-            onCancelPending={(queueIndex) =>
-              setPendingSendQueue((queue) => queue.filter((_, index) => index !== queueIndex))
-            }
-            fontSize={fontSize}
-            onFontSizeChange={handleFontSizeChange}
-            previewOpen={previewOpen}
-            onTogglePreview={() => {
-              const nextOpen = !previewOpen;
-              setPreviewOpen(nextOpen);
-              if (nextOpen) updatePreview(input.trim());
-            }}
-            onContinue={handleContinue}
-            messagesLength={messages.length}
-            input={input}
-            onInputChange={handleInputChange}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              character
-                ? agenticPlayEnabled
-                  ? `Action in ${character.name}'s scene...`
-                  : `Message ${character.name}...`
-                : "Type a message..."
-            }
-            onSend={handleSend}
-            isSending={sending}
-            onAbort={abort}
-            onSave={() => setSaveDialogOpen(true)}
-            onLoad={openLoadDialog}
-            isGenerating={isGeneratingCurrentChat}
-            previewText={previewText}
-          />
+          {activeAgenticChoiceBlock && activeAgenticPanelChoices.length > 0 ? (
+            <div className="shrink-0 border-t bg-card p-4">
+              <div className="mx-auto w-full min-w-0 max-w-4xl">
+                <ChoiceInputPanel
+                  key={activeAgenticChoiceBlock.msg.id}
+                  title={character ? `你要在 ${character.name} 的场景里采取什么行动？` : "你下一步要怎么做？"}
+                  choices={activeAgenticPanelChoices}
+                  disabled={!currentChat || isGeneratingCurrentChat}
+                  onSubmit={handleAgenticChoiceSubmit}
+                  onCancel={() => setDismissedAgenticChoiceMessageId(activeAgenticChoiceBlock.msg.id)}
+                />
+              </div>
+            </div>
+          ) : (
+            <ChatInputArea
+              displayError={sendError || chatError}
+              onDismissError={() => {
+                clearSendError();
+                clearError();
+              }}
+              pendingSendCount={pendingSendCount}
+              hasChat={!!currentChat}
+              pendingSendQueue={pendingSendQueue}
+              currentChatId={currentChat?.id}
+              onCancelPending={(queueIndex) =>
+                setPendingSendQueue((queue) => queue.filter((_, index) => index !== queueIndex))
+              }
+              fontSize={fontSize}
+              onFontSizeChange={handleFontSizeChange}
+              previewOpen={previewOpen}
+              onTogglePreview={() => {
+                const nextOpen = !previewOpen;
+                setPreviewOpen(nextOpen);
+                if (nextOpen) updatePreview(input.trim());
+              }}
+              onContinue={handleContinue}
+              messagesLength={messages.length}
+              input={input}
+              onInputChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                character
+                  ? agenticPlayEnabled
+                    ? `Action in ${character.name}'s scene...`
+                    : `Message ${character.name}...`
+                  : "Type a message..."
+              }
+              onSend={handleSend}
+              isSending={sending}
+              onAbort={abort}
+              onSave={() => setSaveDialogOpen(true)}
+              onLoad={openLoadDialog}
+              isGenerating={isGeneratingCurrentChat}
+              previewText={previewText}
+            />
+          )}
         </section>
 
         <div className="hidden xl:contents">
