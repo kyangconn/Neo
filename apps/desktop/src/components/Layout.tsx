@@ -1,5 +1,5 @@
 import { useTranslation } from "react-i18next";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, type NavLinkRenderProps } from "react-router";
 import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles, PenTool, History } from "lucide-react";
 import { cn } from "@neo-tavern/ui";
 
@@ -26,7 +26,7 @@ export function Layout() {
           <NavLink
             key={item.to}
             to={item.to}
-            className={({ isActive }) =>
+            className={({ isActive }: NavLinkRenderProps) =>
               cn(
                 "flex flex-col items-center justify-center w-12 h-12 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent transition-colors",
                 isActive && "bg-accent text-foreground",

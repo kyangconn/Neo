@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import {
   Plus,
@@ -661,9 +661,7 @@ export function PresetPage() {
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editingItem ? t("editCard") : t("newCard")}</DialogTitle>
-            <DialogDescription>
-              {t("cardDialog.description")}
-            </DialogDescription>
+            <DialogDescription>{t("cardDialog.description")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
@@ -722,9 +720,7 @@ export function PresetPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("deletePreset.title")}</DialogTitle>
-            <DialogDescription>
-              {t("deletePreset.description", { name: deleteTarget?.name })}
-            </DialogDescription>
+            <DialogDescription>{t("deletePreset.description", { name: deleteTarget?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>
@@ -764,9 +760,7 @@ export function PresetPage() {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t("importDialog.title")}</DialogTitle>
-            <DialogDescription>
-              {t("importDialog.description")}
-            </DialogDescription>
+            <DialogDescription>{t("importDialog.description")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div

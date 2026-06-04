@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 
 const MIGRATION_KEY = "neotavern_app_store_migrated_v1";
 const STORAGE_PREFIX = "neotavern";

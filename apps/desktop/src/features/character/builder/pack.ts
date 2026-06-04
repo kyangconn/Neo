@@ -1,7 +1,7 @@
 /**
  * Character card packaging — write Skill-compatible output to a local folder.
  */
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 import type { NeoPersonalityPalette, NeoMvuConfig, NeoCreationPlan } from "./types";
 
 export interface CharacterCardPack {
@@ -95,11 +95,7 @@ export async function exportPackToFolder(pack: CharacterCardPack): Promise<strin
     if (pack.worldbook.name || pack.worldbook.description) {
       files.push({
         relativePath: "worldbook/_meta.json",
-        content: JSON.stringify(
-          { name: pack.worldbook.name, description: pack.worldbook.description },
-          null,
-          2,
-        ),
+        content: JSON.stringify({ name: pack.worldbook.name, description: pack.worldbook.description }, null, 2),
       });
     }
   }

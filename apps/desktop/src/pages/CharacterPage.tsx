@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { Plus, Trash2, Edit, ArrowLeft, Upload, MoreHorizontal, Sparkles } from "lucide-react";
 import {
   Button,
@@ -469,7 +469,7 @@ export function CharacterPage() {
             <>
               <DialogHeader>
                 <DialogTitle>{editingId ? t("dialog.editCharacter") : t("dialog.newCharacter")}</DialogTitle>
-                                <DialogDescription className="sr-only">{t("dialog.editCharacter")}</DialogDescription>
+                <DialogDescription className="sr-only">{t("dialog.editCharacter")}</DialogDescription>
               </DialogHeader>
 
               <div className="grid gap-4">
@@ -663,9 +663,7 @@ export function CharacterPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{t("delete.title")}</DialogTitle>
-            <DialogDescription>
-              {t("delete.description", { name: deleteTarget?.name })}
-            </DialogDescription>
+            <DialogDescription>{t("delete.description", { name: deleteTarget?.name })}</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>

@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 import { useChatStore } from "../chat.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import {

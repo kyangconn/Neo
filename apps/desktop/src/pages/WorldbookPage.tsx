@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, KeyboardEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, BookOpen, CheckCircle2, FileText, KeyRound, Plus, Power, Save, Trash2, X } from "lucide-react";
 import {

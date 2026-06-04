@@ -1,7 +1,7 @@
 import { createModelProvider } from "@neo-tavern/core";
 import { generateId } from "@neo-tavern/shared";
 import type { MessageImage, ModelConfig } from "@neo-tavern/shared";
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 import { shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
 
 export type ImageGenerationMode = "manual" | "auto";

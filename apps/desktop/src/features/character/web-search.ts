@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 
 export interface NeoBuilderWebSearchResult {
   title: string;

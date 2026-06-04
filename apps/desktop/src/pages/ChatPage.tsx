@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
-import { useParams, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
   ChevronDown,
   ChevronRight,
@@ -174,7 +174,7 @@ function ChatActivityTimeline({
             )}
           </button>
           {thinkingOpen && message.reasoningContent ? (
-            <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground [overflow-wrap:anywhere]">
+            <div className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-muted-foreground">
               {message.reasoningContent}
             </div>
           ) : null}
@@ -1119,7 +1119,9 @@ export function ChatPage() {
           isFinalAi,
           split: displaySplit,
           displayContent,
-          agenticOptions: structuredAgenticOptions.length ? structuredAgenticOptions : (agenticChoiceBlock?.options ?? []),
+          agenticOptions: structuredAgenticOptions.length
+            ? structuredAgenticOptions
+            : (agenticChoiceBlock?.options ?? []),
           isStreamingAi,
           hasDisplayContent,
         };
@@ -1140,10 +1142,7 @@ export function ChatPage() {
       id: option.id,
       label: option.action,
       value: option.action,
-      description: [
-        option.probability !== undefined ? `成功率 ${option.probability}%` : "",
-        option.description ?? "",
-      ]
+      description: [option.probability !== undefined ? `成功率 ${option.probability}%` : "", option.description ?? ""]
         .filter(Boolean)
         .join(" · "),
     })) ?? [];
@@ -1282,15 +1281,8 @@ export function ChatPage() {
                 }}
               >
                 {chatVirtualizer.getVirtualItems().map((virtualItem) => {
-                  const {
-                    msg,
-                    isUser,
-                    isFinalAi,
-                    split,
-                    displayContent,
-                    isStreamingAi,
-                    hasDisplayContent,
-                  } = renderedMessages[virtualItem.index];
+                  const { msg, isUser, isFinalAi, split, displayContent, isStreamingAi, hasDisplayContent } =
+                    renderedMessages[virtualItem.index];
                   const aiName = character?.name ?? "AI";
                   let imageBlockIndex = 0;
                   const isMessageImageBusy =

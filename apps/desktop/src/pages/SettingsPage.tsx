@@ -1,13 +1,6 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  Bug,
-  Plug,
-  Palette,
-  Regex,
-  SlidersHorizontal,
-  Image as ImageIcon,
-} from "lucide-react";
+import { useNavigate } from "react-router";
+import { Bug, Plug, Palette, Regex, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { getStorageItem, setStorageItem } from "@/db/storage";
 import { SettingsSidebar } from "./settings/SettingsSidebar";

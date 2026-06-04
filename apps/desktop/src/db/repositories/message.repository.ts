@@ -1,6 +1,6 @@
 import { generateId } from "@neo-tavern/shared";
 import type { Message, CreateMessageInput } from "@neo-tavern/shared";
-import { invoke } from "@tauri-apps/api/core";
+const { invoke } = await import("@tauri-apps/api/core");
 import { getStorageItem, removeStorageItem, setStorageItem } from "../storage";
 
 const STORAGE_KEY = "neotavern_messages";
