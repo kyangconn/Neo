@@ -39,7 +39,10 @@ interface ChatState {
   patchMessage: (
     id: string,
     patch: Partial<
-      Pick<Message, "content" | "reasoningContent" | "generateDuration" | "thinkingDuration" | "usage" | "images">
+      Pick<
+        Message,
+        "content" | "reasoningContent" | "generateDuration" | "thinkingDuration" | "usage" | "images" | "agenticOptions"
+      >
     >,
     options?: { persist?: boolean },
   ) => Promise<void>;

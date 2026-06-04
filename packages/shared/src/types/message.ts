@@ -32,6 +32,14 @@ export interface MessageImage {
   updatedAt?: string
 }
 
+export interface MessageAgenticOption {
+  id: string
+  label: string
+  action: string
+  probability?: number
+  description?: string
+}
+
 export interface Message {
   id: string
   chatId: string
@@ -42,6 +50,7 @@ export interface Message {
   thinkingDuration?: number
   usage?: MessageUsage
   images?: MessageImage[]
+  agenticOptions?: MessageAgenticOption[]
   createdAt: string
 }
 
@@ -54,4 +63,5 @@ export interface CreateMessageInput {
   thinkingDuration?: number
   usage?: MessageUsage
   images?: MessageImage[]
+  agenticOptions?: MessageAgenticOption[]
 }

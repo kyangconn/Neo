@@ -13,6 +13,9 @@ import type {
   ModelProvider,
 } from "@neo-tavern/shared";
 import { shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
+import type { AgenticActionOption } from "./agentic-options";
+
+export type { AgenticActionOption } from "./agentic-options";
 
 type JsonObject = Record<string, unknown>;
 
@@ -36,10 +39,10 @@ export const AGENTIC_PLAY_OPENING_PROMPT = [
   "【Agentic Play 开局断点】",
   "请读取上文中的角色 first message / 开场消息、角色卡、世界书和当前状态。",
   "不要替玩家行动，不要掷骰，不要直接推进到行动结果。",
-  "请把开场停在第一个需要玩家选择的断点，并根据开场文字给出恰好 5 个可选行动。",
-  "每个选项都必须给出基于当前文本判断的成功率，格式包含“成功率：xx%”。",
+  "请把开场停在第一个需要玩家选择的断点，并根据开场文字通过 present_player_options 工具给出恰好 5 个可选行动。",
+  "每个选项都必须给出基于当前文本判断的成功率。",
   "如果某个选项几乎必然成功，也要给出 95% 或 100%；如果风险极高，可以低至 5%。",
-  "最后补一句：玩家也可以输入自定义行动。",
+  "不要把选项直接写进正文；正文只写停在断点前的场景和必要提示。",
 ].join("\n");
 
 export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
@@ -75,6 +78,59 @@ export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
           },
         },
         required: ["dice", "reason"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "present_player_options",
+      description:
+        "Stop at a player-choice breakpoint and present structured action options for the Whale Play option panel. Use this instead of writing options into visible prose.",
+      parameters: {
+        type: "object",
+        properties: {
+          scene_text: {
+            type: "string",
+            description:
+              "Visible narration up to the breakpoint. Do not include numbered options, success-rate option lines, or 'custom action' filler.",
+          },
+          question: {
+            type: "string",
+            description: "The short question shown above the option panel.",
+          },
+          options: {
+            type: "array",
+            minItems: 5,
+            maxItems: 5,
+            description: "Exactly five player action options.",
+            items: {
+              type: "object",
+              properties: {
+                label: {
+                  type: "string",
+                  description: "Short option label or full action text shown to the player.",
+                },
+                action: {
+                  type: "string",
+                  description: "The exact action instruction to send back when selected.",
+                },
+                success_probability: {
+                  type: "integer",
+                  minimum: 0,
+                  maximum: 100,
+                  description: "Estimated success probability for this action.",
+                },
+                description: {
+                  type: "string",
+                  description: "Optional short note explaining risk, cost, or likely consequence.",
+                },
+              },
+              required: ["label", "action", "success_probability"],
+            },
+          },
+        },
+        required: ["scene_text", "question", "options"],
       },
     },
   },
@@ -177,8 +233,8 @@ export function buildAgenticPlaySystemRules(characterName: string) {
     "核心原则：",
     "1. 不替玩家决定内心想法、感受或最终行动。",
     "2. 玩家输入优先于系统选项；选项只是建议。",
-    "3. 如果开局或当前剧情来到需要玩家决定的断点，停止继续推进，给出恰好 5 个编号行动选项。",
-    "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并写成“成功率：xx%”。",
+    "3. 如果开局或当前剧情来到需要玩家决定的断点，停止继续推进，调用 present_player_options 给出恰好 5 个行动选项。",
+    "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并放入 success_probability。",
     "5. 普通、无风险、必然成功的动作不需要掷骰，但仍要说明为什么几乎必然成功。",
     "6. 玩家选择选项或输入自定义行动后，如果行动有风险、不确定、对抗、战斗、潜行、调查、搜索、说服、欺骗、魔法或运气成分，必须先估计成功率，再调用 roll_dice。",
     "7. 调用 roll_dice 时优先使用 1d20，并传入 success_probability；掷骰结果必须真实来自工具，禁止编造骰点。",
@@ -188,9 +244,9 @@ export function buildAgenticPlaySystemRules(characterName: string) {
     "",
     "断点规则：",
     "- 当你判断下一步必须由玩家选择时，只写到断点，不替玩家越过断点。",
-    "- 断点回复必须包含恰好 5 个编号选项，每个选项都带成功率。",
-    "- 每个选项必须独占一行，格式固定为：1. 行动描述（成功率：xx%）。",
-    "- 选项之后可以补一句“也可以输入自定义行动”，但这句话不算第 6 个选项。",
+    "- 断点必须调用 present_player_options；不要把选项列表直接写进正文。",
+    "- present_player_options 的 scene_text 只写场景、风险和断点，不包含编号选项。",
+    "- present_player_options 必须传恰好 5 个 options，每个 option 都带 success_probability。",
     "- 开局根据 first message 生成选项时，不要调用 roll_dice。",
     "- 玩家自定义行动时，先在文本中说明你判定的成功率，再根据该概率调用 roll_dice。",
     "",
@@ -201,7 +257,7 @@ export function buildAgenticPlaySystemRules(characterName: string) {
     "### 判定（如本回合需要）",
     "### 结果",
     "### 状态更新",
-    "### 你可以选择",
+    "断点问题交给 present_player_options 工具发起，不在正文中列选项。",
     "",
     "行动选项要求：恰好 5 个，至少一个低风险选项、一个推进剧情选项、一个高风险高回报选项；每个选项都必须带成功率。",
     "不要输出内部 JSON，不要解释工具调用过程。",
@@ -240,7 +296,8 @@ export function buildAgenticPlayPresetItems(characterName: string): AgenticPrese
         "specific_rules",
         [
           "特定规则模块：",
-          "- 断点必须给出恰好 5 个选项，每个选项包含成功率。",
+          "- 断点必须调用 present_player_options 给出恰好 5 个结构化选项，每个选项包含成功率。",
+          "- 不要把断点选项写进正文；选项只进入工具参数。",
           "- 自定义行动必须先估计成功率，再根据风险决定是否 roll_dice。",
           "- 如果选项不是风险行动，仍给成功率，但不需要掷骰。",
           "- 状态变化必须通过 update_game_state 落地。",
@@ -294,6 +351,38 @@ function parseProbability(value: unknown): number | undefined {
   const parsed = parseInteger(value, Number.NaN);
   if (!Number.isFinite(parsed)) return undefined;
   return clampNumber(parsed, 5, 95);
+}
+
+function trimString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function parseOptionProbability(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = parseInteger(value, Number.NaN);
+  if (!Number.isFinite(parsed)) return undefined;
+  return clampNumber(parsed, 0, 100);
+}
+
+function normalizePlayerOptions(args: JsonObject): AgenticActionOption[] {
+  if (!Array.isArray(args.options)) return [];
+  return args.options
+    .map((item, index): AgenticActionOption | null => {
+      if (!isRecord(item)) return null;
+      const label = trimString(item.label) || trimString(item.action) || trimString(item.value);
+      const action = trimString(item.action) || trimString(item.value) || label;
+      if (!action || /自定义行动|自由行动|自己输入|玩家也可以/.test(action)) return null;
+      const probability = parseOptionProbability(item.success_probability ?? item.probability);
+      return {
+        id: `agentic-tool-option-${index}-${action.slice(0, 24)}`,
+        label: label || action,
+        action,
+        probability,
+        description: trimString(item.description) || undefined,
+      };
+    })
+    .filter((item): item is AgenticActionOption => !!item)
+    .slice(0, 5);
 }
 
 function parseDiceExpression(value: unknown) {
@@ -457,13 +546,38 @@ async function generateAgenticStep(
   };
 }
 
-function executeTool(call: GenerateToolCall, state: AgenticGameState, character: Character) {
+type AgenticToolExecution = {
+  nextState: AgenticGameState;
+  result: unknown;
+  stopForUser?: boolean;
+  content?: string;
+  agenticOptions?: AgenticActionOption[];
+};
+
+function executeTool(call: GenerateToolCall, state: AgenticGameState, character: Character): AgenticToolExecution {
   const args = parseToolArguments(call.function.arguments);
 
   if (call.function.name === "roll_dice") {
     return {
       nextState: state,
       result: rollDice(args),
+    };
+  }
+
+  if (call.function.name === "present_player_options") {
+    const agenticOptions = normalizePlayerOptions(args);
+    const question = trimString(args.question) || "你下一步要怎么做？";
+    const sceneText = trimString(args.scene_text) || trimString(args.content) || question;
+    return {
+      nextState: state,
+      result: {
+        ok: agenticOptions.length >= 2,
+        question,
+        options: agenticOptions,
+      },
+      stopForUser: agenticOptions.length >= 2,
+      content: sceneText,
+      agenticOptions,
     };
   }
 
@@ -508,6 +622,7 @@ export interface GenerateAgenticPlayTurnOptions {
 
 export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOptions): Promise<{
   content: string;
+  agenticOptions?: AgenticActionOption[];
   reasoningContent?: string;
   usage?: MessageUsage;
   gameState: AgenticGameState;
@@ -560,6 +675,13 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         toolCalls: result.toolCalls,
       });
 
+      let stopForUser:
+        | {
+            content: string;
+            agenticOptions: AgenticActionOption[];
+          }
+        | null = null;
+
       for (const call of result.toolCalls) {
         options.onToolRound?.(call.function.name);
         const executed = executeTool(call, gameState, options.character);
@@ -570,6 +692,23 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
           name: call.function.name,
           content: JSON.stringify(executed.result),
         });
+        if (executed.stopForUser && executed.agenticOptions?.length) {
+          stopForUser = {
+            content: executed.content || result.content || "你下一步要怎么做？",
+            agenticOptions: executed.agenticOptions,
+          };
+        }
+      }
+      if (stopForUser) {
+        options.onFinalRound?.();
+        return {
+          content: stopForUser.content,
+          agenticOptions: stopForUser.agenticOptions,
+          reasoningContent: reasoningContent || undefined,
+          usage,
+          gameState,
+          finishReason,
+        };
       }
       continue;
     }

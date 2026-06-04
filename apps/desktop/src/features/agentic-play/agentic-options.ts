@@ -3,6 +3,7 @@ export type AgenticActionOption = {
   label: string;
   action: string;
   probability?: number;
+  description?: string;
 };
 
 function stripMarkdownFormatting(value: string) {
@@ -13,21 +14,37 @@ function stripMarkdownFormatting(value: string) {
     .trim();
 }
 
+function parseProbability(value: string): number | undefined {
+  const match = value.match(/(?:成功率|成功概率|概率)\s*[：: ]\s*(\d{1,3})\s*%?/);
+  if (!match) return undefined;
+  return Math.min(100, Math.max(0, Number.parseInt(match[1], 10)));
+}
+
+function cleanActionText(value: string) {
+  return value
+    .replace(/[（(]?\s*(?:成功率|成功概率|概率)\s*[：: ]\s*\d{1,3}\s*%?\s*[）)]?/g, "")
+    .replace(/^[）)]?\s*[-—–:：]+\s*/, "")
+    .replace(/^[（(]\s*/, "")
+    .replace(/\s*[）)]$/g, "")
+    .replace(/\s+[-—–]\s*$/, "")
+    .replace(/[。.!！；;]+$/g, "")
+    .trim();
+}
+
 function parseAgenticOptionLine(line: string, index: number): AgenticActionOption | null {
   const trimmed = stripMarkdownFormatting(line);
   const match = trimmed.match(/^(?:选项\s*)?(?:\d+|[A-Ea-e])[.、):：]\s*(.+)$/);
-  if (!match) return null;
+  const successFirstMatch = trimmed.match(
+    /^[（(]?\s*(?:成功率|成功概率|概率)\s*[：: ]\s*\d{1,3}\s*%?\s*(?:[）)]\s*)?(?:[-—–]+\s*)?(.*)$/u,
+  );
+  if (!match && !successFirstMatch) return null;
 
-  const body = match[1].trim();
+  const body = (match?.[1] ?? trimmed).trim();
   if (!body || /自定义行动|自由行动|自己输入|玩家也可以/.test(body)) return null;
 
-  const probabilityMatch = body.match(/(?:成功率|成功概率|概率)\s*[：: ]\s*(\d{1,3})\s*%?/);
-  const probability = probabilityMatch ? Math.min(100, Math.max(0, Number.parseInt(probabilityMatch[1], 10))) : undefined;
-  let action = body
-    .replace(/[（(]?\s*(?:成功率|成功概率|概率)\s*[：: ]\s*\d{1,3}\s*%?\s*[）)]?/g, "")
-    .replace(/\s+[-—]\s*$/, "")
-    .trim();
-  action = action.replace(/[。.!！；;]+$/g, "").trim();
+  const probability = parseProbability(body);
+  const successFirstAction = successFirstMatch?.[1] ? cleanActionText(successFirstMatch[1]) : "";
+  const action = successFirstAction || cleanActionText(body);
   if (!action) return null;
 
   return {
@@ -70,7 +87,14 @@ export function extractAgenticOptions(content: string): { content: string; optio
     }
   });
 
-  if (options.length < 2 && choiceHeaderIndex != null) {
+  removeLineIndexes.forEach((index) => {
+    const previousIndex = index - 1;
+    if (/^\s*[-*_]{3,}\s*$/.test(lines[previousIndex] ?? "")) {
+      removeLineIndexes.add(previousIndex);
+    }
+  });
+
+  if (options.length < 2) {
     removeLineIndexes.clear();
     options.length = 0;
   }
@@ -80,6 +104,7 @@ export function extractAgenticOptions(content: string): { content: string; optio
   const nextContent = lines
     .filter((_, index) => !removeLineIndexes.has(index))
     .join("\n")
+    .replace(/(?:^|\n)\s*[-*_]{3,}\s*$/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 

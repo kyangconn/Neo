@@ -47,7 +47,7 @@ import type { DisplayBlock } from "@neo-tavern/core";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import { ChoiceInputPanel, type ChoiceInputPanelChoice } from "@/components/ChoiceInputPanel";
-import { type BuiltPrompt, type ContextBlock, type Message, type MessageImage } from "@neo-tavern/shared";
+import { type BuiltPrompt, type Chat, type ContextBlock, type Message, type MessageImage } from "@neo-tavern/shared";
 import {
   createGeneratingImages,
   extractImageMarkers,
@@ -265,9 +265,18 @@ export function ChatPage() {
   const [agenticPlayEnabled, setAgenticPlayEnabled] = useState(false);
   const [agenticGameState, setAgenticGameState] = useState<AgenticGameState | null>(null);
   const [dismissedAgenticChoiceMessageId, setDismissedAgenticChoiceMessageId] = useState<string | null>(null);
+  const [chatRecords, setChatRecords] = useState<Chat[]>([]);
 
   const characterId = searchParams.get("characterId");
   const character = characters.find((c) => c.id === (currentChat?.characterId ?? characterId));
+
+  const handleSelectCharacterChat = useCallback(
+    (chatId: string) => {
+      if (chatId === currentChat?.id) return;
+      navigate(`/chat/${chatId}`);
+    },
+    [currentChat?.id, navigate],
+  );
 
   const handleFontSizeChange = (value: number) => {
     const next = clampChatFontSize(value);
@@ -315,6 +324,23 @@ export function ChatPage() {
       localStorage.setItem("neo:last-chat-id", currentChat.id);
     }
   }, [currentChat?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    chatRepository.list().then((records) => {
+      if (cancelled) return;
+      const byId = new Map(records.map((chat) => [chat.id, chat]));
+      if (currentChat) {
+        byId.set(currentChat.id, currentChat);
+      }
+      setChatRecords([...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentChat, currentChat?.id, currentChat?.updatedAt, messages.length, sending]);
 
   useEffect(() => {
     presetRepository.getActivePresetId().then(async (activeId) => {
@@ -1080,9 +1106,10 @@ export function ChatPage() {
             ? applyRegexRules(msg.content, activeRegexRules)
             : null;
         const rawDisplayContent = split?.displayContent ?? split?.promptContent ?? msg.content;
+        const structuredAgenticOptions = !isUser && agenticPlayEnabled ? (msg.agenticOptions ?? []) : [];
         const agenticChoiceBlock = !isUser && agenticPlayEnabled ? extractAgenticOptions(rawDisplayContent) : null;
         const displayContent = agenticChoiceBlock?.content ?? rawDisplayContent;
-        const displaySplit = agenticChoiceBlock?.options.length ? null : split;
+        const displaySplit = agenticChoiceBlock?.options.length || structuredAgenticOptions.length ? null : split;
         const isStreamingAi = !isUser && isGeneratingCurrentChat && msg.id === streamingMessageId;
         const hasDisplayContent = displayContent.trim().length > 0;
 
@@ -1092,7 +1119,7 @@ export function ChatPage() {
           isFinalAi,
           split: displaySplit,
           displayContent,
-          agenticOptions: agenticChoiceBlock?.options ?? [],
+          agenticOptions: structuredAgenticOptions.length ? structuredAgenticOptions : (agenticChoiceBlock?.options ?? []),
           isStreamingAi,
           hasDisplayContent,
         };
@@ -1113,7 +1140,12 @@ export function ChatPage() {
       id: option.id,
       label: option.action,
       value: option.action,
-      description: option.probability !== undefined ? `成功率 ${option.probability}%` : undefined,
+      description: [
+        option.probability !== undefined ? `成功率 ${option.probability}%` : "",
+        option.description ?? "",
+      ]
+        .filter(Boolean)
+        .join(" · "),
     })) ?? [];
 
   const isNearBottomRef = useRef(true);
@@ -1198,7 +1230,13 @@ export function ChatPage() {
   return (
     <div className="flex h-full flex-col" style={{ "--chat-font-size": fontSize + "px" } as React.CSSProperties}>
       <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] xl:grid-cols-[230px_1fr_320px] gap-4 p-4 flex-1 overflow-hidden">
-        <ChatSidebar character={character} agenticPlayEnabled={agenticPlayEnabled} onBack={() => navigate("/")} />
+        <ChatSidebar
+          chats={chatRecords}
+          characters={characters}
+          currentChatId={currentChat?.id}
+          onBack={() => navigate("/")}
+          onSelectChat={handleSelectCharacterChat}
+        />
 
         <section className="flex chat-grid-cell flex-col rounded-lg border bg-background">
           <div

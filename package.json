@@ -1,6 +1,7 @@
 {
   "name": "whale-play",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "dev": "pnpm --filter @neo-tavern/desktop dev",
     "build": "pnpm --filter @neo-tavern/desktop build",

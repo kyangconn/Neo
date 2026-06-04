@@ -145,6 +145,49 @@ describe("Agentic Play", () => {
     expect(provider.generate).toHaveBeenCalledTimes(2);
   });
 
+  it("returns structured player options from the agentic option tool", async () => {
+    const provider: ModelProvider = {
+      id: "fake",
+      name: "Fake",
+      generate: vi.fn().mockResolvedValue({
+        content: "",
+        toolCalls: [
+          {
+            id: "options-1",
+            type: "function",
+            function: {
+              name: "present_player_options",
+              arguments: JSON.stringify({
+                scene_text: "### 场景\n露娜停在书架旁，等你决定下一步。",
+                question: "你想怎么行动？",
+                options: [
+                  { label: "询问禁书", action: "询问禁书的下落", success_probability: 72 },
+                  { label: "检查索引", action: "检查桌上的索引卡", success_probability: 85 },
+                  { label: "绕到柜台后", action: "偷偷绕到柜台后方", success_probability: 38 },
+                  { label: "等待解释", action: "等露娜主动解释", success_probability: 90 },
+                  { label: "说明来意", action: "直接说明你的来意", success_probability: 65 },
+                ],
+              }),
+            },
+          },
+        ],
+      }),
+    };
+
+    const result = await generateAgenticPlayTurn({
+      provider,
+      modelConfig,
+      builtPrompt,
+      character,
+      gameState: createInitialAgenticGameState(character),
+    });
+
+    expect(result.content).toBe("### 场景\n露娜停在书架旁，等你决定下一步。");
+    expect(result.agenticOptions).toHaveLength(5);
+    expect(result.agenticOptions?.[0]).toMatchObject({ action: "询问禁书的下落", probability: 72 });
+    expect(provider.generate).toHaveBeenCalledTimes(1);
+  });
+
   it("streams agentic tool calls and final visible content", async () => {
     let callCount = 0;
     const streamed: string[] = [];
@@ -215,5 +258,26 @@ describe("Agentic Play", () => {
     expect(parsed.content).not.toContain("询问禁书");
     expect(parsed.options).toHaveLength(5);
     expect(parsed.options[0]).toMatchObject({ action: "询问禁书的下落", probability: 72 });
+  });
+
+  it("removes success-rate-first action lines from agentic body text", () => {
+    const parsed = extractAgenticOptions([
+      "温水在纸杯里冒着热气。",
+      "",
+      "---",
+      "",
+      "**（成功率：**100%——正常继续寻找云朵口袋，等待她自然醒。）",
+      "**（成功率：**80%——你能不动声色地整理信息，但可能克制不住好奇。）",
+      "**（成功率：**65%——直接发问可能让她警惕。）",
+      "**（成功率：**55%——试图混入梦中，风险更高。）",
+      "**（成功率：**85%——解释情况，争取她的配合。）",
+    ].join("\n"));
+
+    expect(parsed.content).toBe("温水在纸杯里冒着热气。");
+    expect(parsed.options).toHaveLength(5);
+    expect(parsed.options[0]).toMatchObject({
+      action: "正常继续寻找云朵口袋，等待她自然醒",
+      probability: 100,
+    });
   });
 });

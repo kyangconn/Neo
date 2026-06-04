@@ -30,6 +30,7 @@ function makeMessage(input: CreateMessageInput): Message {
     thinkingDuration: input.thinkingDuration,
     usage: input.usage,
     images: input.images,
+    agenticOptions: input.agenticOptions,
     createdAt: new Date().toISOString(),
   };
 }
@@ -125,7 +126,10 @@ export const messageRepository = {
   async patch(
     id: string,
     patch: Partial<
-      Pick<Message, "content" | "reasoningContent" | "generateDuration" | "thinkingDuration" | "usage" | "images">
+      Pick<
+        Message,
+        "content" | "reasoningContent" | "generateDuration" | "thinkingDuration" | "usage" | "images" | "agenticOptions"
+      >
     >,
   ): Promise<Message> {
     if (await canUseSqliteMessages()) {

@@ -33,6 +33,7 @@ import {
   buildAgenticPlayPresetItems,
   createAgenticPlayContextBlock,
   generateAgenticPlayTurn,
+  type AgenticActionOption,
   type AgenticGameState,
 } from "@/features/agentic-play/agentic-play";
 import {
@@ -699,6 +700,7 @@ export function useSendMessage({
     debugContext?: DebugPromptContext,
   ): Promise<{
     content: string;
+    agenticOptions?: AgenticActionOption[];
     reasoningContent: string;
     usage?: Message["usage"];
     generateDuration: number;
@@ -739,6 +741,7 @@ export function useSendMessage({
         generateDuration: undefined,
         thinkingDuration: undefined,
         usage: undefined,
+        agenticOptions: undefined,
       },
       { persist: false },
     );
@@ -890,6 +893,7 @@ export function useSendMessage({
     debugContext?: DebugPromptContext,
   ): Promise<{
     content: string;
+    agenticOptions?: AgenticActionOption[];
     reasoningContent: string;
     usage?: Message["usage"];
     generateDuration: number;
@@ -929,6 +933,7 @@ export function useSendMessage({
         generateDuration: undefined,
         thinkingDuration: undefined,
         usage: undefined,
+        agenticOptions: undefined,
       },
       { persist: false },
     );
@@ -986,6 +991,7 @@ export function useSendMessage({
             content: "",
             reasoningContent: nextReasoningContent || undefined,
             thinkingDuration,
+            agenticOptions: undefined,
           },
           { persist: false },
         );
@@ -998,6 +1004,7 @@ export function useSendMessage({
     const usage = withDebugUsage(withDeepSeekUsageCost(result.usage, modelConfig), debugPrompt);
     return {
       content: result.content,
+      agenticOptions: result.agenticOptions,
       reasoningContent: result.reasoningContent ?? nextReasoningContent,
       usage,
       generateDuration: Date.now() - genStart,
@@ -1041,6 +1048,7 @@ export function useSendMessage({
         }
         await patchMessage(assistantId, {
           content: result.content,
+          agenticOptions: result.agenticOptions,
           reasoningContent: result.reasoningContent || undefined,
           generateDuration: result.generateDuration,
           thinkingDuration: result.thinkingDuration,
@@ -1059,6 +1067,7 @@ export function useSendMessage({
             generateDuration: undefined,
             thinkingDuration: result.thinkingDuration,
             usage: result.usage,
+            agenticOptions: undefined,
           },
           { persist: false },
         );
