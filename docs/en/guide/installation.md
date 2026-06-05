@@ -64,7 +64,7 @@ pnpm dev
 
 After running `pnpm dev`, watch the terminal for a URL like `http://localhost:1420` — open that in your browser to see Whale Play.
 
-![Installation terminal output](../images/installation-terminal.png)
+![Installation terminal output](../../images/installation-terminal.png)
 
 > **📸 Screenshot needed:** Run `pnpm install` and capture the terminal output showing successful dependency installation. Save the image as `docs/images/installation-terminal.png`.
 

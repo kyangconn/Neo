@@ -13,7 +13,7 @@ Whale Builder 是 Whale Play 内置的一种**对话驱动的角色创建助手*
 - 一份**创建计划**（构建器遵循的结构化蓝图）
 - 一份**评估报告**（质量检查与改进建议）
 
-![Whale Builder 聊天界面](../images/builder-chat.png)
+![Whale Builder 聊天界面](../../images/builder-chat.png)
 
 ---
 
@@ -22,7 +22,7 @@ Whale Builder 是 Whale Play 内置的一种**对话驱动的角色创建助手*
 你可以从两个位置启动构建器：
 
 1. **角色页面** — 点击 **"Whale Builder"** 按钮。
-2. **直接 URL** — 导航到 `/character-builder`。
+2. **直接 URL** — 点击侧边栏的钢笔图标。
 
 启动后，只需描述你的角色构思。例如：
 
@@ -106,7 +106,7 @@ narrative_hooks:
 
 保存后，你可以立即与你的新角色开始聊天。
 
-![制品面板](../images/builder-artifacts.png)
+![制品面板](../../images/builder-artifacts.png)
 
 ---
 

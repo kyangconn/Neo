@@ -29,7 +29,7 @@ If you mention "Moonstone" or "the glowing blue gem" in a chat, the AI will know
 3. Give it a **name** (e.g., "The Kingdom of Veridia").
 4. Optionally, add a short **description** of what this world book covers.
 
-![World book editor](../images/worldbook-editor.png)
+![World book editor](../../images/worldbook-editor.png)
 
 > **📸 Screenshot needed:** Open the World Books page showing a list of 1–2 world books, with the "New World Book" button visible. Save as `docs/images/worldbook-editor.png`.
 
@@ -96,7 +96,7 @@ You can have multiple world books, but only **active** ones get checked during a
 - **Active:** The world book's entries are checked against every message.
 - **Inactive:** The world book is stored but ignored during chats.
 
-![Entry edit panel](../images/worldbook-entry.png)
+![Entry edit panel](../../images/worldbook-entry.png)
 
 > **📸 Screenshot needed:** Open an entry's edit panel showing all fields filled in (Title, Keywords, Content, Priority, Trigger Mode selector, and Position selector). Save as `docs/images/worldbook-entry.png`.
 

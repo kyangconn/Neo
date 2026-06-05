@@ -17,7 +17,7 @@ A persona has two parts:
 
 Without a persona, the AI has no information about you beyond the messages you type. With a persona, characters can greet you by name, reference your background, and react to your described appearance.
 
-![Persona settings page](../images/persona-page.png)
+![Persona settings page](../../images/persona-page.png)
 
 > **📸 Screenshot needed:** Navigate to the Persona settings page (click the user icon 👤 in the left sidebar). Capture the full page showing the Display Name field filled in (e.g., "Alex") and the Description field with sample text. Save as `docs/images/persona-page.png`.
 

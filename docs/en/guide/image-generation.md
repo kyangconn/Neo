@@ -38,7 +38,7 @@ If you have ComfyUI running on another machine or a cloud service:
 2. Enter it in Whale Play's Image Generation settings.
 3. Click **"Test Connection"** to verify.
 
-![Image generation settings](../images/image-settings.png)
+![Image generation settings](../../images/image-settings.png)
 
 > **📸 Screenshot needed:** Navigate to Settings → Image Generation. Capture the page showing the ComfyUI server URL field, the "Test Connection" button, and the workflow import section. Save as `docs/images/image-settings.png`.
 
@@ -87,7 +87,7 @@ Once your ComfyUI connection is set up, you can generate images without leaving 
 4. Click **"Generate"**.
 5. Wait a moment — the image will appear in the chat as a new message.
 
-![Image generation in chat](../images/image-generation-chat.png)
+![Image generation in chat](../../images/image-generation-chat.png)
 
 > **📸 Screenshot needed:** During an active chat, open the image generation prompt dialog. Capture the dialog showing a text description entered and the "Generate" button. If possible, also show a generated image that's been inserted into the chat. Save as `docs/images/image-generation-chat.png`.
 

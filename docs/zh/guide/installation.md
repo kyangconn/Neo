@@ -24,7 +24,7 @@
 
 如果你希望以原生 Tauri 桌面应用方式运行，还需要：
 
-- **Rust**（稳定工具链）。[从 rustup.rs 安装](https://rustup.rs/)）
+- **Rust**（稳定工具链）[从 rustup.rs 安装](https://rustup.rs/)。
 
 ---
 
@@ -71,7 +71,7 @@ pnpm dev
 
 运行 `pnpm dev` 后，在终端中查找类似 `http://localhost:1420` 的 URL —— 在浏览器中打开即可看到 Whale Play。
 
-![安装终端输出](../images/installation-terminal.png)
+![安装终端输出](../../images/installation-terminal.png)
 
 当然你也可以在 `pnpm install` 后，运行命令 `pnpm tauri dev` 来打开一个桌面应用，界面和功能都与浏览器中的一致。
 
@@ -94,8 +94,6 @@ pnpm dev
 2. 找到最新版本。
 3. 下载适用于你平台的安装包：
    - **Windows**：`Whale-Play_<版本号>_x64-setup.exe` 或 `Whale-Play_<版本号>_x64.msi`
-   - **macOS**：`Whale-Play_<版本号>_x64.dmg`
-   - **Linux**：`Whale-Play_<版本号>_amd64.deb` 或 `Whale-Play_<版本号>.AppImage`
 4. 运行安装程序，按照屏幕提示完成安装。
 
 > **注意：** 预构建安装包由项目维护者构建和签名，可能不包含最新功能和修复。如果你需要最新的未发布功能，请使用方式一或方式二。

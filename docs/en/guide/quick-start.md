@@ -43,7 +43,7 @@ Whale Play uses the DeepSeek API to power the AI responses. You'll need to add y
 4. Click **"Save DeepSeek Profile"** — you should see a success message.
 5. Click **"Test Connection"** to verify everything works. A green checkmark ✅ means you're good to go.
 
-![API settings page](../images/settings-api.png)
+![API settings page](../../images/settings-api.png)
 
 > **📸 Screenshot needed:** After entering your API key, capture the Settings page showing the DeepSeek API section with the key filled in. Save the image as `docs/images/settings-api.png`.
 
@@ -68,7 +68,7 @@ Now it's time to build your first character — the personality the AI will role
 
 Your character now appears in the list. You can create as many as you like — each one has its own unique personality.
 
-![Character creation dialog](../images/character-create.png)
+![Character creation dialog](../../images/character-create.png)
 
 > **📸 Screenshot needed:** Fill in the character creation form with example data (like "Luna" above) and capture the dialog. Save as `docs/images/character-create.png`.
 
@@ -85,7 +85,7 @@ Your character is ready. Let's talk to them.
 
 The AI will respond based on the character card you created. Every response will reflect the personality, tone, and backstory you gave them.
 
-![Chat interface with first message](../images/chat-first-message.png)
+![Chat interface with first message](../../images/chat-first-message.png)
 
 > **📸 Screenshot needed:** Send a greeting to your character (e.g., *"Hello! What's this place?"*) and capture the chat view showing both your message and the AI's response. Save as `docs/images/chat-first-message.png`.
 

@@ -8,7 +8,7 @@ Characters are the heart of Whale Play. Each character is a digital "personality
 
 When you open the Characters page, you'll see all your created characters in a list. Each entry shows the character's **name**, **avatar**, and a short **description**. From here you can click a character to start chatting, or use the action buttons to edit or delete them.
 
-![Character list page](../images/characters-list.png)
+![Character list page](../../images/characters-list.png)
 
 > **📸 Screenshot needed:** Navigate to the Characters page (click the person icon 👤 in the left sidebar). Capture the full page showing 2–3 sample characters in the list, with their avatars, names, and descriptions visible. Include the "New Character" button. Save as `docs/images/characters-list.png`.
 
@@ -27,7 +27,7 @@ Click **"New Character"** to open the creation dialog. Fill in the fields below 
 | **First Message** | Yes | The very first message the character will send when you start a new chat. This sets the tone for the entire conversation. | *"Welcome, traveler. I've been expecting you. The books have whispered your name for days."* |
 | **Example Dialogues** | No | Short sample conversations that show how the character talks. These help the AI match the character's speech style. Each example is a back-and-forth exchange. | `You: Who are you?` `Luna: I am the keeper of these woods. Every book here holds a memory — yours among them.` |
 
-![Character edit dialog](../images/characters-edit.png)
+![Character edit dialog](../../images/characters-edit.png)
 
 > **📸 Screenshot needed:** Open the "New Character" dialog with all fields filled in (use the example data above). Capture the entire dialog form. Save as `docs/images/characters-edit.png`.
 

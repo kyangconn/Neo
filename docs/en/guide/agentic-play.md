@@ -12,7 +12,7 @@ In this mode:
 
 The result is a turn-based narrative game where the GM describes the world, presents you with meaningful choices, rolls real dice to resolve risk, and keeps the story moving forward.
 
-![Agentic Play chat with dice roll](../images/agentic-play-chat.png)
+![Agentic Play chat with dice roll](../../images/agentic-play-chat.png)
 
 ---
 

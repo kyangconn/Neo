@@ -29,7 +29,7 @@
 | **Base URL** | AI API 的服务器地址。对于 DeepSeek，这是 `https://api.deepseek.com`。对于其他提供商，请使用其 API 端点。        |
 | **Model**    | 使用哪个 AI 模型。不同模型有不同的优势（速度、创造力、推理能力）。常见选项：`deepseek-chat`、`gpt-4o-mini` 等。 |
 
-![设置 API 页面](../images/settings-api-config.png)
+![设置 API 页面](../../images/settings-api-config.png)
 
 > **📸 需要截图：** 导航到设置并滚动到 API Configuration 部分。截取页面，显示 API Key 字段（已遮蔽）、Base URL 字段和 Model 选择器。图片保存为 `docs/images/settings-api-config.png`。
 
@@ -67,7 +67,7 @@ Whale Play 提供多种视觉主题。选择最适合你眼睛的样式。
 | **Sepia**  | 暖色调、纸张般的质感——适合长时间阅读  |
 | **System** | 自动跟随你的操作系统主题（浅色/深色） |
 
-![设置外观](../images/settings-appearance.png)
+![设置外观](../../images/settings-appearance.png)
 
 > **📸 需要截图：** 导航到设置中的 Appearance 部分。截取页面，显示主题选择器，所有选项（Light、Dark、Sepia、System）均可见。图片保存为 `docs/images/settings-appearance.png`。
 

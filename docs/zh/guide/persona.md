@@ -17,7 +17,7 @@
 
 如果没有设置人设，AI 除了你输入的消息之外，对你一无所知。有了人设，角色可以用你的名字打招呼，引用你的背景故事，并对你描述的外貌做出反应。
 
-![人设设置页面](../images/persona-page.png)
+![人设设置页面](../../images/persona-page.png)
 
 > **📸 需要截图：** 导航到人设设置页面（点击左侧边栏中的用户图标 👤）。截取完整页面，显示已填写的 Display Name 字段（例如"小智"）和带有示例文本的 Description 字段。图片保存为 `docs/images/persona-page.png`。
 

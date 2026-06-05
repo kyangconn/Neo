@@ -29,7 +29,7 @@ Presets are made up of one or more **cards**. Each card is a piece of text with 
 3. Give your preset a **name** (e.g., "Storyteller Mode").
 4. Start adding cards to the preset.
 
-![Presets page](../images/presets-page.png)
+![Presets page](../../images/presets-page.png)
 
 > **📸 Screenshot needed:** Navigate to the Presets page. Capture the full page showing 2–3 preset cards in the list (e.g., "Storyteller Mode," "Combat Rules," "Minimalist"), with the "New Preset" button visible. Save as `docs/images/presets-page.png`.
 
@@ -132,7 +132,7 @@ The exported JSON looks like this:
 }
 ```
 
-![Card editor dialog](../images/presets-card.png)
+![Card editor dialog](../../images/presets-card.png)
 
 > **📸 Screenshot needed:** Open the card editor dialog with all fields filled in (Name, Role dropdown showing "system," Content with example text, Order field). Save as `docs/images/presets-card.png`.
 

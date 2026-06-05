@@ -13,7 +13,7 @@ The builder is powered by a **Skill system** — specialized AI personas that kn
 - A **creation plan** (the structured blueprint the builder followed)
 - An **evaluation report** (quality check with improvement suggestions)
 
-![Whale Builder chat interface](../images/builder-chat.png)
+![Whale Builder chat interface](../../images/builder-chat.png)
 
 ---
 
@@ -106,7 +106,7 @@ Once you're satisfied, the builder calls `save_character_draft` to persist the c
 
 After saving, you can open a chat with your new character immediately.
 
-![Artifacts panel](../images/builder-artifacts.png)
+![Artifacts panel](../../images/builder-artifacts.png)
 
 ---
 

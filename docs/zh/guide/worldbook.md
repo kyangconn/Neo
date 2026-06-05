@@ -29,7 +29,7 @@
 3. 为其**命名**（例如"维里迪亚王国"）。
 4. 可选：添加简短**描述**说明这本世界书涵盖的内容。
 
-![世界书编辑器](../images/worldbook-editor.png)
+![世界书编辑器](../../images/worldbook-editor.png)
 
 > **📸 需要截图：** 打开世界书页面，显示 1–2 本世界书的列表，同时"New World Book"按钮可见。图片保存为 `docs/images/worldbook-editor.png`。
 
@@ -96,7 +96,7 @@
 - **激活：** 该世界书的条目会与每条消息进行匹配检查。
 - **停用：** 世界书会被保存，但在聊天中被忽略。
 
-![条目编辑面板](../images/worldbook-entry.png)
+![条目编辑面板](../../images/worldbook-entry.png)
 
 > **📸 需要截图：** 打开条目的编辑面板，显示所有已填写的字段（Title、Keywords、Content、Priority、Trigger Mode 选择器和 Position 选择器）。图片保存为 `docs/images/worldbook-entry.png`。
 
@@ -115,5 +115,3 @@
 - 了解如何[配置预设](./presets.md)以获得不同的聊天风格
 - 设置你的[人设](./persona.md)，为 AI 提供关于你的上下文信息
 - 查看[设置](./settings.md)，调整上下文 Token 限制以适配更大的世界书
-
-> 截图存放于 docs/images/ 目录，命名方式见英文版对应文档。

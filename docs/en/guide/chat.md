@@ -10,7 +10,7 @@ The chat view is where you talk to your characters. This guide covers all the wa
 2. A new chat view opens. If it's the first time chatting with this character, you'll see their **First Message** appear automatically.
 3. The character will say something to kick things off — now it's your turn to reply!
 
-![Chat interface overview](../images/chat-overview.png)
+![Chat interface overview](../../images/chat-overview.png)
 
 > **📸 Screenshot needed:** Start a chat with a character and send 3–4 messages back and forth. Capture the full chat view showing the message bubbles, the input box at the bottom, and the chat controls (edit/delete icons on messages). Save as `docs/images/chat-overview.png`.
 
@@ -101,7 +101,7 @@ The savepoint captures the entire conversation up to that moment, including all 
 3. Click **"Load"**.
 4. The chat will rewind to exactly that point. Any messages after the savepoint are removed.
 
-![Savepoint dialog](../images/chat-savepoint.png)
+![Savepoint dialog](../../images/chat-savepoint.png)
 
 > **📸 Screenshot needed:** Open the savepoint dialog showing a list of 2–3 named savepoints. Include the "Save" button and input field for creating a new one. Save as `docs/images/chat-savepoint.png`.
 

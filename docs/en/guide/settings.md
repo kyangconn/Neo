@@ -29,7 +29,7 @@ This section is where you connect Whale Play to an AI service. You need an API k
 | **Base URL** | The server address for the AI API. For DeepSeek, this is `https://api.deepseek.com`. For other providers, use their API endpoint.                             |
 | **Model**    | Which AI model to use. Different models have different strengths (speed, creativity, reasoning ability). Common options: `deepseek-chat`, `gpt-4o-mini`, etc. |
 
-![Settings API page](../images/settings-api-config.png)
+![Settings API page](../../images/settings-api-config.png)
 
 > **📸 Screenshot needed:** Navigate to Settings and scroll to the API Configuration section. Capture the page showing the API Key field (masked), Base URL field, and Model selector. Save as `docs/images/settings-api-config.png`.
 
@@ -67,7 +67,7 @@ Whale Play comes with several visual themes. Choose what's easiest on your eyes.
 | **Sepia**  | Warm, paper-like tone — great for long reading sessions          |
 | **System** | Automatically follows your operating system's theme (light/dark) |
 
-![Settings appearance](../images/settings-appearance.png)
+![Settings appearance](../../images/settings-appearance.png)
 
 > **📸 Screenshot needed:** Navigate to the Appearance section in Settings. Capture the page showing the theme selector with all options (Light, Dark, Sepia, System) visible. Save as `docs/images/settings-appearance.png`.
 

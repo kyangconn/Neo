@@ -12,7 +12,7 @@ Agentic Play 是 Whale Play 内置的一种**实验性游戏主持人模式**。
 
 最终效果是一个回合制的叙事游戏，GM 描述世界、为你提供有意义的选项、用真实的骰子判定风险，并推动故事向前发展。
 
-![Agentic Play 聊天掷骰](../images/agentic-play-chat.png)
+![Agentic Play 聊天掷骰](../../images/agentic-play-chat.png)
 
 ---
 
