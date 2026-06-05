@@ -67,10 +67,7 @@ async fn auth_middleware(
     next: Next<BoxBody>,
 ) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
     // Skip auth for localhost / 127.0.0.1
-    let host = req
-        .connection_info()
-        .host()
-        .to_string();
+    let host = req.connection_info().host().to_string();
     let is_local = host.starts_with("localhost")
         || host.starts_with("127.0.0.1")
         || host.ends_with(".localhost");
@@ -124,7 +121,11 @@ async fn login(
     let stored_pw = std::fs::read_to_string(store_path.get_ref())
         .ok()
         .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
-        .and_then(|v| v.get("neotavern_lan_password").and_then(|v| v.as_str()).map(|s| s.to_string()));
+        .and_then(|v| {
+            v.get("neotavern_lan_password")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        });
 
     match stored_pw {
         Some(pw) if pw == body.password => {
@@ -147,10 +148,7 @@ fn uuid_v4() -> String {
 
 // ── Store handlers ─────────────────────────────────────
 
-async fn get_store(
-    state: web::Data<ServerState>,
-    key: web::Path<String>,
-) -> HttpResponse {
+async fn get_store(state: web::Data<ServerState>, key: web::Path<String>) -> HttpResponse {
     let store = state.store.lock().unwrap();
     match store.get(&key.into_inner()) {
         Some(v) => HttpResponse::Ok().json(serde_json::json!({ "value": v })),

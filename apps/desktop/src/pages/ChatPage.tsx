@@ -1337,7 +1337,7 @@ export function ChatPage() {
                               />
                             ) : (
                               <p
-                                className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]"
+                                className="whitespace-pre-wrap break-words leading-relaxed"
                                 style={{ fontSize: `${fontSize}px` }}
                               >
                                 {displayContent}
@@ -1492,7 +1492,7 @@ export function ChatPage() {
                                         {block.speaker}
                                       </span>
                                       <p
-                                        className="whitespace-pre-wrap break-words pt-0.5 [overflow-wrap:anywhere]"
+                                        className="whitespace-pre-wrap break-words pt-0.5"
                                         style={{ fontSize: `${fontSize}px` }}
                                       >
                                         {block.content}
@@ -1501,7 +1501,7 @@ export function ChatPage() {
                                   ) : (
                                     <p
                                       key={bi}
-                                      className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]"
+                                      className="whitespace-pre-wrap break-words leading-relaxed"
                                       style={{ fontSize: `${fontSize}px` }}
                                     >
                                       {block.content}
@@ -1529,7 +1529,7 @@ export function ChatPage() {
                               </div>
                             ) : (
                               <p
-                                className="whitespace-pre-wrap break-words leading-relaxed [overflow-wrap:anywhere]"
+                                className="whitespace-pre-wrap break-words leading-relaxed"
                                 style={{ fontSize: `${fontSize}px` }}
                               >
                                 {displayContent}

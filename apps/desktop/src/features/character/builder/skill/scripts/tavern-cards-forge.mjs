@@ -6789,7 +6789,7 @@ var require_Document = __commonJS({
       createAlias(node, name) {
         if (!node.anchor) {
           const prev = anchors.anchorNames(this);
-          node.anchor = // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+          node.anchor =  
           !name || prev.has(name) ? anchors.findNewAnchor(name || "a", prev) : name;
         }
         return new Alias.Alias(node.anchor);
@@ -6812,7 +6812,7 @@ var require_Document = __commonJS({
         const { aliasDuplicateObjects, anchorPrefix, flow, keepUndefined, onTagObj, tag } = options ?? {};
         const { onAnchor, setAnchors, sourceObjects } = anchors.createNodeAnchors(
           this,
-          // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
+           
           anchorPrefix || "a"
         );
         const ctx = {
@@ -19504,7 +19504,7 @@ See https://babeljs.io/docs/configuration#print-effective-configs for more info.
               let n2, s2, i2;
               if (_assert()(void 0 !== r3, "expected `parentURL` to be defined"), (function(e5) {
                 if (void 0 === e5) return;
-                if ("string" != typeof e5 && (t5 = e5, !Boolean(t5 && "object" == typeof t5 && "href" in t5 && "string" == typeof t5.href && "protocol" in t5 && "string" == typeof t5.protocol && t5.href && t5.protocol))) throw new o.ERR_INVALID_ARG_TYPE("parentURL", ["string", "URL"], e5);
+                if ("string" != typeof e5 && (t5 = e5, !(t5 && "object" == typeof t5 && "href" in t5 && "string" == typeof t5.href && "protocol" in t5 && "string" == typeof t5.protocol && t5.href && t5.protocol))) throw new o.ERR_INVALID_ARG_TYPE("parentURL", ["string", "URL"], e5);
                 var t5;
               })(r3), r3) try {
                 n2 = new (_url2()).URL(r3);
@@ -34659,7 +34659,7 @@ ${e3}
               const s4 = n4.referencePaths;
               let i3;
               for (const n5 of s4) {
-                if (!!n5.find((e6) => e6.node === t5.node)) continue;
+                if (n5.find((e6) => e6.node === t5.node)) continue;
                 if ("callee" !== n5.key || !n5.parentPath.isCallExpression()) return "unknown";
                 const s5 = _guessExecutionStatusRelativeToCached(e5, n5, r5);
                 if (i3 && i3 !== s5) return "unknown";
@@ -69609,9 +69609,9 @@ var SafeEval = {
       "|": (a, b) => a | b(),
       "^": (a, b) => a ^ b(),
       "&": (a, b) => a & b(),
-      // eslint-disable-next-line eqeqeq -- API
+       
       "==": (a, b) => a == b(),
-      // eslint-disable-next-line eqeqeq -- API
+       
       "!=": (a, b) => a != b(),
       "===": (a, b) => a === b(),
       "!==": (a, b) => a !== b(),
@@ -69682,10 +69682,10 @@ var SafeEval = {
       "-": (a) => -SafeEval.evalAst(a, subs),
       "!": (a) => !SafeEval.evalAst(a, subs),
       "~": (a) => ~SafeEval.evalAst(a, subs),
-      // eslint-disable-next-line no-implicit-coercion -- API
+       
       "+": (a) => +SafeEval.evalAst(a, subs),
       typeof: (a) => typeof SafeEval.evalAst(a, subs),
-      // eslint-disable-next-line no-void, sonarjs/void-use -- feature
+      // eslint-disable-next-line sonarjs/void-use -- feature
       void: (a) => void SafeEval.evalAst(a, subs)
     }[ast.operator](ast.argument);
     return result;

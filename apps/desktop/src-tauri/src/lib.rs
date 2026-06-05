@@ -1,10 +1,10 @@
 pub mod server;
 
-use std::{collections::BTreeMap, fs, path::PathBuf, time::Duration, sync::Arc, sync::Mutex};
 use base64::{engine::general_purpose, Engine as _};
 use rusqlite::{params, OptionalExtension};
 use serde::Serialize;
 use serde_json::json;
+use std::{collections::BTreeMap, fs, path::PathBuf, sync::Arc, sync::Mutex, time::Duration};
 use tauri::Manager;
 
 pub type AppStore = BTreeMap<String, String>;
@@ -31,8 +31,8 @@ fn read_app_store(app: &tauri::AppHandle) -> Result<AppStore, String> {
     if !path.exists() {
         return Ok(AppStore::new());
     }
-    let raw = fs::read_to_string(&path)
-        .map_err(|err| format!("Failed to read app store: {err}"))?;
+    let raw =
+        fs::read_to_string(&path).map_err(|err| format!("Failed to read app store: {err}"))?;
     if raw.trim().is_empty() {
         return Ok(AppStore::new());
     }
@@ -90,7 +90,9 @@ fn json_string_field<'a>(value: &'a serde_json::Value, field: &str) -> Result<&'
         .ok_or_else(|| format!("Message is missing required field: {field}"))
 }
 
-fn serialize_message(message: &serde_json::Value) -> Result<(String, String, String, String), String> {
+fn serialize_message(
+    message: &serde_json::Value,
+) -> Result<(String, String, String, String), String> {
     let id = json_string_field(message, "id")?.to_string();
     let chat_id = json_string_field(message, "chatId")?.to_string();
     let created_at = json_string_field(message, "createdAt")?.to_string();
@@ -116,7 +118,10 @@ fn read_sqlite_message(conn: &rusqlite::Connection, id: &str) -> Result<serde_js
     parse_message_json(raw)
 }
 
-fn update_sqlite_message(conn: &rusqlite::Connection, message: &serde_json::Value) -> Result<(), String> {
+fn update_sqlite_message(
+    conn: &rusqlite::Connection,
+    message: &serde_json::Value,
+) -> Result<(), String> {
     let (id, chat_id, created_at, raw) = serialize_message(message)?;
     conn.execute(
         "UPDATE messages SET chat_id = ?1, created_at = ?2, message_json = ?3 WHERE id = ?4",
@@ -223,15 +228,21 @@ fn parse_duckduckgo_results(html: &str, limit: usize) -> Vec<WebSearchResult> {
             break;
         }
 
-        let Some(anchor_start) = block.find("<a") else { continue };
+        let Some(anchor_start) = block.find("<a") else {
+            continue;
+        };
         let anchor = &block[anchor_start..];
-        let Some(anchor_end) = anchor.find("</a>") else { continue };
+        let Some(anchor_end) = anchor.find("</a>") else {
+            continue;
+        };
         let anchor_block = &anchor[..anchor_end];
         if !anchor_block.contains("result__a") {
             continue;
         }
 
-        let Some(raw_url) = extract_attr(anchor_block, "href") else { continue };
+        let Some(raw_url) = extract_attr(anchor_block, "href") else {
+            continue;
+        };
         let title = strip_html_tags(anchor_block);
         if title.is_empty() {
             continue;
@@ -253,7 +264,10 @@ fn parse_duckduckgo_results(html: &str, limit: usize) -> Vec<WebSearchResult> {
     results
 }
 
-async fn read_comfy_json_response(response: reqwest::Response, label: &str) -> Result<serde_json::Value, String> {
+async fn read_comfy_json_response(
+    response: reqwest::Response,
+    label: &str,
+) -> Result<serde_json::Value, String> {
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
@@ -279,11 +293,9 @@ async fn web_search(query: String, limit: Option<usize>) -> Result<Vec<WebSearch
         .user_agent("WhalePlay/0.1 (+https://local.whale-play)")
         .build()
         .map_err(|err| format!("Failed to create search client: {err}"))?;
-    let url = reqwest::Url::parse_with_params(
-        "https://duckduckgo.com/html/",
-        &[("q", clean_query)],
-    )
-    .map_err(|err| format!("Failed to build search URL: {err}"))?;
+    let url =
+        reqwest::Url::parse_with_params("https://duckduckgo.com/html/", &[("q", clean_query)])
+            .map_err(|err| format!("Failed to build search URL: {err}"))?;
     let response = client
         .get(url)
         .send()
@@ -464,8 +476,7 @@ fn pick_folder() -> Result<Option<String>, String> {
 fn write_file_to_path(path: String, content: String) -> Result<(), String> {
     let p = PathBuf::from(&path);
     if let Some(parent) = p.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|err| format!("Failed to create directory: {err}"))?;
+        fs::create_dir_all(parent).map_err(|err| format!("Failed to create directory: {err}"))?;
     }
     fs::write(&p, content).map_err(|err| format!("Failed to write file: {err}"))
 }
@@ -485,11 +496,9 @@ fn save_workspace_dir(
 
     // Clear existing workspace files
     if dir.exists() {
-        fs::remove_dir_all(&dir)
-            .map_err(|err| format!("Failed to clear workspace dir: {err}"))?;
+        fs::remove_dir_all(&dir).map_err(|err| format!("Failed to clear workspace dir: {err}"))?;
     }
-    fs::create_dir_all(&dir)
-        .map_err(|err| format!("Failed to create workspace dir: {err}"))?;
+    fs::create_dir_all(&dir).map_err(|err| format!("Failed to create workspace dir: {err}"))?;
 
     let entries: Vec<serde_json::Value> = serde_json::from_str(&entries_json)
         .map_err(|err| format!("Invalid entries JSON: {err}"))?;
@@ -497,12 +506,13 @@ fn save_workspace_dir(
     for entry in &entries {
         let path_str = entry["entryPath"].as_str().unwrap_or("");
         let content = entry["content"].as_str().unwrap_or("");
-        if path_str.is_empty() || content.is_empty() { continue; }
+        if path_str.is_empty() || content.is_empty() {
+            continue;
+        }
 
         let file_path = dir.join(path_str);
         if let Some(parent) = file_path.parent() {
-            fs::create_dir_all(parent)
-                .map_err(|err| format!("Failed to create dir: {err}"))?;
+            fs::create_dir_all(parent).map_err(|err| format!("Failed to create dir: {err}"))?;
         }
         fs::write(&file_path, content)
             .map_err(|err| format!("Failed to write entry file {}: {err}", path_str))?;
@@ -512,10 +522,7 @@ fn save_workspace_dir(
 }
 
 #[tauri::command]
-fn delete_workspace_dir(
-    app: tauri::AppHandle,
-    session_id: String,
-) -> Result<(), String> {
+fn delete_workspace_dir(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
     let mut dir = app
         .path()
         .app_data_dir()
@@ -524,8 +531,7 @@ fn delete_workspace_dir(
     dir.push(&session_id);
 
     if dir.exists() {
-        fs::remove_dir_all(&dir)
-            .map_err(|err| format!("Failed to delete workspace dir: {err}"))?;
+        fs::remove_dir_all(&dir).map_err(|err| format!("Failed to delete workspace dir: {err}"))?;
     }
     Ok(())
 }
@@ -546,8 +552,7 @@ fn save_debug_prompt(
     fs::create_dir_all(&dir)
         .map_err(|err| format!("Failed to create debug_prompts directory: {err}"))?;
     dir.push(&filename);
-    fs::write(&dir, content)
-        .map_err(|err| format!("Failed to write debug prompt: {err}"))?;
+    fs::write(&dir, content).map_err(|err| format!("Failed to write debug prompt: {err}"))?;
     Ok(dir.to_string_lossy().to_string())
 }
 
@@ -558,7 +563,9 @@ fn sqlite_init_messages(
 ) -> Result<(), String> {
     let mut conn = open_sqlite(&app)?;
     let count = conn
-        .query_row("SELECT COUNT(*) FROM messages", [], |row| row.get::<_, i64>(0))
+        .query_row("SELECT COUNT(*) FROM messages", [], |row| {
+            row.get::<_, i64>(0)
+        })
         .map_err(|err| format!("Failed to count SQLite messages: {err}"))?;
 
     if count > 0 {
@@ -614,9 +621,9 @@ fn sqlite_list_messages_by_chat_id(
 
     let mut messages = Vec::new();
     for row in rows {
-        messages.push(parse_message_json(
-            row.map_err(|err| format!("Failed to read SQLite message row: {err}"))?,
-        )?);
+        messages.push(parse_message_json(row.map_err(|err| {
+            format!("Failed to read SQLite message row: {err}")
+        })?)?);
     }
     Ok(messages)
 }
@@ -641,14 +648,16 @@ fn sqlite_list_recent_messages_by_chat_id(
         )
         .map_err(|err| format!("Failed to prepare recent SQLite message query: {err}"))?;
     let rows = stmt
-        .query_map(params![chat_id, capped_limit], |row| row.get::<_, String>(0))
+        .query_map(params![chat_id, capped_limit], |row| {
+            row.get::<_, String>(0)
+        })
         .map_err(|err| format!("Failed to query recent SQLite messages: {err}"))?;
 
     let mut messages = Vec::new();
     for row in rows {
-        messages.push(parse_message_json(
-            row.map_err(|err| format!("Failed to read recent SQLite message row: {err}"))?,
-        )?);
+        messages.push(parse_message_json(row.map_err(|err| {
+            format!("Failed to read recent SQLite message row: {err}")
+        })?)?);
     }
     Ok(messages)
 }
@@ -709,10 +718,7 @@ fn sqlite_patch_message(
 }
 
 #[tauri::command]
-fn sqlite_delete_messages_by_chat_id(
-    app: tauri::AppHandle,
-    chat_id: String,
-) -> Result<(), String> {
+fn sqlite_delete_messages_by_chat_id(app: tauri::AppHandle, chat_id: String) -> Result<(), String> {
     let conn = open_sqlite(&app)?;
     conn.execute("DELETE FROM messages WHERE chat_id = ?1", params![chat_id])
         .map_err(|err| format!("Failed to delete SQLite messages by chat: {err}"))?;
@@ -805,7 +811,10 @@ async fn comfy_queue_prompt(
 }
 
 #[tauri::command]
-async fn comfy_get_history(base_url: String, prompt_id: String) -> Result<serde_json::Value, String> {
+async fn comfy_get_history(
+    base_url: String,
+    prompt_id: String,
+) -> Result<serde_json::Value, String> {
     let client = comfy_client()?;
     let url = format!("{}/history/{}", clean_base_url(&base_url), prompt_id);
     let response = client
@@ -847,7 +856,10 @@ async fn comfy_get_image_data_url(
     let status = response.status();
     if !status.is_success() {
         let body = response.text().await.unwrap_or_default();
-        return Err(format!("ComfyUI image fetch failed: {status} {}", short_body(&body)));
+        return Err(format!(
+            "ComfyUI image fetch failed: {status} {}",
+            short_body(&body)
+        ));
     }
 
     let content_type = response
