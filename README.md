@@ -4,7 +4,7 @@
 
 
 ![Tauri 2](https://img.shields.io/badge/Tauri-2-24C8D8?logo=tauri)
-![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript)
 ![pnpm](https://img.shields.io/badge/pnpm-workspace-F69220)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -12,6 +12,8 @@
 Whale Play 是一个面向角色卡创作和角色扮演聊天的桌面应用。它把角色卡、世界书、预设提示词、长上下文聊天、实验性主持人模式和 Whale Builder 创作工作流放在同一个本地客户端里。
 
 项目基于 Tauri v2、React、TypeScript、Vite 和 pnpm workspace 构建，模型接口使用 OpenAI-compatible API，可接入 DeepSeek、OpenAI 兼容服务或其他同协议模型。
+
+中文文档位于[docs](docs/zh/index.md)
 
 ## 当前重点
 

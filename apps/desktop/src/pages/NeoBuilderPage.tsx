@@ -122,13 +122,11 @@ export function NeoBuilderPage() {
       builderScrollToIndex(visibleMessages.length - 1);
     }
     // isNearBottomRef is a ref — intentionally excluded from deps
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleMessages.length, builderScrollToIndex]);
+  }, [visibleMessages.length, builderScrollToIndex, isNearBottomRef]);
 
   useLayoutEffect(() => {
     builderScrollToIndex(Math.max(0, visibleMessages.length - 1));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [builderSessionId]);
+  }, [builderSessionId, builderScrollToIndex]);
 
   useEffect(() => {
     writeBuilderWorkspaceRecords(workspaceRecords);
@@ -152,7 +150,6 @@ export function NeoBuilderPage() {
     };
     writeBuilderWorkspaceSnapshot(snapshot);
     if (hasWorkspaceProgress(snapshot)) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setWorkspaceRecords((records) => upsertWorkspaceRecord(records, createWorkspaceRecord(snapshot)));
     }
   }, [

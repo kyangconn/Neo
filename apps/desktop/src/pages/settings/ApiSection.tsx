@@ -243,7 +243,7 @@ export function ApiSection({ t }: ApiSectionProps) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [loadAllConfigs]);
 
   const isLegacyDeepSeekModel = DEEPSEEK_LEGACY_MODELS.includes(model);
   const selectedProfile = selectedId === "__new__" ? null : (modelConfigs.find((c) => c.id === selectedId) ?? null);
@@ -354,7 +354,9 @@ export function ApiSection({ t }: ApiSectionProps) {
                       </span>
                     </div>
                     <p className="mt-1 font-mono text-[11px] text-muted-foreground">{option.id}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">{t("api.models." + option.id + ".description")}</p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {t("api.models." + option.id + ".description")}
+                    </p>
                   </button>
                 ))}
               </div>
@@ -477,7 +479,7 @@ export function ApiSection({ t }: ApiSectionProps) {
                 className="sm:min-w-[120px]"
               >
                 <Wallet className="h-4 w-4 mr-2" />
-                {checkingBalance ? "Checking..." : "Balance"}
+                {checkingBalance ? t("api.balanceChecking") : t("api.balance")}
               </Button>
             </div>
           </CardContent>

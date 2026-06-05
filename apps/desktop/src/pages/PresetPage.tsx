@@ -94,8 +94,7 @@ export function PresetPage() {
 
   useEffect(() => {
     store.loadPresets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [store.loadPresets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -291,7 +290,7 @@ export function PresetPage() {
     };
 
     const previousUserSelect = document.body.style.userSelect;
-    // eslint-disable-next-line react-hooks/immutability
+
     document.body.style.userSelect = "none";
     setDraggedItemId(itemId);
     setDragOverItemId(itemId);

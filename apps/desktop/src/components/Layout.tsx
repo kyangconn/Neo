@@ -53,9 +53,12 @@ export function Layout() {
         )}
 
         <div className="h-12 flex items-center justify-center">
-          <div className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap leading-none">
+          <button
+            onClick={() => navigate("/about")}
+            className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap leading-none hover:text-foreground transition-colors"
+          >
             WHALE
-          </div>
+          </button>
         </div>
       </aside>
       <main className="flex-1 flex flex-col overflow-hidden">

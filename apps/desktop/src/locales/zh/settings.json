@@ -68,6 +68,7 @@
     "streamingHint": "开启后 AI 回复将逐字流式显示；关闭则等全部生成后一次性展示。",
     "endpoint": "端点",
     "balance": "余额",
+    "balanceChecking": "查询中...",
     "toggleStreaming": "切换流式输出",
     "saveProfile": "保存 DeepSeek 配置",
     "saving": "保存中…",

@@ -8,6 +8,7 @@ import { PresetPage } from "@/pages/PresetPage";
 import { WorldbookPage } from "@/pages/WorldbookPage";
 import { PersonaPage } from "@/pages/PersonaPage";
 import { NeoBuilderPage } from "@/pages/NeoBuilderPage";
+import { AboutPage } from "@/pages/AboutPage";
 
 export const router: ReturnType<typeof createBrowserRouter> = createBrowserRouter([
   {
@@ -22,6 +23,7 @@ export const router: ReturnType<typeof createBrowserRouter> = createBrowserRoute
       { path: "preset", element: <PresetPage /> },
       { path: "worldbook", element: <WorldbookPage /> },
       { path: "persona", element: <PersonaPage /> },
+      { path: "about", element: <AboutPage /> },
     ],
   },
 ]);

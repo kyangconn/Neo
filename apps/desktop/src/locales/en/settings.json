@@ -69,6 +69,7 @@
     "streamingHint": "When enabled, AI responses appear word-by-word. When disabled, the full response appears at once.",
     "endpoint": "Endpoint",
     "balance": "Balance",
+    "balanceChecking": "Checking...",
     "toggleStreaming": "Toggle streaming",
     "saveProfile": "Save DeepSeek Profile",
     "saving": "Saving...",
