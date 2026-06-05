@@ -1,0 +1,17 @@
+---
+name: 📝 文档改进
+description: 文档错误、缺失或表述不清
+labels: [documentation]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 哪篇文档的哪个部分有问题？
+    validations:
+      required: true
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: 建议修改
+      description: 你建议怎么改？

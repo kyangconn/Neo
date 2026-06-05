@@ -1,0 +1,42 @@
+---
+name: 🐛 Bug 反馈
+description: 报告一个功能异常或崩溃
+labels: [bug]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么？预期应该怎样？
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 按步骤说明如何触发这个问题
+      placeholder: |
+        1. 打开...
+        2. 点击...
+        3. 看到错误
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 你使用的是哪个版本？（在关于页面可查看）
+      placeholder: e.g. v0.1.0, commit abc1234
+  - type: dropdown
+    id: platform
+    attributes:
+      label: 平台
+      options:
+        - Windows
+        - macOS
+        - Linux
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图
+      description: 如有控制台错误或截图，请粘贴在这里
