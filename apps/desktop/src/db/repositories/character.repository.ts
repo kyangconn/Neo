@@ -42,6 +42,7 @@ export const characterRepository = {
       tags: input.tags,
       regexPresetId: input.regexPresetId,
       worldbookId: input.worldbookId,
+      statusBars: input.statusBars,
       createdAt: now,
       updatedAt: now,
     };
@@ -67,6 +68,7 @@ export const characterRepository = {
     if (input.tags !== undefined) existing.tags = input.tags;
     if (input.regexPresetId !== undefined) existing.regexPresetId = input.regexPresetId;
     if (input.worldbookId !== undefined) existing.worldbookId = input.worldbookId;
+    if (input.statusBars !== undefined) existing.statusBars = input.statusBars;
     existing.updatedAt = new Date().toISOString();
     all[idx] = existing;
     await saveAll(all);

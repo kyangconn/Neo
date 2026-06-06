@@ -29,6 +29,7 @@ import type {
   NeoPersonalityPalette,
   NeoBuilderEvaluationReport,
   NeoMvuConfig,
+  NeoStatusBarConfig,
 } from "./types";
 import { WhaleBuilderToolRegistry, builderToolRegistry } from "./tool-registry";
 import { generateBuilderStep } from "./streaming";
@@ -64,6 +65,7 @@ interface AgentState {
   personalityPalette?: NeoPersonalityPalette;
   evaluationReport?: NeoBuilderEvaluationReport;
   mvu?: NeoMvuConfig;
+  statusBars?: NeoStatusBarConfig;
 }
 
 /**
@@ -83,6 +85,7 @@ export async function runNeoCharacterBuilderTurn(
     creationPlan: options.creationPlan ?? undefined,
     personalityPalette: options.personalityPalette ?? undefined,
     mvu: options.currentMvu ?? undefined,
+    statusBars: options.currentStatusBars ?? undefined,
   };
   let pendingChoices: NeoBuilderChoice[] | undefined;
   let pendingQuestions: NeoBuilderQuestion[] | undefined;
@@ -125,6 +128,7 @@ export async function runNeoCharacterBuilderTurn(
         personalityPalette: state.personalityPalette,
         evaluationReport: state.evaluationReport,
         mvu: state.mvu,
+        statusBars: state.statusBars,
         usage: withDeepSeekUsageCost(totalUsage, options.modelConfig),
         reasoningContent: reasoningContent || undefined,
         toolEvents: events,
@@ -179,6 +183,7 @@ export async function runNeoCharacterBuilderTurn(
           if (executed.personalityPalette) state.personalityPalette = executed.personalityPalette;
           if (executed.evaluationReport) state.evaluationReport = executed.evaluationReport;
           if (executed.mvu) state.mvu = executed.mvu;
+          if (executed.statusBars) state.statusBars = executed.statusBars;
           if (executed.choices?.length) pendingChoices = executed.choices;
           if (executed.questions?.length) pendingQuestions = executed.questions;
 
@@ -202,6 +207,7 @@ export async function runNeoCharacterBuilderTurn(
               personalityPalette: state.personalityPalette,
               evaluationReport: state.evaluationReport,
               mvu: state.mvu,
+              statusBars: state.statusBars,
               usage: withDeepSeekUsageCost(totalUsage, options.modelConfig),
               reasoningContent: reasoningContent || undefined,
               toolEvents: [...events],
@@ -291,6 +297,7 @@ export async function runNeoCharacterBuilderTurn(
     personalityPalette: state.savedDraft?.personalityPalette ?? state.personalityPalette,
     evaluationReport: state.evaluationReport,
     mvu: state.savedDraft?.mvu ?? state.mvu,
+    statusBars: state.savedDraft?.statusBars ?? state.statusBars,
     usage: withDeepSeekUsageCost(totalUsage, options.modelConfig),
     reasoningContent: reasoningContent || undefined,
     toolEvents: events,
@@ -377,6 +384,7 @@ export async function buildNeoCharacterDraft(
           if (executed.personalityPalette) state.personalityPalette = executed.personalityPalette;
           if (executed.evaluationReport) state.evaluationReport = executed.evaluationReport;
           if (executed.mvu) state.mvu = executed.mvu;
+          if (executed.statusBars) state.statusBars = executed.statusBars;
 
           if (toolName === "save_character_draft" && executed.savedDraft?.worldbookEntries?.length) {
             const sessionId = options.scopeId || "unknown";
@@ -439,6 +447,7 @@ function createBestEffortResult(
     creationPlan: state.savedDraft.creationPlan ?? state.creationPlan,
     evaluationReport: state.evaluationReport,
     mvu: state.savedDraft.mvu ?? state.mvu,
+    statusBars: state.savedDraft.statusBars ?? state.statusBars,
     notes: error ? `生成过程中遇到错误：${error}` : state.savedDraft.notes,
     usage: withDeepSeekUsageCost(totalUsage, options.modelConfig as any),
     toolLog,

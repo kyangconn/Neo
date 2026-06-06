@@ -1,4 +1,5 @@
 import {
+  Activity,
   BookOpen,
   Brain,
   CheckCircle2,
@@ -17,6 +18,7 @@ import type {
   NeoCreationPlanEntry,
   NeoPersonalityPalette,
   NeoBuilderEvaluationReport,
+  NeoStatusBarConfig,
 } from "@/features/character/neo-character-builder";
 import type { ArtifactView, WorldbookDraft } from "./types";
 
@@ -28,6 +30,7 @@ export interface ArtifactsPanelProps {
   evaluationReport: NeoBuilderEvaluationReport | null;
   draft: CreateCharacterInput | null;
   worldbookDraft: WorldbookDraft | null;
+  statusBars: NeoStatusBarConfig | null;
   setArtifactView: (view: ArtifactView) => void;
   steps: { label: string; done: boolean; active: boolean; optional?: boolean }[];
   savedCharacterId: string | null;
@@ -62,6 +65,7 @@ export function ArtifactsPanel({
   evaluationReport,
   draft,
   worldbookDraft,
+  statusBars,
   setArtifactView,
   steps,
   savedCharacterId,
@@ -189,6 +193,29 @@ export function ArtifactsPanel({
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2 text-sm font-medium">
+                    <Activity className="h-4 w-4" />
+                    状态栏
+                  </div>
+                  <p className="mt-1 truncate text-xs text-muted-foreground">
+                    {statusBars?.bars.length ? `${statusBars.bars.length} 个初始状态` : t("status.generated")}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setArtifactView("statusBars")}
+                  disabled={!statusBars?.bars.length}
+                >
+                  <Eye className="mr-1 h-3.5 w-3.5" />
+                  {t("view")}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-md border bg-background p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-medium">
                     <Brain className="h-4 w-4" />
                     {t("artifacts.palette.title")}
                   </div>
@@ -302,10 +329,10 @@ export function ArtifactsPanel({
             <Button
               className="w-full"
               onClick={onSave}
-              disabled={!draft?.name.trim() || running || saving || !!savedCharacterId}
+              disabled={!draft?.name.trim() || running || saving}
             >
               <Save className="mr-1 h-4 w-4" />
-              {savedCharacterId ? t("save.saved") : saving ? t("save.saving") : t("save.create")}
+              {saving ? t("save.saving") : savedCharacterId ? t("save.update") : t("save.create")}
             </Button>
 
             <Button

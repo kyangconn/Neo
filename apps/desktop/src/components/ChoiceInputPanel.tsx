@@ -7,6 +7,7 @@ export type ChoiceInputPanelChoice = {
   label: string;
   value: string;
   description?: string;
+  meta?: Record<string, unknown>;
 };
 
 export type ChoiceInputPanelQuestion = {

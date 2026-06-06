@@ -59,6 +59,22 @@ describe('applyRegexRules', () => {
     expect(result.promptContent).toBe('门打开了。\n\n她走进房间。')
   })
 
+  it('turns structured dialogue JSON into dialogue display blocks', () => {
+    const result = applyRegexRules([
+      '门外的雨声压低了大厅里的回音。',
+      '{"type":"dialogue","speaker":"露娜","text":"你好。"}',
+      '她把书页合上。',
+      '```json',
+      '{"type":"dialogue","speaker":"玩家","text":"我想找一本红色封皮的书。"}',
+      '```',
+    ].join('\n'), [])
+
+    expect(result.displayBlocks.map((block) => block.type)).toEqual(['narration', 'dialogue', 'narration', 'dialogue'])
+    expect(result.displayBlocks[1]).toMatchObject({ speaker: '露娜', content: '你好。' })
+    expect(result.displayBlocks[3]).toMatchObject({ speaker: '玩家', content: '我想找一本红色封皮的书。' })
+    expect(result.displayContent).not.toContain('"type":"dialogue"')
+  })
+
   it('strips image markers from prompt history even without custom rules', () => {
     const result = stripPromptContent('正文前。\n[image]cinematic library, moonlight[/image]\n正文后。', [])
 

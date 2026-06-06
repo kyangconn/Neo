@@ -59,6 +59,8 @@ interface UseSendMessageOptions {
 
 interface SendMessageOptions {
   hiddenUserMessage?: boolean;
+  hiddenReason?: string;
+  metadata?: Message["metadata"];
 }
 
 interface UseSendMessageReturn {
@@ -952,6 +954,9 @@ export function useSendMessage({
       onToolRound: () => {
         setGenerationPhase(targetChatId, retrying ? "retrying" : "thinking");
       },
+      onDiceResult: (result) => {
+        useChatStore.getState().setLastDiceResult(result);
+      },
       onFinalRound: () => {
         setGenerationPhase(targetChatId, "writing");
       },
@@ -996,6 +1001,7 @@ export function useSendMessage({
           { persist: false },
         );
       },
+      requirePlayerOptions: true,
     });
 
     if (!isGenerationActive(targetChatId, generationId)) throwGenerationStopped();
@@ -1182,13 +1188,13 @@ export function useSendMessage({
       let assistantId: string | null = null;
 
       try {
-        if (!options.hiddenUserMessage) {
-          await addMessage({
-            chatId,
-            role: "user",
-            content: trimmedContent,
-          });
-        }
+        await addMessage({
+          chatId,
+          role: "user",
+          content: trimmedContent,
+          hidden: !!options.hiddenUserMessage,
+          metadata: options.metadata ?? (options.hiddenUserMessage ? { hiddenReason: options.hiddenReason ?? "hidden" } : undefined),
+        });
 
         const recentMessages = await ensureMessagesHydrated(chatId);
         const contextTokens = useSettingsStore.getState().contextTokens ?? 64000;
@@ -1208,7 +1214,7 @@ export function useSendMessage({
           }
         }
 
-        const historyMessages = options.hiddenUserMessage ? recentMessages : recentMessages.slice(0, -1);
+        const historyMessages = recentMessages.slice(0, -1);
         const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal);
         const worldbookBlocks = await getWorldbookContextBlocks(trimmedContent, stripMessages(recentMessages));
         const agenticRecord =

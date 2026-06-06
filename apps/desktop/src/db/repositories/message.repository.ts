@@ -31,6 +31,8 @@ function makeMessage(input: CreateMessageInput): Message {
     usage: input.usage,
     images: input.images,
     agenticOptions: input.agenticOptions,
+    hidden: input.hidden,
+    metadata: input.metadata,
     createdAt: new Date().toISOString(),
   };
 }

@@ -53,6 +53,11 @@ const IMAGE_MARKER = '\uE000NEO_IMAGE_'
 const IMAGE_MARKER_END = '\uE001'
 const IMAGE_MARKER_REGEX = /\uE000NEO_IMAGE_(\d+)\uE001/g
 const IMAGE_TAG_REGEX = /\[image\]([\s\S]*?)(?:\[\/image\]|\[image\])/gi
+const STRUCTURED_DIALOGUE_MARKER = '\uE000NEO_DIALOGUE_'
+const STRUCTURED_DIALOGUE_MARKER_END = '\uE001'
+const STRUCTURED_DIALOGUE_MARKER_REGEX = /\uE000NEO_DIALOGUE_(\d+)\uE001/g
+const DIALOGUE_TAG_REGEX = /<dialogue>\s*([\s\S]*?)\s*<\/dialogue>/gi
+const JSON_FENCE_REGEX = /```json\s*([\s\S]*?)\s*```/gi
 
 function isInlineTemplateRule(rule: RegexRule) {
   const normalizedName = rule.name.toLowerCase()
@@ -104,6 +109,72 @@ function markImageBlocks(content: string) {
 
 function stripImageTags(content: string) {
   return content.replace(IMAGE_TAG_REGEX, '').trim()
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function trimString(value: unknown) {
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function toDialogueBlock(value: unknown): DisplayBlock | null {
+  if (!isRecord(value)) return null
+  const type = trimString(value.type || value.kind).toLowerCase()
+  if (type && !['dialogue', 'speech', 'line'].includes(type)) return null
+  const speaker = trimString(value.speaker || value.name || value.character || value.role)
+  const content = trimString(value.text || value.content || value.line || value.dialogue)
+  if (!speaker || !content) return null
+  return { type: 'dialogue', speaker, content }
+}
+
+function parseDialogueJson(raw: string): DisplayBlock[] {
+  try {
+    const parsed = JSON.parse(raw.trim())
+    const values = Array.isArray(parsed)
+      ? parsed
+      : isRecord(parsed) && Array.isArray(parsed.dialogues)
+        ? parsed.dialogues
+        : [parsed]
+    return values.map(toDialogueBlock).filter((block): block is DisplayBlock => !!block)
+  } catch {
+    return []
+  }
+}
+
+function markStructuredDialogueBlocks(content: string) {
+  const dialogueBlocks: DisplayBlock[] = []
+  const insertBlocks = (blocks: DisplayBlock[]) =>
+    blocks
+      .map((block) => {
+        const index = dialogueBlocks.length
+        dialogueBlocks.push(block)
+        return `${STRUCTURED_DIALOGUE_MARKER}${index}${STRUCTURED_DIALOGUE_MARKER_END}`
+      })
+      .join('\n')
+
+  let markedContent = content.replace(DIALOGUE_TAG_REGEX, (match, raw: string) => {
+    const blocks = parseDialogueJson(raw)
+    return blocks.length ? insertBlocks(blocks) : match
+  })
+
+  markedContent = markedContent.replace(JSON_FENCE_REGEX, (match, raw: string) => {
+    const blocks = parseDialogueJson(raw)
+    return blocks.length ? insertBlocks(blocks) : match
+  })
+
+  markedContent = markedContent
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim()
+      if (!trimmed || !/^(?:\{[\s\S]*\}|\[[\s\S]*\])$/.test(trimmed)) return line
+      const blocks = parseDialogueJson(trimmed)
+      return blocks.length ? insertBlocks(blocks) : line
+    })
+    .join('\n')
+
+  return { markedContent, dialogueBlocks }
 }
 
 function expandMarkerBlocks(
@@ -166,6 +237,12 @@ function expandImageBlocks(blocks: DisplayBlock[], imagePrompts: string[]) {
       content: prompt,
     }
   })
+}
+
+function expandStructuredDialogueBlocks(blocks: DisplayBlock[], dialogueBlocks: DisplayBlock[]) {
+  if (dialogueBlocks.length === 0) return blocks
+
+  return expandMarkerBlocks(blocks, STRUCTURED_DIALOGUE_MARKER_REGEX, (index) => dialogueBlocks[index] ?? null)
 }
 
 function formatDisplayBlock(block: DisplayBlock) {
@@ -241,6 +318,8 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
   displayContent = inlineTemplates.markedContent
   const imageMarkers = markImageBlocks(displayContent)
   displayContent = imageMarkers.markedContent
+  const structuredDialogues = markStructuredDialogueBlocks(displayContent)
+  displayContent = structuredDialogues.markedContent
 
   let displayBlocks: DisplayBlock[] = []
   for (const rule of dialogueRules) {
@@ -255,13 +334,19 @@ export function applyRegexRules(content: string, rules: RegexRule[]): SplitResul
 
   displayContent = displayContent.trim()
   if (displayBlocks.length > 0) {
+    displayBlocks = expandStructuredDialogueBlocks(displayBlocks, structuredDialogues.dialogueBlocks)
     displayBlocks = expandInlineTemplateBlocks(displayBlocks, inlineTemplates.inlineBlocks)
     displayBlocks = expandImageBlocks(displayBlocks, imageMarkers.imagePrompts)
-  } else if (inlineTemplates.inlineBlocks.length > 0 || imageMarkers.imagePrompts.length > 0) {
-    displayBlocks = expandInlineTemplateBlocks(
+  } else if (
+    structuredDialogues.dialogueBlocks.length > 0 ||
+    inlineTemplates.inlineBlocks.length > 0 ||
+    imageMarkers.imagePrompts.length > 0
+  ) {
+    displayBlocks = expandStructuredDialogueBlocks(
       [{ type: 'narration', content: displayContent }],
-      inlineTemplates.inlineBlocks
+      structuredDialogues.dialogueBlocks
     )
+    displayBlocks = expandInlineTemplateBlocks(displayBlocks, inlineTemplates.inlineBlocks)
     displayBlocks = expandImageBlocks(displayBlocks, imageMarkers.imagePrompts)
   }
 

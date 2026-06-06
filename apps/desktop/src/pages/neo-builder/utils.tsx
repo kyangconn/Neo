@@ -55,6 +55,7 @@ export function readBuilderWorkspaceSnapshot(): BuilderWorkspaceSnapshot | null 
       personalityPalette: parsed.personalityPalette ?? null,
       evaluationReport: parsed.evaluationReport ?? null,
       mvu: parsed.mvu ?? null,
+      statusBars: parsed.statusBars ?? parsed.draft?.statusBars ?? null,
       savedCharacterId: parsed.savedCharacterId ?? null,
       builderSessionId: typeof parsed.builderSessionId === "string" ? parsed.builderSessionId : generateId(),
     };
@@ -89,6 +90,7 @@ export function hasWorkspaceProgress(snapshot: BuilderWorkspaceSnapshot) {
     snapshot.creationPlan?.project?.name?.trim() ||
     snapshot.personalityPalette?.base?.trim() ||
     snapshot.evaluationReport?.summary?.trim() ||
+    !!snapshot.statusBars?.bars?.length ||
     snapshot.savedCharacterId ||
     getLatestUserMessage(snapshot.messages) ||
     snapshot.messages.length > 1
@@ -139,6 +141,7 @@ export function normalizeWorkspaceRecord(record: Partial<BuilderWorkspaceRecord>
     personalityPalette: record.personalityPalette ?? null,
     evaluationReport: record.evaluationReport ?? null,
     mvu: record.mvu ?? null,
+    statusBars: record.statusBars ?? record.draft?.statusBars ?? null,
     savedCharacterId: record.savedCharacterId ?? null,
     builderSessionId,
   };

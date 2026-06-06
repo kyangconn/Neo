@@ -24,10 +24,11 @@ export type {
   NeoCreationPlanEntry,
   NeoPersonalityPalette,
   NeoMvuConfig,
+  NeoStatusBarConfig,
   ValidationResult,
 } from "./types";
 
 // ── Utilities (for tests and external consumers) ──
 export { addUsage, parseToolArguments } from "./utils";
-export { normalizeDraft, normalizePersonalityPalette, normalizeCreationPlan, normalizeWorldbookEntries, normalizeMvuConfig } from "./validation";
+export { normalizeDraft, normalizePersonalityPalette, normalizeCreationPlan, normalizeWorldbookEntries, normalizeMvuConfig, normalizeStatusBarConfig } from "./validation";
 export { REFERENCE_TEXTS } from "./references";

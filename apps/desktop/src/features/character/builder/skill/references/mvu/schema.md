@@ -1,42 +1,85 @@
-# 变量结构脚本（schema.ts）
+# MVU schema.ts
 
-编写时遵循 `references/mvu/zod-rule.yaml` 中的 Zod 4 规则。
+`schema.ts` 只描述运行时变量结构。状态栏 UI 不写在 schema 里，状态栏展示由 `pack.statusBars` 和 Whale Play 本地素材库负责。
 
-## 编写原则
+## 基本规则
 
-- **变量名自明**：名称本身说明含义（如 `好感度`），无需额外解释
-- **幂等性**：`Schema.parse(Schema.parse(x)) === Schema.parse(x)`
-- **类型设计**：
-  - 尽量使用 `z.object()` 而非 `z.array()`
-  - 复杂对象使用 `.or(z.literal('待初始化')).prefault('待初始化')` 保证可更新
-  - 不对根变量字段使用 `.optional()`
-- **z.enum 节制**：`z.enum` 限制 AI 只能从枚举列表中取值，过度使用会抑制 AI 的自然表达。仅在以下情况使用：
-  - 用户明确要求限定取值范围（如"情绪只能是 开心/正常/低落 三种"）
-  - EJS 条件需要精确字符串匹配来触发显隐/段落控制（如 `phase === 'explore'`）
-  - 其他情况一律使用 `z.string()` 让 AI 自由发挥
+- 导出 `Schema` 和 `type Schema`。
+- 不 import zod/lodash；`z` 和 `_` 已全局可用。
+- 数值使用 `z.coerce.number().transform((v) => _.clamp(v, min, max))`。
+- 根字段不使用 `.optional()`。
+- 只为当前玩法会变化、会被剧情判断、会进入状态栏或 EJS 条件的内容建模。
+- 不要为了“看起来完整”建空变量树。
 
-## 前置
-- 变量结构已在需求对齐阶段确定并写入 `创作规划.yaml` 的 `mvu` 段落（见 `references/requirements.md`），直接使用其中的变量结构编写 schema.ts。`mvu.variables` 中的 `check` 字段是特殊更新要求的提示，编写变量更新规则时使用。
-- 如果规划文档的 `mvu` 信息不足以编写 schema.ts，询问用户补充。
-- 如果项目使用了 EJS，先读取 entryManifest 中所有含 EJS 相关 note 的条目，确保变量设计覆盖 EJS 所需的条件变量。
+## 状态栏变量结构
 
-## 产出
-
-写入项目目录下的 `schema.ts`，导出 `Schema` 和对应类型：
+需要展示为状态栏的变量优先放在 `主角.状态条`、`主角.成长`、`角色.${角色名}` 或 `场景` 下。状态栏推荐结构：
 
 ```typescript
-export const Schema = z.object({
-  ...
+const StatusBar = z.object({
+  value: z.coerce.number().transform((v) => _.clamp(v, 0, 9999)),
+  max: z.coerce.number().transform((v) => _.clamp(v, 1, 9999)),
+  label: z.string().prefault(""),
+  description: z.string().prefault(""),
+  valueLabel: z.string().prefault(""),
 });
+```
+
+示例：
+
+```typescript
+const StatusBar = z.object({
+  value: z.coerce.number().transform((v) => _.clamp(v, 0, 9999)),
+  max: z.coerce.number().transform((v) => _.clamp(v, 1, 9999)),
+  label: z.string().prefault(""),
+  description: z.string().prefault(""),
+  valueLabel: z.string().prefault(""),
+});
+
+export const Schema = z.object({
+  主角: z.object({
+    状态条: z.object({
+      生命: StatusBar.prefault({ value: 100, max: 100, label: "生命", description: "", valueLabel: "" }),
+      魔法: StatusBar.prefault({ value: 3, max: 6, label: "法术位", description: "1环 2/4，2环 1/2", valueLabel: "3/6" }),
+    }),
+    法术位: z.record(
+      z.string(),
+      z.object({
+        剩余: z.coerce.number().transform((v) => _.clamp(v, 0, 99)),
+        上限: z.coerce.number().transform((v) => _.clamp(v, 0, 99)),
+      }),
+    ).prefault({}),
+    成长: z.object({
+      经验: StatusBar.prefault({ value: 0, max: 100, label: "经验", description: "", valueLabel: "" }),
+    }),
+  }),
+  角色: z.record(
+    z.string(),
+    z.object({
+      好感度: z.coerce.number().transform((v) => _.clamp(v, 0, 100)),
+    }),
+  ).prefault({}),
+  场景: z.object({
+    危险度: z.coerce.number().transform((v) => _.clamp(v, 0, 100)),
+  }),
+});
+
 export type Schema = z.output<typeof Schema>;
 ```
 
+## 法术位处理
+
+法术位不是单一数值时，使用两层结构：
+
+- `主角.状态条.魔法`：给 UI 显示总剩余/总上限。
+- `主角.法术位.${环级}`：保存每个环级明细，供剧情判断。
+
+这样右侧状态栏能显示一个清晰的 `mana` 条，同时 AI 仍知道每环法术位剩余多少。
+
 ## 自查清单
 
-- [ ] 导出了 `Schema` 和 `Schema` 类型
-- [ ] 没有导入 zod 或 lodash（已全局可用）
-- [ ] 没有使用 `.strict()` / `.passthrough()`（Zod 4 不存在）
-- [ ] 没有滥用 `.optional()`（根字段不用）
-- [ ] 使用 `z.coerce.number()` 而非 `z.number()`
-- [ ] transform 用 `_.clamp` 而非 `min/max`
-- [ ] 保持幂等
+- [ ] `Schema` 和 `type Schema` 已导出。
+- [ ] 需要展示的 HP/魔法/好感/经验等变量能映射到 `statusBars`。
+- [ ] 初始值能由 `initvar.yaml` 表达。
+- [ ] 更新范围能由 `变量更新规则.yaml` 表达。
+- [ ] 没有 HTML/CSS/正则状态栏代码。

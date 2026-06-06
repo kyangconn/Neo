@@ -63,9 +63,11 @@ import {
   AGENTIC_PLAY_OPENING_PROMPT,
   buildAgenticPlayPresetItems,
   createAgenticPlayContextBlock,
+  rollDice,
+  type AgenticActionOption,
   type AgenticGameState,
+  type DiceRollResult,
 } from "@/features/agentic-play/agentic-play";
-import { extractAgenticOptions } from "@/features/agentic-play/agentic-options";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatSidebar } from "@/pages/chat/ChatSidebar";
 import { ChatRightPanel } from "@/pages/chat/ChatRightPanel";
@@ -103,6 +105,34 @@ import {
   DeleteMessageDialog,
   ThinkingDialog,
 } from "@/pages/chat/ChatDialogs";
+
+function isVisibleChatMessage(message: Message) {
+  return !message.hidden;
+}
+
+function getChoiceAgenticOption(choice?: ChoiceInputPanelChoice): AgenticActionOption | null {
+  const raw = choice?.meta?.agenticOption;
+  if (!raw || typeof raw !== "object") return null;
+  return raw as AgenticActionOption;
+}
+
+function buildAgenticChoicePayload(option: AgenticActionOption, roll: DiceRollResult) {
+  return JSON.stringify(
+    {
+      type: "agentic_player_action",
+      source: "structured_option",
+      label: option.label,
+      action: option.action,
+      success_probability: option.probability,
+      difficulty: option.difficulty,
+      dice_result: roll,
+      continuity_guard:
+        "Only the selected action and dice_result are authoritative. Do not treat unselected option descriptions or internal reasoning as history. Do not reference prior NPC speech unless it exists in visible chat history as dialogue JSON; if an NPC provides information now, output that dialogue JSON first.",
+    },
+    null,
+    2,
+  );
+}
 
 function ChatActivityTimeline({
   message,
@@ -213,6 +243,7 @@ export function ChatPage() {
     updateMessage,
     patchMessage,
     deleteMessages,
+    lastDiceResult,
   } = useChatStore();
   const regexPresets = useSettingsStore((s) => s.regexPresets);
   const activeRegexPresetId = useSettingsStore((s) => s.activeRegexPresetId);
@@ -233,6 +264,7 @@ export function ChatPage() {
       return true;
     });
   }, [regexPresets, activeRegexPresetId]);
+  const visibleMessages = useMemo(() => messages.filter(isVisibleChatMessage), [messages]);
 
   const [input, setInput] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -254,6 +286,7 @@ export function ChatPage() {
   const [secondaryUsageRecords, setSecondaryUsageRecords] = useState<SecondaryApiUsageRecord[]>([]);
   const [deleteMsgTarget, setDeleteMsgTarget] = useState<Message | null>(null);
   const [fontSize, setFontSize] = useState(15);
+  const [chatListCollapsed, setChatListCollapsed] = useState(false);
   const [thinkingMsg, setThinkingMsg] = useState<Message | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [loadDialogOpen, setLoadDialogOpen] = useState(false);
@@ -307,6 +340,10 @@ export function ChatPage() {
   useEffect(() => {
     loadCharacters();
   }, [loadCharacters]);
+
+  useEffect(() => {
+    useChatStore.getState().setLastDiceResult(null);
+  }, [currentChat?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -414,7 +451,7 @@ export function ChatPage() {
       return;
     }
 
-    agenticPlayStateRepository.get(chatId).then((record) => {
+    agenticPlayStateRepository.get(chatId, character).then((record) => {
       if (cancelled) return;
       setAgenticPlayEnabled(record?.enabled ?? false);
       setAgenticGameState(record?.gameState ?? null);
@@ -526,28 +563,62 @@ export function ChatPage() {
   }, [input, previewOpen, promptDialogOpen, updatePreview]);
 
   const submitContent = useCallback(
-    async (content: string, options: Pick<PendingSendItem, "hiddenUserMessage" | "label"> = {}) => {
+    async (content: string, options: Pick<PendingSendItem, "hiddenUserMessage" | "label" | "metadata"> = {}) => {
       if (!content.trim() || !currentChat) return;
       const trimmedContent = content.trim();
       if (sending) {
         setPendingSendQueue((queue) => [...queue, { chatId: currentChat.id, content: trimmedContent, ...options }]);
         return;
       }
-      if (messages.length === 0 && character?.firstMessage.trim()) {
+      if (visibleMessages.length === 0 && character?.firstMessage.trim()) {
         await addMessage({
           chatId: currentChat.id,
           role: "assistant",
           content: replaceUserPlaceholders(character.firstMessage, personaName).trim(),
         });
       }
-      await sendMessage(trimmedContent, { hiddenUserMessage: options.hiddenUserMessage });
+      await sendMessage(trimmedContent, {
+        hiddenUserMessage: options.hiddenUserMessage,
+        hiddenReason: options.label,
+        metadata: options.metadata,
+      });
     },
-    [currentChat, sending, messages.length, character?.firstMessage, addMessage, personaName, sendMessage],
+    [currentChat, sending, visibleMessages.length, character?.firstMessage, addMessage, personaName, sendMessage],
   );
 
   const handleAgenticChoiceSubmit = (value: string, choice?: ChoiceInputPanelChoice) => {
     if (lastAssistantId) setDismissedAgenticChoiceMessageId(lastAssistantId);
-    void submitContent(value, { hiddenUserMessage: true, label: choice?.label });
+    const option = getChoiceAgenticOption(choice);
+    if (option) {
+      const roll = rollDice({
+        dice: "1d20",
+        difficulty: option.difficulty,
+        success_probability: option.probability,
+        reason: option.action,
+      });
+      useChatStore.getState().setLastDiceResult(roll);
+      const payload = buildAgenticChoicePayload(option, roll);
+      void submitContent(payload, {
+        hiddenUserMessage: true,
+        label: choice?.label ?? option.label,
+        metadata: {
+          hiddenReason: "agentic_choice",
+          agenticAction: {
+            label: option.label,
+            action: option.action,
+            success_probability: option.probability,
+            difficulty: option.difficulty,
+            dice_result: roll,
+          },
+        },
+      });
+      return;
+    }
+    void submitContent(value, {
+      hiddenUserMessage: true,
+      label: choice?.label ?? "自定义行动",
+      metadata: { hiddenReason: "agentic_custom_action" },
+    });
   };
 
   const handleSend = async () => {
@@ -883,7 +954,7 @@ export function ChatPage() {
   useEffect(() => {
     const chatId = currentChat?.id;
     if (!chatId || !character || !agenticPlayEnabled) return;
-    if (loading || !messagesHydrated || messages.length !== 0) return;
+    if (loading || !messagesHydrated || visibleMessages.length !== 0) return;
     if (sending || isGeneratingCurrentChat) return;
     if (agenticOpeningStartedRef.current === chatId) return;
 
@@ -895,7 +966,7 @@ export function ChatPage() {
     agenticPlayEnabled,
     loading,
     messagesHydrated,
-    messages.length,
+    visibleMessages.length,
     sending,
     isGeneratingCurrentChat,
     submitContent,
@@ -907,7 +978,11 @@ export function ChatPage() {
     if (nextIndex < 0) return;
     const next = pendingSendQueue[nextIndex];
     setPendingSendQueue((queue) => queue.filter((_, index) => index !== nextIndex));
-    void sendMessage(next.content, { hiddenUserMessage: next.hiddenUserMessage });
+    void sendMessage(next.content, {
+      hiddenUserMessage: next.hiddenUserMessage,
+      hiddenReason: next.label,
+      metadata: next.metadata,
+    });
   }, [sending, pendingSendQueue, currentChat, sendMessage]);
 
   const refreshSavepoints = async () => {
@@ -980,11 +1055,11 @@ export function ChatPage() {
   };
 
   const lastAssistantId = useMemo(() => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].role === "assistant") return messages[i].id;
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      if (visibleMessages[i].role === "assistant") return visibleMessages[i].id;
     }
     return null;
-  }, [messages]);
+  }, [visibleMessages]);
 
   const handleDeleteMessage = async () => {
     if (!deleteMsgTarget) return;
@@ -1098,18 +1173,17 @@ export function ChatPage() {
 
   const renderedMessages = useMemo(
     () =>
-      messages.map((msg) => {
+      visibleMessages.map((msg) => {
         const isUser = msg.role === "user";
         const isFinalAi = !isUser && msg.id === lastAssistantId;
         const split =
-          !isUser && (activeRegexRules.length > 0 || /\[image\]/i.test(msg.content))
+          !isUser && (agenticPlayEnabled || activeRegexRules.length > 0 || /\[image\]/i.test(msg.content))
             ? applyRegexRules(msg.content, activeRegexRules)
             : null;
         const rawDisplayContent = split?.displayContent ?? split?.promptContent ?? msg.content;
         const structuredAgenticOptions = !isUser && agenticPlayEnabled ? (msg.agenticOptions ?? []) : [];
-        const agenticChoiceBlock = !isUser && agenticPlayEnabled ? extractAgenticOptions(rawDisplayContent) : null;
-        const displayContent = agenticChoiceBlock?.content ?? rawDisplayContent;
-        const displaySplit = agenticChoiceBlock?.options.length || structuredAgenticOptions.length ? null : split;
+        const displayContent = rawDisplayContent;
+        const displaySplit = split;
         const isStreamingAi = !isUser && isGeneratingCurrentChat && msg.id === streamingMessageId;
         const hasDisplayContent = displayContent.trim().length > 0;
 
@@ -1119,14 +1193,12 @@ export function ChatPage() {
           isFinalAi,
           split: displaySplit,
           displayContent,
-          agenticOptions: structuredAgenticOptions.length
-            ? structuredAgenticOptions
-            : (agenticChoiceBlock?.options ?? []),
+          agenticOptions: structuredAgenticOptions,
           isStreamingAi,
           hasDisplayContent,
         };
       }),
-    [activeRegexRules, agenticPlayEnabled, isGeneratingCurrentChat, lastAssistantId, streamingMessageId, messages],
+    [activeRegexRules, agenticPlayEnabled, isGeneratingCurrentChat, lastAssistantId, streamingMessageId, visibleMessages],
   );
   const activeAgenticChoiceBlock = useMemo(() => {
     const latest = renderedMessages[renderedMessages.length - 1];
@@ -1140,11 +1212,16 @@ export function ChatPage() {
   const activeAgenticPanelChoices: ChoiceInputPanelChoice[] =
     activeAgenticChoiceBlock?.agenticOptions.map((option) => ({
       id: option.id,
-      label: option.action,
+      label: option.label,
       value: option.action,
-      description: [option.probability !== undefined ? `成功率 ${option.probability}%` : "", option.description ?? ""]
+      description: [
+        option.probability !== undefined ? `成功率 ${option.probability}%` : "",
+        option.difficulty !== undefined ? `DC ${option.difficulty}` : "",
+        option.description ?? "",
+      ]
         .filter(Boolean)
         .join(" · "),
+      meta: { agenticOption: option },
     })) ?? [];
 
   const isNearBottomRef = useRef(true);
@@ -1168,7 +1245,7 @@ export function ChatPage() {
   }, [fontSize, chatVirtualizer]);
 
   useEffect(() => {
-    const lastMsg = messages[messages.length - 1];
+    const lastMsg = visibleMessages[visibleMessages.length - 1];
     if (!lastMsg) return;
 
     const isGeneratingThisChat = sending && !!currentChat?.id && sendingChatId === currentChat.id;
@@ -1206,8 +1283,8 @@ export function ChatPage() {
 
     wasGeneratingCurrentChatRef.current = isGeneratingThisChat;
   }, [
-    messages,
-    messages.length,
+    visibleMessages,
+    visibleMessages.length,
     sending,
     sendingChatId,
     streamingMessageId,
@@ -1217,24 +1294,35 @@ export function ChatPage() {
   ]);
 
   useLayoutEffect(() => {
-    if (loading || !currentChat?.id || messages.length === 0) return;
+    if (loading || !currentChat?.id || visibleMessages.length === 0) return;
     if (lastOpenedChatRef.current === currentChat.id) return;
     lastOpenedChatRef.current = currentChat.id;
     skipNextMessageAutoScrollRef.current = currentChat.id;
     requestAnimationFrame(() => {
       chatVirtualizer.scrollToIndex(renderedMessages.length - 1, { align: "end" });
     });
-  }, [currentChat?.id, loading, messages.length, renderedMessages.length, chatVirtualizer]);
+  }, [currentChat?.id, loading, visibleMessages.length, renderedMessages.length, chatVirtualizer]);
+
+  const chatLayoutColumns = chatListCollapsed
+    ? "lg:grid-cols-[48px_minmax(0,1fr)] xl:grid-cols-[48px_minmax(0,1fr)_320px]"
+    : "lg:grid-cols-[230px_minmax(0,1fr)] xl:grid-cols-[230px_minmax(0,1fr)_320px]";
+  const chatContentWidthClass = chatListCollapsed ? "max-w-6xl" : "max-w-4xl";
+  const userBubbleWidthClass = chatListCollapsed ? "max-w-[min(88%,60rem)]" : "max-w-[min(82%,48rem)]";
+  const firstMessageWidthClass = chatListCollapsed ? "max-w-[min(82%,54rem)]" : "max-w-[75%]";
 
   return (
     <div className="flex h-full flex-col" style={{ "--chat-font-size": fontSize + "px" } as React.CSSProperties}>
-      <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] xl:grid-cols-[230px_1fr_320px] gap-4 p-4 flex-1 overflow-hidden">
+      <div
+        className={`grid grid-cols-1 ${chatLayoutColumns} flex-1 gap-3 overflow-hidden p-4 transition-[grid-template-columns] duration-200`}
+      >
         <ChatSidebar
           chats={chatRecords}
           characters={characters}
           currentChatId={currentChat?.id}
+          collapsed={chatListCollapsed}
           onBack={() => navigate("/")}
           onSelectChat={handleSelectCharacterChat}
+          onToggleCollapsed={() => setChatListCollapsed((value) => !value)}
         />
 
         <section className="flex chat-grid-cell flex-col rounded-lg border bg-background">
@@ -1244,8 +1332,8 @@ export function ChatPage() {
             className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50"
           >
             {loading && <p className="text-sm text-muted-foreground text-center">Loading...</p>}
-            {!loading && messages.length === 0 && !isGeneratingCurrentChat && (
-              <div className="max-w-4xl mx-auto">
+            {!loading && visibleMessages.length === 0 && !isGeneratingCurrentChat && (
+              <div className={`${chatContentWidthClass} mx-auto`}>
                 {character ? (
                   <div>
                     <div className="flex items-center gap-2 mb-1.5 px-1">
@@ -1253,7 +1341,7 @@ export function ChatPage() {
                       <span className="text-xs font-medium text-muted-foreground">{character.name}</span>
                     </div>
                     <div className="flex gap-3">
-                      <div className="max-w-[75%] min-w-0">
+                      <div className={`${firstMessageWidthClass} min-w-0`}>
                         <Card>
                           <CardContent className="p-3">
                             <p className="whitespace-pre-wrap" style={{ fontSize: `${fontSize}px` }}>
@@ -1272,7 +1360,7 @@ export function ChatPage() {
                 )}
               </div>
             )}
-            <div className="max-w-4xl mx-auto">
+            <div className={`${chatContentWidthClass} mx-auto`}>
               <div
                 style={{
                   height: `${chatVirtualizer.getTotalSize()}px`,
@@ -1303,7 +1391,9 @@ export function ChatPage() {
                     >
                       {isUser ? (
                         <div className="flex min-w-0 justify-end gap-3 pb-5">
-                          <div className="min-w-0 max-w-[min(82%,48rem)] overflow-hidden rounded-lg border bg-primary p-4 text-primary-foreground">
+                          <div
+                            className={`min-w-0 ${userBubbleWidthClass} overflow-hidden rounded-lg border bg-primary p-4 text-primary-foreground`}
+                          >
                             <div className="mb-1.5 flex items-center justify-end gap-1 opacity-0 transition-opacity hover:opacity-100">
                               <Button
                                 variant="ghost"
@@ -1353,7 +1443,7 @@ export function ChatPage() {
                           <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
                             <Bot className="h-4 w-4" />
                           </div>
-                          <div className="group min-w-0 w-full max-w-4xl overflow-hidden py-1">
+                          <div className={`group min-w-0 w-full ${chatContentWidthClass} overflow-hidden py-1`}>
                             <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
                               <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
                                 {aiName}
@@ -1553,7 +1643,7 @@ export function ChatPage() {
                   <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
                     <Bot className="h-4 w-4" />
                   </div>
-                  <div className="min-w-0 w-full max-w-4xl py-1">
+                  <div className={`min-w-0 w-full ${chatContentWidthClass} py-1`}>
                     <div className="mb-3 min-w-0 border-l border-border/80">
                       <div className="relative pb-3 pl-5">
                         <span className="absolute left-[-6px] top-1 flex h-3 w-3 items-center justify-center rounded-full bg-background text-primary">
@@ -1589,7 +1679,7 @@ export function ChatPage() {
 
           {activeAgenticChoiceBlock && activeAgenticPanelChoices.length > 0 ? (
             <div className="shrink-0 border-t bg-card p-4">
-              <div className="mx-auto w-full min-w-0 max-w-4xl">
+              <div className={`mx-auto w-full min-w-0 ${chatContentWidthClass}`}>
                 <ChoiceInputPanel
                   key={activeAgenticChoiceBlock.msg.id}
                   title={character ? `你要在 ${character.name} 的场景里采取什么行动？` : "你下一步要怎么做？"}
@@ -1623,7 +1713,7 @@ export function ChatPage() {
                 if (nextOpen) updatePreview(input.trim());
               }}
               onContinue={handleContinue}
-              messagesLength={messages.length}
+              messagesLength={visibleMessages.length}
               input={input}
               onInputChange={handleInputChange}
               onKeyDown={handleKeyDown}
@@ -1641,13 +1731,14 @@ export function ChatPage() {
               onLoad={openLoadDialog}
               isGenerating={isGeneratingCurrentChat}
               previewText={previewText}
+              wide={chatListCollapsed}
             />
           )}
         </section>
 
         <div className="hidden xl:contents">
           <ChatRightPanel
-            messagesCount={messages.length}
+            messagesCount={visibleMessages.length}
             usageMessagesCount={usageMessages.length}
             totalPrompt={totalPrompt}
             totalCompletion={totalCompletion}
@@ -1659,6 +1750,7 @@ export function ChatPage() {
             agenticPlayEnabled={agenticPlayEnabled}
             agenticGameState={agenticGameState}
             isGeneratingCurrentChat={isGeneratingCurrentChat}
+            lastDiceResult={lastDiceResult}
           />
         </div>
       </div>

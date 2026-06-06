@@ -16,6 +16,7 @@ export type PendingSendItem = {
   content: string;
   hiddenUserMessage?: boolean;
   label?: string;
+  metadata?: Message["metadata"];
 };
 
 // ── Pure helpers ──────────────────────────────────────

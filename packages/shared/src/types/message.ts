@@ -37,7 +37,13 @@ export interface MessageAgenticOption {
   label: string
   action: string
   probability?: number
+  difficulty?: number
   description?: string
+}
+
+export interface MessageMetadata {
+  hiddenReason?: string
+  agenticAction?: unknown
 }
 
 export interface Message {
@@ -51,6 +57,8 @@ export interface Message {
   usage?: MessageUsage
   images?: MessageImage[]
   agenticOptions?: MessageAgenticOption[]
+  hidden?: boolean
+  metadata?: MessageMetadata
   createdAt: string
 }
 
@@ -64,4 +72,6 @@ export interface CreateMessageInput {
   usage?: MessageUsage
   images?: MessageImage[]
   agenticOptions?: MessageAgenticOption[]
+  hidden?: boolean
+  metadata?: MessageMetadata
 }

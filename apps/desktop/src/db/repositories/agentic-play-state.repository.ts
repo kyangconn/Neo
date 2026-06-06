@@ -6,7 +6,10 @@ import {
 } from "@/features/agentic-play/agentic-play";
 import { getStorageItem, removeStorageItem, setStorageItem } from "../storage";
 
+const { invoke } = await import("@tauri-apps/api/core");
+
 const STORAGE_KEY = "neotavern_agentic_play_states";
+let sqliteReady: Promise<boolean> | null = null;
 
 export interface AgenticPlayStateRecord {
   chatId: string;
@@ -32,6 +35,59 @@ async function saveAll(records: AgenticPlayStateRecord[]) {
   await setStorageItem(STORAGE_KEY, JSON.stringify(records));
 }
 
+async function ensureSqliteReady(): Promise<boolean> {
+  if (!sqliteReady) {
+    sqliteReady = (async () => {
+      try {
+        const legacyStatesJson = await getStorageItem(STORAGE_KEY);
+        await invoke("sqlite_init_agentic_play_states", { legacyStatesJson });
+        return true;
+      } catch {
+        return false;
+      }
+    })();
+  }
+  return sqliteReady;
+}
+
+async function sqliteGet(chatId: string): Promise<AgenticPlayStateRecord | null> {
+  if (!(await ensureSqliteReady())) return null;
+  try {
+    return await invoke<AgenticPlayStateRecord | null>("sqlite_get_agentic_play_state", { chatId });
+  } catch {
+    return null;
+  }
+}
+
+async function sqliteUpsert(record: AgenticPlayStateRecord): Promise<AgenticPlayStateRecord | null> {
+  if (!(await ensureSqliteReady())) return null;
+  try {
+    return await invoke<AgenticPlayStateRecord>("sqlite_upsert_agentic_play_state", { record });
+  } catch {
+    return null;
+  }
+}
+
+async function sqliteDelete(chatId: string): Promise<boolean> {
+  if (!(await ensureSqliteReady())) return false;
+  try {
+    await invoke("sqlite_delete_agentic_play_state", { chatId });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sqliteClearAll(): Promise<boolean> {
+  if (!(await ensureSqliteReady())) return false;
+  try {
+    await invoke("sqlite_clear_agentic_play_states");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function createRecord(chatId: string, character: Character, enabled: boolean): AgenticPlayStateRecord {
   const now = new Date().toISOString();
   return {
@@ -45,11 +101,29 @@ function createRecord(chatId: string, character: Character, enabled: boolean): A
 }
 
 export const agenticPlayStateRepository = {
-  async get(chatId: string): Promise<AgenticPlayStateRecord | null> {
-    return (await loadAll()).find((record) => record.chatId === chatId) ?? null;
+  async get(chatId: string, character?: Character): Promise<AgenticPlayStateRecord | null> {
+    const stored = await sqliteGet(chatId);
+    const record = stored ?? (await loadAll()).find((candidate) => candidate.chatId === chatId) ?? null;
+    if (!record || !character) return record;
+    return {
+      ...record,
+      characterId: record.characterId || character.id,
+      gameState: normalizeAgenticGameState(record.gameState, character),
+    };
   },
 
   async getOrCreate(chatId: string, character: Character, enabled = true): Promise<AgenticPlayStateRecord> {
+    const sqliteExisting = await sqliteGet(chatId);
+    if (sqliteExisting) {
+      const normalized = {
+        ...sqliteExisting,
+        characterId: sqliteExisting.characterId || character.id,
+        gameState: normalizeAgenticGameState(sqliteExisting.gameState, character),
+      };
+      await sqliteUpsert(normalized);
+      return normalized;
+    }
+
     const all = await loadAll();
     const existing = all.find((record) => record.chatId === chatId);
     if (existing) {
@@ -61,40 +135,49 @@ export const agenticPlayStateRepository = {
       if (normalized !== existing) {
         await saveAll(all.map((record) => (record.chatId === chatId ? normalized : record)));
       }
+      await sqliteUpsert(normalized);
       return normalized;
     }
     const record = createRecord(chatId, character, enabled);
+    const sqliteSaved = await sqliteUpsert(record);
+    if (sqliteSaved) return sqliteSaved;
     await saveAll([...all, record]);
     return record;
   },
 
   async setEnabled(chatId: string, character: Character, enabled: boolean): Promise<AgenticPlayStateRecord> {
+    const sqliteExisting = await sqliteGet(chatId);
     const all = await loadAll();
     const existing = all.find((record) => record.chatId === chatId);
     const now = new Date().toISOString();
-    const record: AgenticPlayStateRecord = existing
+    const source = sqliteExisting ?? existing;
+    const record: AgenticPlayStateRecord = source
       ? {
-          ...existing,
+          ...source,
           characterId: character.id,
           enabled,
-          gameState: normalizeAgenticGameState(existing.gameState, character),
+          gameState: normalizeAgenticGameState(source.gameState, character),
           updatedAt: now,
         }
       : {
           ...createRecord(chatId, character, enabled),
           updatedAt: now,
         };
+    const sqliteSaved = await sqliteUpsert(record);
+    if (sqliteSaved) return sqliteSaved;
     await saveAll([...all.filter((candidate) => candidate.chatId !== chatId), record]);
     return record;
   },
 
   async updateState(chatId: string, character: Character, gameState: AgenticGameState): Promise<AgenticPlayStateRecord> {
+    const sqliteExisting = await sqliteGet(chatId);
     const all = await loadAll();
     const existing = all.find((record) => record.chatId === chatId);
     const now = new Date().toISOString();
-    const record: AgenticPlayStateRecord = existing
+    const source = sqliteExisting ?? existing;
+    const record: AgenticPlayStateRecord = source
       ? {
-          ...existing,
+          ...source,
           characterId: character.id,
           gameState: normalizeAgenticGameState(gameState, character),
           updatedAt: now,
@@ -104,15 +187,19 @@ export const agenticPlayStateRepository = {
           gameState: normalizeAgenticGameState(gameState, character),
           updatedAt: now,
         };
+    const sqliteSaved = await sqliteUpsert(record);
+    if (sqliteSaved) return sqliteSaved;
     await saveAll([...all.filter((candidate) => candidate.chatId !== chatId), record]);
     return record;
   },
 
   async delete(chatId: string): Promise<void> {
+    await sqliteDelete(chatId);
     await saveAll((await loadAll()).filter((record) => record.chatId !== chatId));
   },
 
   async clearAll(): Promise<void> {
+    await sqliteClearAll();
     await removeStorageItem(STORAGE_KEY);
   },
 };

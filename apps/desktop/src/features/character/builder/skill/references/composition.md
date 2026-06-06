@@ -132,9 +132,9 @@
 - 所有条目内容无繁体字、日文汉字（检查角色名、地名、变量名等）
 - entryManifest 中 keywords 无单汉字（如"樱""萤""玲"→改为"小樱""小萤""小玲"）
 
-## MVU 一致性检查
+## MVU 与状态栏一致性检查
 
-MVU 和 EJS 编写完成后执行（SKILL.md 主流程第 6 步后），详见 `references/mvu/guide.md` 收尾步骤第 4 步。
+MVU 和 EJS 编写完成后执行（SKILL.md 主流程第 6 步后）。检查 `schema.ts`、`initvar.yaml`、`变量更新规则.yaml`、`pack.statusBars` 与 firstMessage 的初始状态是否一致。
 
 ## 错误恢复
 

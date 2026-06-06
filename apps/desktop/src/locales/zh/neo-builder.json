@@ -97,7 +97,8 @@
   "save": {
     "saved": "已保存",
     "saving": "保存中……",
-    "create": "创建"
+    "create": "创建",
+    "update": "更新"
   },
   "dialogs": {
     "characterCard": {

@@ -22,4 +22,17 @@ describe("Whale Builder skill references", () => {
     expect(NEO_BUILDER_REFERENCE_TEXTS["neo-workflow"]).toBe(NEO_BUILDER_REFERENCE_TEXTS["SKILL.md"]);
     expect(searchResults.some((reference) => reference.id === "references/contents-creation/worldbook.md")).toBe(true);
   });
+
+  it("exposes the local status UI asset references", () => {
+    const guide = readNeoBuilderSkillReference("status-ui-assets");
+    const assetJson = readNeoBuilderSkillReference("status-ui-library");
+    const searchResults = listNeoBuilderSkillReferences("状态 UI");
+
+    expect(guide?.id).toBe("references/mvu/status-ui-assets.md");
+    expect(guide?.content).toContain("pack.statusBars");
+    expect(guide?.content).toContain("gameState.player.status_bars");
+    expect(assetJson?.id).toBe("assets/status-ui-library.json");
+    expect(assetJson?.content).toContain('"id": "health"');
+    expect(searchResults.some((reference) => reference.id === "references/mvu/status-ui-assets.md")).toBe(true);
+  });
 });

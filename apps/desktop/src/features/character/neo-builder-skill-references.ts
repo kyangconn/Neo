@@ -27,11 +27,13 @@ import referencesContentsCreationFirstMessageRaw from "./builder/skill/reference
 import referencesContentsCreationPresentationRaw from "./builder/skill/references/contents-creation/presentation.md?raw";
 import referencesContentsCreationStageGuidanceRaw from "./builder/skill/references/contents-creation/stage-guidance.md?raw";
 import referencesMvuGuideRaw from "./builder/skill/references/mvu/guide.md?raw";
+import referencesMvuStatusUiAssetsRaw from "./builder/skill/references/mvu/status-ui-assets.md?raw";
 import referencesMvuInitvarRaw from "./builder/skill/references/mvu/initvar.md?raw";
 import referencesMvuSchemaRaw from "./builder/skill/references/mvu/schema.md?raw";
 import referencesMvuUpdateRulesGuideRaw from "./builder/skill/references/mvu/update-rules-guide.md?raw";
 import referencesMvuUpdateRulesRaw from "./builder/skill/references/mvu/update-rules.yaml?raw";
 import referencesMvuZodRuleRaw from "./builder/skill/references/mvu/zod-rule.yaml?raw";
+import assetsStatusUiLibraryRaw from "./builder/skill/assets/status-ui-library.json?raw";
 import referencesEjsGuideRaw from "./builder/skill/references/ejs/guide.md?raw";
 import referencesEjsReferenceRaw from "./builder/skill/references/ejs/reference.md?raw";
 import referencesEjsFeaturesRaw from "./builder/skill/references/ejs/features.md?raw";
@@ -227,6 +229,20 @@ const referenceDefinitions: NeoBuilderSkillReference[] = [
     summary: "MVU 编写流程：schema.ts → initvar.yaml → 变量更新规则.yaml。",
     aliases: ["mvu-guide"],
     content: referencesMvuGuideRaw,
+  },
+  {
+    id: "references/mvu/status-ui-assets.md",
+    title: "状态 UI 素材库",
+    summary: "Whale Play 本地状态 UI 素材 id、MVU 变量映射和更新规则示例。",
+    aliases: ["status-ui-assets", "status-assets", "mvu-status-ui"],
+    content: referencesMvuStatusUiAssetsRaw,
+  },
+  {
+    id: "assets/status-ui-library.json",
+    title: "状态 UI 素材 JSON",
+    summary: "Whale Play 本地状态 UI 素材库机器可读清单。",
+    aliases: ["status-ui-library"],
+    content: assetsStatusUiLibraryRaw,
   },
   {
     id: "references/mvu/initvar.md",

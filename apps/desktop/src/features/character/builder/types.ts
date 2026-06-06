@@ -1,6 +1,7 @@
 import type {
   CreateCharacterInput,
   CreateWorldbookEntryInput,
+  CharacterStatusBarConfig,
   MessageUsage,
   ModelConfig,
 } from "@neo-tavern/shared";
@@ -23,6 +24,7 @@ export interface NeoBuilderTurnOptions {
   creationPlan?: NeoCreationPlan | null;
   personalityPalette?: NeoPersonalityPalette | null;
   currentMvu?: NeoMvuConfig | null;
+  currentStatusBars?: NeoStatusBarConfig | null;
   modelConfig: ModelConfig;
   scopeId?: string | null;
   webSearchEnabled?: boolean;
@@ -55,6 +57,8 @@ export interface NeoMvuConfig {
   updateRulesYaml?: string;
 }
 
+export type NeoStatusBarConfig = CharacterStatusBarConfig;
+
 // ── Results ──
 
 export interface NeoCharacterBuilderResult {
@@ -66,6 +70,7 @@ export interface NeoCharacterBuilderResult {
   creationPlan?: NeoCreationPlan;
   evaluationReport?: NeoBuilderEvaluationReport;
   mvu?: NeoMvuConfig;
+  statusBars?: NeoStatusBarConfig;
   notes?: string;
   usage?: MessageUsage;
   toolLog: string[];
@@ -80,6 +85,7 @@ export interface NeoBuilderTurnResult {
   personalityPalette?: NeoPersonalityPalette;
   evaluationReport?: NeoBuilderEvaluationReport;
   mvu?: NeoMvuConfig;
+  statusBars?: NeoStatusBarConfig;
   usage?: MessageUsage;
   reasoningContent?: string;
   toolEvents: NeoBuilderToolEvent[];
@@ -214,6 +220,7 @@ export type DraftPayload = {
   personalityPalette?: unknown;
   creationPlan?: unknown;
   mvu?: unknown;
+  statusBars?: unknown;
   notes?: unknown;
 };
 

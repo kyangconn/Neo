@@ -2,7 +2,7 @@
  * Character card packaging — write Skill-compatible output to a local folder.
  */
 const { invoke } = await import("@tauri-apps/api/core");
-import type { NeoPersonalityPalette, NeoMvuConfig, NeoCreationPlan } from "./types";
+import type { NeoPersonalityPalette, NeoMvuConfig, NeoCreationPlan, NeoStatusBarConfig } from "./types";
 
 export interface CharacterCardPack {
   project: {
@@ -20,6 +20,7 @@ export interface CharacterCardPack {
     firstMessage: string;
     exampleDialogues?: string;
     tags?: string[];
+    statusBars?: NeoStatusBarConfig;
   };
   personalityPalette?: NeoPersonalityPalette;
   worldbook?: {
@@ -40,6 +41,7 @@ export interface CharacterCardPack {
     }>;
   };
   mvu?: NeoMvuConfig;
+  statusBars?: NeoStatusBarConfig;
   creationPlan?: NeoCreationPlan;
 }
 
@@ -61,6 +63,7 @@ export async function exportPackToFolder(pack: CharacterCardPack): Promise<strin
         worldbookName: pack.project.worldbookName,
         form: pack.project.form,
         mvu: pack.project.mvu,
+        statusBars: !!pack.statusBars?.bars.length,
       },
       null,
       2,
@@ -118,6 +121,14 @@ export async function exportPackToFolder(pack: CharacterCardPack): Promise<strin
         content: pack.mvu.updateRulesYaml,
       });
     }
+  }
+
+  // ── Agentic Play status bars ──
+  if (pack.statusBars?.bars.length) {
+    files.push({
+      relativePath: "agentic/status-bars.json",
+      content: JSON.stringify(pack.statusBars, null, 2),
+    });
   }
 
   // ── Creation plan ──

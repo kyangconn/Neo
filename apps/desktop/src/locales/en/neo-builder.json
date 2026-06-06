@@ -96,7 +96,8 @@
   "save": {
     "saved": "Saved",
     "saving": "Saving...",
-    "create": "Create"
+    "create": "Create",
+    "update": "Update"
   },
   "dialogs": {
     "characterCard": {

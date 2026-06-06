@@ -44,9 +44,9 @@ Whale Builder 角色卡生成器中的内置 skill 基于 **Tavern Cards — Sil
 2. **项目创建**：`node scripts/tavern-cards-forge.mjs init {project}` → `references/project-setup.md`
 3. **需求对齐：世界/角色/条目**：收集世界信息、角色信息、条目规划、写作风格，产出编写规划文档 `创作规划.yaml`（项目目录下）→ `references/requirements.md`
 4. **创建条目**：按创作规划依次编写，每条写完立即注册（禁词扫描 + DoubleCheck）→ `references/composition.md`
-5. **编写 MVU 变量**（如需）→ `references/mvu/guide.md`，完成后按收尾步骤复制模板、应用 patch、校验
+5. **编写 MVU 与状态栏产物**（如需）→ `references/mvu/guide.md`，产出 `mvu` 三件套和 `pack.statusBars`
 6. **创建 EJS预处理 条目 + EJS 收尾检查**（如需 EJS）→ `references/ejs/guide.md`
-    - 以上两步完成后 → **MVU 一致性检查**，见 `references/mvu/guide.md` 收尾步骤第 4 步
+    - 以上两步完成后，检查 `schema.ts`、`initvar.yaml`、`变量更新规则.yaml`、`statusBars` 的初始值与路径一致
 7. **运行 configure**：`node scripts/tavern-cards-forge.mjs configure {project}`，自动推导运行时字段 → `references/configuration.md`（仅特殊需求时读取）
 8. **编写开场白**（角色卡）→ `references/contents-creation/first-message.md`
 9. **打包输出**：`node scripts/tavern-cards-forge.mjs pack {project}`
@@ -105,10 +105,11 @@ references/
 │   ├── presentation.md          —— 呈现方式（扮演准则）
 │   └── stage-guidance.md        —— 阶段指导条目编写
 ├── mvu/
-│   ├── guide.md                 —— MVU 编写流程
+│   ├── guide.md                 —— MVU 与状态栏产物编写流程
 │   ├── initvar.md               —— 初始变量编写
 │   ├── schema.md                —— MVU 变量类型定义与 schema 写法
 │   ├── update-rules-guide.md    —— 变量更新规则编写指南
+│   ├── status-ui-assets.md      —— Whale Play 状态 UI 素材库（血条、魔法条、好感度、经验条等）
 │   ├── update-rules.yaml        —— 更新规则 YAML 参考示例（按需查阅）
 │   └── zod-rule.yaml            —— Zod 校验规则参考（按需查阅）
 ├── ejs/

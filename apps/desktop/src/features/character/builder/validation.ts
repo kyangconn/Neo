@@ -1,5 +1,7 @@
 import type {
   CreateCharacterInput,
+  CharacterStatusBar,
+  CharacterStatusBarConfig,
   CreateWorldbookEntryInput,
   WorldbookInsertPosition,
 } from "@neo-tavern/shared";
@@ -23,9 +25,23 @@ import { buildCreationPlanYaml } from "./prompt";
 
 const PLACEHOLDER_PATTERN = /(某城市|某学校|某组织|某地点|某角色|某人|待定|占位|TODO|TBD|未命名)/i;
 const USER_ACTION_PATTERN = /你(已经|正在|正要|走进|坐下|伸手|回答|点头|摇头|感到|意识到|决定|忍不住)/;
+const STATUS_BAR_ASSET_IDS = new Set(["health", "mana", "stamina", "affection", "experience", "sanity", "danger"]);
 
 function hasPlaceholder(text: string): boolean {
   return PLACEHOLDER_PATTERN.test(text);
+}
+
+function toFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.replace("%", "").trim());
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function clampNumber(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 // ── Tags ──
@@ -388,6 +404,71 @@ function validateMvu(mvu: NeoMvuConfig): string[] {
   return issues;
 }
 
+// ── Status Bars ──
+
+function normalizeStatusBarItem(value: unknown, fallbackId?: string): CharacterStatusBar | null {
+  if (!value || typeof value !== "object") return null;
+  const data = value as Record<string, unknown>;
+  const id = trimString(data.id || fallbackId || data.assetId || data.asset_id);
+  const assetId = trimString(data.assetId || data.asset_id || data.asset || id);
+  const label = trimString(data.label || data.name || id);
+  if (!id || !label) return null;
+
+  const max = Math.max(1, toFiniteNumber(data.max ?? data.maximum ?? data.上限) ?? 100);
+  const min = toFiniteNumber(data.min ?? data.minimum ?? data.下限) ?? 0;
+  const rawValue = data.value ?? data.current ?? data.now ?? data.当前值;
+  const parsedValue = rawValue === null ? null : toFiniteNumber(rawValue);
+  const statusValue = parsedValue === undefined || parsedValue === null ? null : clampNumber(parsedValue, min, max);
+
+  return {
+    id,
+    assetId: STATUS_BAR_ASSET_IDS.has(assetId) ? assetId : id,
+    label,
+    value: statusValue,
+    max,
+    min,
+    description: optionalString(data.description || data.note || data.说明),
+    valueLabel: optionalString(data.valueLabel || data.value_label || data.text),
+    visible: data.visible === false ? false : true,
+    mvuPath: optionalString(data.mvuPath || data.mvu_path || data.path),
+  };
+}
+
+export function normalizeStatusBarConfig(value: unknown): CharacterStatusBarConfig | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const data = value as Record<string, unknown>;
+  const rawBars = Array.isArray(data.bars)
+    ? data.bars.map((item) => normalizeStatusBarItem(item))
+    : Object.entries((data.status_bars || data.statusBars || data) as Record<string, unknown>).map(([id, item]) =>
+        normalizeStatusBarItem(item, id),
+      );
+  const bars = rawBars
+    .filter((item): item is CharacterStatusBar => !!item)
+    .filter((item, index, array) => array.findIndex((candidate) => candidate.id === item.id) === index)
+    .slice(0, 12);
+  if (!bars.length) return undefined;
+  return {
+    version: 1,
+    bars,
+    source: optionalString(data.source) || "whale-builder",
+    updatedAt: optionalString(data.updatedAt || data.updated_at) || new Date().toISOString(),
+  };
+}
+
+function validateStatusBars(statusBars: CharacterStatusBarConfig): string[] {
+  const issues: string[] = [];
+  const ids = new Set<string>();
+  for (const bar of statusBars.bars) {
+    if (ids.has(bar.id)) issues.push(`状态栏 id 重复：${bar.id}`);
+    ids.add(bar.id);
+    if (bar.max <= 0) issues.push(`状态栏"${bar.label}"的 max 必须大于 0`);
+    if (bar.value !== null && (bar.value < (bar.min ?? 0) || bar.value > bar.max)) {
+      issues.push(`状态栏"${bar.label}"的 value 必须在 min~max 范围内`);
+    }
+  }
+  return issues;
+}
+
 // ── Normalize Draft (main validation entry) ──
 
 export function normalizeDraft(
@@ -398,6 +479,9 @@ export function normalizeDraft(
   const personalityPalette = normalizePersonalityPalette(payload.personalityPalette);
   const paletteText = personalityPalette?.compiledText;
   const sourcePersonality = trimString(source.personality);
+  const statusBars = normalizeStatusBarConfig(
+    payload.statusBars ?? source.statusBars ?? (source as Record<string, unknown>).status_bars,
+  );
   const character: CreateCharacterInput = {
     name: trimString(source.name) || existingCharacter?.name || "",
     avatar: optionalString(source.avatar) || existingCharacter?.avatar,
@@ -411,6 +495,7 @@ export function normalizeDraft(
     firstMessage: trimString(source.firstMessage) || existingCharacter?.firstMessage || "",
     exampleDialogues: trimString(source.exampleDialogues) || existingCharacter?.exampleDialogues || "",
     tags: normalizeTags(source.tags) || existingCharacter?.tags,
+    statusBars: statusBars || existingCharacter?.statusBars,
   };
 
   const worldbookEntries = normalizeWorldbookEntries(payload.worldbookEntries);
@@ -480,6 +565,9 @@ export function normalizeDraft(
   if (mvu) {
     issues.push(...validateMvu(mvu));
   }
+  if (character.statusBars) {
+    issues.push(...validateStatusBars(character.statusBars));
+  }
 
   return {
     draft: {
@@ -490,6 +578,7 @@ export function normalizeDraft(
       personalityPalette,
       creationPlan,
       mvu,
+      statusBars: character.statusBars,
       notes: optionalString(payload.notes),
     },
     issues,

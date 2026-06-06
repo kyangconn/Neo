@@ -10,7 +10,7 @@ import {
   type ChoiceInputPanelChoice,
   type ChoiceInputPanelQuestion,
 } from "@/components/ChoiceInputPanel";
-import { worldbookRepository } from "@/db/repositories";
+import { characterRepository, worldbookRepository } from "@/db/repositories";
 import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
 import { runNeoCharacterBuilderTurn } from "@/features/character/neo-character-builder";
 import { exportPackToFolder, type CharacterCardPack } from "@/features/character/neo-character-builder";
@@ -40,6 +40,7 @@ import type {
   NeoCreationPlan,
   NeoPersonalityPalette,
   NeoMvuConfig,
+  NeoStatusBarConfig,
 } from "./neo-builder/types";
 
 import {
@@ -89,6 +90,9 @@ export function NeoBuilderPage() {
     () => initialSnapshot?.evaluationReport ?? null,
   );
   const [mvu, setMvu] = useState<NeoMvuConfig | null>(() => initialSnapshot?.mvu ?? null);
+  const [statusBars, setStatusBars] = useState<NeoStatusBarConfig | null>(
+    () => initialSnapshot?.statusBars ?? initialSnapshot?.draft?.statusBars ?? null,
+  );
   const [artifactView, setArtifactView] = useState<ArtifactView>(null);
   const [savedCharacterId, setSavedCharacterId] = useState<string | null>(
     () => initialSnapshot?.savedCharacterId ?? null,
@@ -145,6 +149,7 @@ export function NeoBuilderPage() {
       personalityPalette,
       evaluationReport,
       mvu,
+      statusBars,
       savedCharacterId,
       builderSessionId,
     };
@@ -164,6 +169,7 @@ export function NeoBuilderPage() {
     personalityPalette,
     evaluationReport,
     mvu,
+    statusBars,
     savedCharacterId,
     builderSessionId,
   ]);
@@ -179,6 +185,7 @@ export function NeoBuilderPage() {
     setPersonalityPalette(null);
     setEvaluationReport(null);
     setMvu(null);
+    setStatusBars(null);
     setArtifactView(null);
     setSavedCharacterId(null);
     setError(null);
@@ -202,6 +209,7 @@ export function NeoBuilderPage() {
     setPersonalityPalette(record.personalityPalette);
     setEvaluationReport(record.evaluationReport);
     setMvu(record.mvu);
+    setStatusBars(record.statusBars ?? record.draft?.statusBars ?? null);
     setSavedCharacterId(record.savedCharacterId);
     setArtifactView(null);
     setError(null);
@@ -218,14 +226,15 @@ export function NeoBuilderPage() {
     if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
     if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
     if (result.mvu) setMvu(result.mvu);
+    if (result.statusBars) setStatusBars(result.statusBars);
     if (!result.draft) return;
-    setTargetId(NEW_TARGET);
-    setSavedCharacterId(null);
+    if (!savedCharacterId) setTargetId(NEW_TARGET);
     setDraft(result.draft.character);
     setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
     setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
     setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
     if (result.draft.mvu) setMvu(result.draft.mvu);
+    setStatusBars(result.draft.statusBars ?? result.statusBars ?? statusBars);
     setWorldbookDraft(
       result.draft.worldbookEntries.length > 0
         ? {
@@ -276,6 +285,7 @@ export function NeoBuilderPage() {
         creationPlan,
         personalityPalette,
         currentMvu: mvu,
+        currentStatusBars: statusBars,
         modelConfig: config,
         scopeId: builderSessionId,
         webSearchEnabled: webSearchOverride,
@@ -390,13 +400,32 @@ export function NeoBuilderPage() {
     return updateCharacter(character.id, { worldbookId });
   };
 
+  const findExistingCharacterIdForSave = async (nextDraft: CreateCharacterInput) => {
+    const candidateIds = [savedCharacterId, targetId !== NEW_TARGET ? targetId : null, nextDraft.id]
+      .filter((id): id is string => !!id)
+      .filter((id, index, array) => array.indexOf(id) === index);
+
+    for (const id of candidateIds) {
+      if (await characterRepository.getById(id)) return id;
+    }
+
+    const normalizedName = nextDraft.name.trim();
+    if (!normalizedName) return null;
+    const sameName = (await characterRepository.list(true)).filter((character) => character.name.trim() === normalizedName);
+    return sameName.length === 1 ? sameName[0].id : null;
+  };
+
   const handleSave = async () => {
-    if (!draft?.name.trim() || savedCharacterId) return;
+    if (!draft?.name.trim()) return;
 
     setSaving(true);
     setError(null);
     try {
-      let saved = await createCharacter(draft);
+      const nextDraft = { ...draft, statusBars: statusBars ?? draft.statusBars };
+      const existingCharacterId = await findExistingCharacterIdForSave(nextDraft);
+      let saved = existingCharacterId
+        ? await updateCharacter(existingCharacterId, nextDraft)
+        : await createCharacter(nextDraft);
       setTargetId(saved.id);
 
       if (worldbookDraft?.entries.length) {
@@ -423,7 +452,7 @@ export function NeoBuilderPage() {
         name: draft.name,
         worldbookName: worldbookDraft?.name,
         form: "charactercard",
-        mvu: !!lastResult?.mvu,
+        mvu: !!mvu,
       },
       character: {
         name: draft.name,
@@ -433,6 +462,7 @@ export function NeoBuilderPage() {
         firstMessage: draft.firstMessage,
         exampleDialogues: draft.exampleDialogues,
         tags: draft.tags,
+        statusBars: statusBars ?? draft.statusBars,
       },
       personalityPalette: personalityPalette ?? undefined,
       worldbook: worldbookDraft?.entries.length
@@ -446,7 +476,8 @@ export function NeoBuilderPage() {
             })),
           }
         : undefined,
-      mvu: lastResult?.mvu ?? undefined,
+      mvu: mvu ?? lastResult?.mvu ?? undefined,
+      statusBars: statusBars ?? draft.statusBars ?? undefined,
       creationPlan: creationPlan ?? undefined,
     };
 
@@ -650,6 +681,7 @@ export function NeoBuilderPage() {
             evaluationReport={evaluationReport}
             draft={draft}
             worldbookDraft={worldbookDraft}
+            statusBars={statusBars}
             setArtifactView={setArtifactView}
             steps={steps}
             savedCharacterId={savedCharacterId}
@@ -751,6 +783,49 @@ export function NeoBuilderPage() {
                   </p>
                 </section>
               ) : null}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={artifactView === "statusBars"}
+        onOpenChange={(open: boolean) => {
+          if (!open) setArtifactView(null);
+        }}
+      >
+        <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>状态栏</DialogTitle>
+            <DialogDescription>Agentic Play 新会话会用这份配置初始化右侧动态状态栏。</DialogDescription>
+          </DialogHeader>
+          {statusBars?.bars.length ? (
+            <div className="space-y-4 text-sm">
+              <div className="grid gap-3 sm:grid-cols-2">
+                {statusBars.bars.map((bar) => (
+                  <section key={bar.id} className="rounded-md border bg-background p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="break-words text-sm font-semibold">{bar.label}</h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {bar.assetId} · {bar.id}
+                        </p>
+                      </div>
+                      <span className="shrink-0 rounded bg-muted px-2 py-1 text-xs">
+                        {bar.value ?? "-"} / {bar.max}
+                      </span>
+                    </div>
+                    {bar.description ? (
+                      <p className="mt-3 whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                        {bar.description}
+                      </p>
+                    ) : null}
+                  </section>
+                ))}
+              </div>
+              <pre className="max-h-[38vh] overflow-auto whitespace-pre-wrap break-words rounded-md border bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+                {JSON.stringify(statusBars, null, 2)}
+              </pre>
             </div>
           ) : null}
         </DialogContent>

@@ -12,7 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "Whale Play",
+        "title": "",
+        "theme": "Dark",
+        "decorations": false,
         "width": 1200,
         "height": 800,
         "resizable": true,

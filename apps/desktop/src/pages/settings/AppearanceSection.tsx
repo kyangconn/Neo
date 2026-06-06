@@ -42,9 +42,13 @@ export function AppearanceSection({ t }: { t: (key: string, params?: Record<stri
               key={th.value}
               onClick={() => setTheme(th.value)}
               className={`relative flex flex-col items-center gap-2 rounded-lg border p-4 transition-colors
-                ${theme === th.value ? "border-primary bg-primary/10 text-primary" : "border-border hover:bg-accent hover:text-accent-foreground"}`}
+                ${
+                  theme === th.value
+                    ? "app-sidebar-gradient border-border/90 text-foreground shadow-sm"
+                    : "border-border bg-background/35 text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                }`}
             >
-              {theme === th.value && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5" />}
+              {theme === th.value && <CheckCircle2 className="absolute right-2 top-2 h-3.5 w-3.5 text-foreground" />}
               <th.icon className="h-5 w-5" />
               <span className="text-sm font-medium">{th.label}</span>
             </button>

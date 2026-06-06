@@ -9,6 +9,7 @@ import {
 } from "@/db/repositories";
 import type { Chat, Message, CreateChatInput, CreateMessageInput } from "@neo-tavern/shared";
 import type { GenerationPhase } from "./chat.types";
+import type { DiceRollResult } from "@/features/agentic-play/agentic-play";
 
 interface ActiveGenerationState {
   streamingMessageId: string | null;
@@ -27,6 +28,7 @@ interface ChatState {
   generationPhase: GenerationPhase | null;
   activeGenerations: Record<string, ActiveGenerationState>;
   error: string | null;
+  lastDiceResult: DiceRollResult | null;
 
   loadChats: () => Promise<void>;
   loadChat: (id: string) => Promise<void>;
@@ -53,6 +55,7 @@ interface ChatState {
   setGenerationPhase: (chatId: string, phase: GenerationPhase) => void;
   finishSending: (chatId?: string) => void;
   setSending: (sending: boolean) => void;
+  setLastDiceResult: (result: DiceRollResult | null) => void;
   clearError: () => void;
 }
 
@@ -154,6 +157,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   generationPhase: null,
   activeGenerations: {},
   error: null,
+  lastDiceResult: null,
 
   loadChats: async () => {
     set({ loading: true, error: null });
@@ -379,6 +383,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...legacyGenerationSnapshot(activeGenerations, chatId),
       };
     }),
+
+  setLastDiceResult: (result: DiceRollResult | null) => set({ lastDiceResult: result }),
 
   updateMessage: async (id: string, content: string) => {
     try {

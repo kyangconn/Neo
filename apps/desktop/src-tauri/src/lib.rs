@@ -76,6 +76,16 @@ fn open_sqlite(app: &tauri::AppHandle) -> Result<rusqlite::Connection, String> {
         );
         CREATE INDEX IF NOT EXISTS idx_messages_chat_created
             ON messages(chat_id, created_at);
+        CREATE TABLE IF NOT EXISTS agentic_play_states (
+            chat_id TEXT PRIMARY KEY NOT NULL,
+            character_id TEXT NOT NULL,
+            enabled INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            record_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_agentic_play_states_character
+            ON agentic_play_states(character_id, updated_at);
         "#,
     )
     .map_err(|err| format!("Failed to initialize SQLite schema: {err}"))?;
@@ -103,6 +113,28 @@ fn serialize_message(
 
 fn parse_message_json(raw: String) -> Result<serde_json::Value, String> {
     serde_json::from_str(&raw).map_err(|err| format!("Failed to parse message JSON: {err}"))
+}
+
+fn json_bool_field(value: &serde_json::Value, field: &str) -> Result<bool, String> {
+    value
+        .get(field)
+        .and_then(|inner| inner.as_bool())
+        .ok_or_else(|| format!("Agentic Play state is missing required boolean field: {field}"))
+}
+
+fn serialize_agentic_play_state(record: &serde_json::Value) -> Result<(String, String, bool, String, String, String), String> {
+    let chat_id = json_string_field(record, "chatId")?.to_string();
+    let character_id = json_string_field(record, "characterId")?.to_string();
+    let enabled = json_bool_field(record, "enabled")?;
+    let created_at = json_string_field(record, "createdAt")?.to_string();
+    let updated_at = json_string_field(record, "updatedAt")?.to_string();
+    let raw = serde_json::to_string(record)
+        .map_err(|err| format!("Failed to serialize Agentic Play state: {err}"))?;
+    Ok((chat_id, character_id, enabled, created_at, updated_at, raw))
+}
+
+fn parse_agentic_play_state_json(raw: String) -> Result<serde_json::Value, String> {
+    serde_json::from_str(&raw).map_err(|err| format!("Failed to parse Agentic Play state JSON: {err}"))
 }
 
 fn read_sqlite_message(conn: &rusqlite::Connection, id: &str) -> Result<serde_json::Value, String> {
@@ -780,6 +812,99 @@ fn sqlite_delete_messages(app: tauri::AppHandle, ids: Vec<String>) -> Result<(),
 }
 
 #[tauri::command]
+fn sqlite_init_agentic_play_states(
+    app: tauri::AppHandle,
+    legacy_states_json: Option<String>,
+) -> Result<(), String> {
+    let mut conn = open_sqlite(&app)?;
+    let count = conn
+        .query_row("SELECT COUNT(*) FROM agentic_play_states", [], |row| row.get::<_, i64>(0))
+        .map_err(|err| format!("Failed to count SQLite Agentic Play states: {err}"))?;
+
+    if count > 0 {
+        return Ok(());
+    }
+
+    let Some(raw) = legacy_states_json else {
+        return Ok(());
+    };
+    if raw.trim().is_empty() {
+        return Ok(());
+    }
+
+    let parsed = serde_json::from_str::<serde_json::Value>(&raw)
+        .map_err(|err| format!("Failed to parse legacy Agentic Play states: {err}"))?;
+    let Some(records) = parsed.as_array() else {
+        return Ok(());
+    };
+
+    let tx = conn
+        .transaction()
+        .map_err(|err| format!("Failed to start Agentic Play SQLite migration: {err}"))?;
+    for record in records {
+        let (chat_id, character_id, enabled, created_at, updated_at, record_raw) = serialize_agentic_play_state(record)?;
+        tx.execute(
+            "INSERT OR IGNORE INTO agentic_play_states (chat_id, character_id, enabled, created_at, updated_at, record_json)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![chat_id, character_id, if enabled { 1 } else { 0 }, created_at, updated_at, record_raw],
+        )
+        .map_err(|err| format!("Failed to migrate Agentic Play state: {err}"))?;
+    }
+    tx.commit()
+        .map_err(|err| format!("Failed to finish Agentic Play SQLite migration: {err}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn sqlite_get_agentic_play_state(
+    app: tauri::AppHandle,
+    chat_id: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let conn = open_sqlite(&app)?;
+    let raw = conn
+        .query_row(
+            "SELECT record_json FROM agentic_play_states WHERE chat_id = ?1",
+            params![chat_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|err| format!("Failed to read SQLite Agentic Play state: {err}"))?;
+    raw.map(parse_agentic_play_state_json).transpose()
+}
+
+#[tauri::command]
+fn sqlite_upsert_agentic_play_state(
+    app: tauri::AppHandle,
+    record: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    let conn = open_sqlite(&app)?;
+    let (chat_id, character_id, enabled, created_at, updated_at, raw) = serialize_agentic_play_state(&record)?;
+    conn.execute(
+        "INSERT OR REPLACE INTO agentic_play_states (chat_id, character_id, enabled, created_at, updated_at, record_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![chat_id, character_id, if enabled { 1 } else { 0 }, created_at, updated_at, raw],
+    )
+    .map_err(|err| format!("Failed to upsert SQLite Agentic Play state: {err}"))?;
+    Ok(record)
+}
+
+#[tauri::command]
+fn sqlite_delete_agentic_play_state(app: tauri::AppHandle, chat_id: String) -> Result<(), String> {
+    let conn = open_sqlite(&app)?;
+    conn.execute("DELETE FROM agentic_play_states WHERE chat_id = ?1", params![chat_id])
+        .map_err(|err| format!("Failed to delete SQLite Agentic Play state: {err}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+fn sqlite_clear_agentic_play_states(app: tauri::AppHandle) -> Result<(), String> {
+    let conn = open_sqlite(&app)?;
+    conn.execute("DELETE FROM agentic_play_states", [])
+        .map_err(|err| format!("Failed to clear SQLite Agentic Play states: {err}"))?;
+    Ok(())
+}
+
+#[tauri::command]
 async fn comfy_get_system_stats(base_url: String) -> Result<serde_json::Value, String> {
     let client = comfy_client()?;
     let url = format!("{}/system_stats", clean_base_url(&base_url));
@@ -904,6 +1029,11 @@ pub fn run() {
             sqlite_replace_messages_by_chat_id,
             sqlite_delete_message,
             sqlite_delete_messages,
+            sqlite_init_agentic_play_states,
+            sqlite_get_agentic_play_state,
+            sqlite_upsert_agentic_play_state,
+            sqlite_delete_agentic_play_state,
+            sqlite_clear_agentic_play_states,
             web_search,
             comfy_get_system_stats,
             comfy_queue_prompt,

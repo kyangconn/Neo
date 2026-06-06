@@ -11,6 +11,7 @@ import type {
   NeoBuilderTurnResult,
   NeoCreationPlan,
   NeoMvuConfig,
+  NeoStatusBarConfig,
   NeoPersonalityPalette,
 } from "@/features/character/neo-character-builder";
 
@@ -46,7 +47,7 @@ export type BuilderMessage = {
   completedAt?: number;
 };
 
-export type ArtifactView = "character" | "worldbook" | "plan" | "palette" | "evaluation" | null;
+export type ArtifactView = "character" | "worldbook" | "plan" | "palette" | "statusBars" | "evaluation" | null;
 
 export type BuilderWorkspaceSnapshot = {
   targetId: BuilderTarget;
@@ -60,6 +61,7 @@ export type BuilderWorkspaceSnapshot = {
   personalityPalette: NeoPersonalityPalette | null;
   evaluationReport: NeoBuilderEvaluationReport | null;
   mvu: NeoMvuConfig | null;
+  statusBars: NeoStatusBarConfig | null;
   savedCharacterId: string | null;
   builderSessionId: string;
 };
@@ -83,4 +85,5 @@ export type {
   NeoCreationPlanEntry,
   NeoPersonalityPalette,
   NeoMvuConfig,
+  NeoStatusBarConfig,
 } from "@/features/character/neo-character-builder";

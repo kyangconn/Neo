@@ -1,12 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { BuiltPrompt, Character, ModelConfig, ModelProvider } from "@neo-tavern/shared";
 import {
+  buildAgenticPlaySystemRules,
   createAgenticPlayContextBlock,
   createInitialAgenticGameState,
   generateAgenticPlayTurn,
   rollDice,
 } from "./agentic-play";
-import { extractAgenticOptions } from "./agentic-options";
+import { resolveAgenticStatusMeters } from "./status-assets";
 
 const character: Character = {
   id: "char-1",
@@ -82,6 +83,68 @@ describe("Agentic Play", () => {
     expect(block.position).toBe("afterHistory");
     expect(block.content).toContain("结构化");
     expect(block.content).toContain("narrative_dice");
+  });
+
+  it("keeps NPC speech and option descriptions grounded in visible history", () => {
+    const rules = buildAgenticPlaySystemRules("Luna");
+
+    expect(rules).toContain("连续性优先");
+    expect(rules).toContain("NPC 直接发言必须可见落地");
+    expect(rules).toContain("未选择的选项和选项说明不是历史");
+    expect(rules).toContain("禁止写未发生前提");
+  });
+
+  it("initializes status bars from the character card config", () => {
+    const state = createInitialAgenticGameState({
+      ...character,
+      statusBars: {
+        version: 1,
+        source: "whale-builder",
+        bars: [
+          {
+            id: "luna_affection",
+            assetId: "affection",
+            label: "Luna好感",
+            value: 35,
+            max: 100,
+            mvuPath: "角色.Luna.好感度",
+          },
+          {
+            id: "mana",
+            assetId: "mana",
+            label: "法术位",
+            value: 3,
+            max: 6,
+            valueLabel: "3/6",
+          },
+        ],
+      },
+    });
+
+    expect(state.player.status_bars).toMatchObject({
+      luna_affection: { assetId: "affection", value: 35, max: 100 },
+      mana: { assetId: "mana", value: 3, max: 6, valueLabel: "3/6" },
+    });
+
+    const meters = resolveAgenticStatusMeters(state);
+    expect(meters.map((meter) => meter.id)).toContain("affection");
+    expect(meters.find((meter) => meter.id === "affection")).toMatchObject({ label: "Luna好感", value: 35 });
+  });
+
+  it("resolves local status UI assets from legacy and status_bars variables", () => {
+    const state = createInitialAgenticGameState(character);
+    state.player.hp = 42;
+    state.player.max_hp = 80;
+    state.player.status_bars = {
+      affection: { value: 36, max: 100, label: "Luna好感" },
+      experience: { value: 15, max: 100, label: "经验" },
+    };
+
+    const meters = resolveAgenticStatusMeters(state);
+
+    expect(meters.map((meter) => meter.id)).toEqual(["health", "affection", "experience"]);
+    expect(meters[0]).toMatchObject({ label: "生命", value: 42, max: 80, tone: "health" });
+    expect(meters[1]).toMatchObject({ label: "Luna好感", value: 36, tone: "affection" });
   });
 
   it("executes dice and state tools before final narration", async () => {
@@ -161,11 +224,11 @@ describe("Agentic Play", () => {
                 scene_text: "### 场景\n露娜停在书架旁，等你决定下一步。",
                 question: "你想怎么行动？",
                 options: [
-                  { label: "询问禁书", action: "询问禁书的下落", success_probability: 72 },
-                  { label: "检查索引", action: "检查桌上的索引卡", success_probability: 85 },
-                  { label: "绕到柜台后", action: "偷偷绕到柜台后方", success_probability: 38 },
-                  { label: "等待解释", action: "等露娜主动解释", success_probability: 90 },
-                  { label: "说明来意", action: "直接说明你的来意", success_probability: 65 },
+                  { label: "询问禁书", action: "询问禁书的下落", success_probability: 72, difficulty: 7 },
+                  { label: "检查索引", action: "检查桌上的索引卡", success_probability: 85, difficulty: 4 },
+                  { label: "绕到柜台后", action: "偷偷绕到柜台后方", success_probability: 38, difficulty: 13 },
+                  { label: "等待解释", action: "等露娜主动解释", success_probability: 90, difficulty: 3 },
+                  { label: "说明来意", action: "直接说明你的来意", success_probability: 65, difficulty: 8 },
                 ],
               }),
             },
@@ -184,8 +247,115 @@ describe("Agentic Play", () => {
 
     expect(result.content).toBe("### 场景\n露娜停在书架旁，等你决定下一步。");
     expect(result.agenticOptions).toHaveLength(5);
-    expect(result.agenticOptions?.[0]).toMatchObject({ action: "询问禁书的下落", probability: 72 });
+    expect(result.agenticOptions?.[0]).toMatchObject({ action: "询问禁书的下落", probability: 72, difficulty: 7 });
     expect(provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("repairs an invalid option tool call instead of stopping with too few options", async () => {
+    const makeOption = (index: number) => ({
+      label: `行动 ${index}`,
+      action: `执行行动 ${index}`,
+      success_probability: 60 + index,
+      difficulty: 9,
+    });
+    const provider: ModelProvider = {
+      id: "fake-repair",
+      name: "Fake Repair",
+      generate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: "",
+          toolCalls: [
+            {
+              id: "bad-options",
+              type: "function",
+              function: {
+                name: "present_player_options",
+                arguments: JSON.stringify({
+                  scene_text: "露娜停下脚步。",
+                  question: "下一步？",
+                  options: [makeOption(1), makeOption(2), makeOption(3)],
+                }),
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          content: "",
+          toolCalls: [
+            {
+              id: "good-options",
+              type: "function",
+              function: {
+                name: "present_player_options",
+                arguments: JSON.stringify({
+                  scene_text: "露娜停下脚步。",
+                  question: "下一步？",
+                  options: [1, 2, 3, 4, 5].map(makeOption),
+                }),
+              },
+            },
+          ],
+        }),
+    };
+
+    const result = await generateAgenticPlayTurn({
+      provider,
+      modelConfig,
+      builtPrompt,
+      character,
+      gameState: createInitialAgenticGameState(character),
+    });
+
+    expect(result.agenticOptions).toHaveLength(5);
+    expect(provider.generate).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires structured options when a turn ends without an option tool", async () => {
+    const provider: ModelProvider = {
+      id: "fake-required-options",
+      name: "Fake Required Options",
+      generate: vi
+        .fn()
+        .mockResolvedValueOnce({
+          content: "### 场景\n露娜看着你，但没有发起选项。",
+        })
+        .mockResolvedValueOnce({
+          content: "",
+          toolCalls: [
+            {
+              id: "required-options",
+              type: "function",
+              function: {
+                name: "present_player_options",
+                arguments: JSON.stringify({
+                  scene_text: "### 场景\n露娜看着你，等待你的决定。",
+                  question: "你要怎么做？",
+                  options: [1, 2, 3, 4, 5].map((index) => ({
+                    label: `选择 ${index}`,
+                    action: `执行选择 ${index}`,
+                    success_probability: 70,
+                    difficulty: 7,
+                  })),
+                }),
+              },
+            },
+          ],
+        }),
+    };
+
+    const result = await generateAgenticPlayTurn({
+      provider,
+      modelConfig,
+      builtPrompt,
+      character,
+      gameState: createInitialAgenticGameState(character),
+      requirePlayerOptions: true,
+    });
+
+    expect(result.content).toContain("等待你的决定");
+    expect(result.agenticOptions).toHaveLength(5);
+    expect(provider.generate).toHaveBeenCalledTimes(2);
   });
 
   it("streams agentic tool calls and final visible content", async () => {
@@ -240,44 +410,4 @@ describe("Agentic Play", () => {
     expect(provider.streamGenerate).toHaveBeenCalledTimes(2);
   });
 
-  it("extracts visible agentic choices into actions", () => {
-    const parsed = extractAgenticOptions([
-      "### 场景",
-      "露娜停在书架旁。",
-      "",
-      "### 你可以选择",
-      "1. 询问禁书的下落（成功率：72%）",
-      "2. 检查桌上的索引卡（成功率：85%）",
-      "3. 偷偷绕到柜台后方（成功率：38%）",
-      "4. 等露娜主动解释（成功率：90%）",
-      "5. 直接说明你的来意（成功率：65%）",
-      "玩家也可以输入自定义行动。",
-    ].join("\n"));
-
-    expect(parsed.content).toContain("露娜停在书架旁。");
-    expect(parsed.content).not.toContain("询问禁书");
-    expect(parsed.options).toHaveLength(5);
-    expect(parsed.options[0]).toMatchObject({ action: "询问禁书的下落", probability: 72 });
-  });
-
-  it("removes success-rate-first action lines from agentic body text", () => {
-    const parsed = extractAgenticOptions([
-      "温水在纸杯里冒着热气。",
-      "",
-      "---",
-      "",
-      "**（成功率：**100%——正常继续寻找云朵口袋，等待她自然醒。）",
-      "**（成功率：**80%——你能不动声色地整理信息，但可能克制不住好奇。）",
-      "**（成功率：**65%——直接发问可能让她警惕。）",
-      "**（成功率：**55%——试图混入梦中，风险更高。）",
-      "**（成功率：**85%——解释情况，争取她的配合。）",
-    ].join("\n"));
-
-    expect(parsed.content).toBe("温水在纸杯里冒着热气。");
-    expect(parsed.options).toHaveLength(5);
-    expect(parsed.options[0]).toMatchObject({
-      action: "正常继续寻找云朵口袋，等待她自然醒",
-      probability: 100,
-    });
-  });
 });

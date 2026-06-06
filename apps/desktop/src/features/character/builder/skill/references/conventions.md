@@ -10,7 +10,7 @@
 - 角色条目按角色名建二级子目录（如 `角色/苏云/基础信息.yaml`）
 - MVU 变量相关文件放在 `变量/` 下
 - EJS 文件放在 `EJS/` 下
-- 非世界书内容放在同级目录：`正则/`（替换文件）、`脚本/`（TavernHelper 脚本）、`开场白/`（first_messages）
+- 非世界书内容放在同级目录：`脚本/`（TavernHelper 脚本）、`开场白/`（first_messages）、`agentic/`（Whale Play 状态栏产物）
 
 文件格式：内容以 YAML 数据为主时用 `.yaml`，包含 YAML 语法冲突（EJS 模板、特殊字符）时用 `.txt`。
 
@@ -37,11 +37,11 @@
   变量/
     initvar.yaml
     变量更新规则.yaml
-正则/
-  状态栏界面.html
 脚本/
   MVU.txt
   Zod.txt
+agentic/
+  status-bars.json
 开场白/
   0.txt
 ```

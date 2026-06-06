@@ -235,6 +235,58 @@ describe("Whale Builder agent", () => {
     expect(provider.generate).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps status bar artifacts in saved Builder drafts", async () => {
+    const provider: ModelProvider = {
+      id: "fake",
+      name: "Fake",
+      generate: vi.fn().mockResolvedValue({
+        content: "",
+        toolCalls: [
+          {
+            id: "save-status-bars",
+            type: "function",
+            function: {
+              name: "save_character_draft",
+              arguments: JSON.stringify({
+                ...createValidDraft("蓝灯术士"),
+                statusBars: {
+                  version: 1,
+                  bars: [
+                    {
+                      id: "mana",
+                      assetId: "mana",
+                      label: "法术位",
+                      value: 3,
+                      max: 6,
+                      valueLabel: "3/6",
+                      mvuPath: "主角.状态条.魔法",
+                    },
+                  ],
+                },
+              }),
+            },
+          },
+        ],
+      }),
+    };
+    mocks.provider = provider;
+
+    const result = await runNeoCharacterBuilderTurn({
+      conversation: [{ role: "user", content: "做一个带法术位状态栏的角色。" }],
+      modelConfig,
+    });
+
+    expect(result.statusBars?.bars).toHaveLength(1);
+    expect(result.statusBars?.bars[0]).toMatchObject({
+      id: "mana",
+      assetId: "mana",
+      label: "法术位",
+      value: 3,
+      max: 6,
+    });
+    expect(result.draft?.character.statusBars?.bars[0]?.mvuPath).toBe("主角.状态条.魔法");
+  });
+
   it("keeps existing character fallback fields in one-shot tool execution", async () => {
     const existingCharacter = createValidDraft("旧名字").character;
     const provider: ModelProvider = {

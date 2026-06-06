@@ -27,6 +27,7 @@ export interface ChatInputAreaProps {
   onLoad: () => void;
   isGenerating: boolean;
   previewText: string;
+  wide?: boolean;
 }
 
 export function ChatInputArea({
@@ -54,7 +55,11 @@ export function ChatInputArea({
   onLoad,
   isGenerating,
   previewText,
+  wide = false,
 }: ChatInputAreaProps) {
+  const contentWidthClass = wide ? "max-w-6xl" : "max-w-4xl";
+  const previewWidthClass = wide ? "max-w-5xl" : "max-w-3xl";
+
   return (
     <>
       {displayError && (
@@ -69,7 +74,7 @@ export function ChatInputArea({
       )}
 
       <div className="shrink-0 border-t bg-card p-4">
-        <div className="mx-auto w-full min-w-0 max-w-4xl space-y-2">
+        <div className={`mx-auto w-full min-w-0 ${contentWidthClass} space-y-2`}>
           {pendingSendCount > 0 && hasChat && (
             <div className="bg-primary/5 p-2">
               <div className="mb-2 flex items-center justify-between gap-2">
@@ -195,7 +200,7 @@ export function ChatInputArea({
 
       {previewOpen && (
         <div className="border-t p-4 bg-background">
-          <div className="max-w-3xl mx-auto">
+          <div className={`${previewWidthClass} mx-auto`}>
             <pre className="text-xs whitespace-pre-wrap font-mono max-h-64 overflow-auto leading-relaxed bg-muted/20 rounded-md p-3">
               {previewText ? (
                 previewText.split("\n").map((line, i) => {

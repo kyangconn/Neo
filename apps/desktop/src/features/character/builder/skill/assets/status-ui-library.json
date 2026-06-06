@@ -1,0 +1,76 @@
+{
+  "version": 1,
+  "description": "Whale Play local status UI asset ids for Agentic Play and MVU variables. Cards should write variables only; Whale Play renders the UI.",
+  "assets": [
+    {
+      "id": "health",
+      "label": "生命",
+      "tone": "health",
+      "aliases": ["hp", "health", "生命", "生命值", "血量"],
+      "mvuPath": "主角.状态条.生命",
+      "schemaShape": "{ value: number; max: number; label?: string; description?: string }",
+      "range": "0~max",
+      "usage": "RPG 战斗、生存、受伤、恢复"
+    },
+    {
+      "id": "mana",
+      "label": "魔法",
+      "tone": "mana",
+      "aliases": ["mp", "mana", "magic", "spell_slots", "spellSlots", "魔力", "魔法", "灵力", "法力", "法术位", "咒力"],
+      "mvuPath": "主角.状态条.魔法",
+      "schemaShape": "{ value: number; max: number; label?: string; description?: string; valueLabel?: string }",
+      "range": "0~max",
+      "usage": "施法、异能、灵力、法术位消耗和恢复"
+    },
+    {
+      "id": "stamina",
+      "label": "耐力",
+      "tone": "stamina",
+      "aliases": ["stamina", "energy", "耐力", "精力", "行动力"],
+      "mvuPath": "主角.状态条.耐力",
+      "schemaShape": "{ value: number; max: number; label?: string; description?: string }",
+      "range": "0~max",
+      "usage": "奔跑、潜行、格斗、持续行动"
+    },
+    {
+      "id": "affection",
+      "label": "好感度",
+      "tone": "affection",
+      "aliases": ["affection", "favor", "relationship", "好感", "好感度", "亲密度", "羁绊"],
+      "mvuPath": "角色.${角色名}.好感度",
+      "schemaShape": "number",
+      "range": "0~100",
+      "usage": "恋爱、搭档、NPC 信任和情感推进"
+    },
+    {
+      "id": "experience",
+      "label": "经验",
+      "tone": "experience",
+      "aliases": ["exp", "xp", "experience", "经验", "经验值", "等级进度"],
+      "mvuPath": "主角.成长.经验",
+      "schemaShape": "{ value: number; max: number; level?: number; label?: string }",
+      "range": "0~max",
+      "usage": "升级、成长、熟练度和任务奖励"
+    },
+    {
+      "id": "sanity",
+      "label": "理智",
+      "tone": "sanity",
+      "aliases": ["sanity", "mind", "理智", "精神", "稳定度", "污染抗性"],
+      "mvuPath": "主角.状态条.理智",
+      "schemaShape": "{ value: number; max: number; label?: string; description?: string }",
+      "range": "0~max",
+      "usage": "恐怖、精神污染、梦境、幻觉或压力"
+    },
+    {
+      "id": "danger",
+      "label": "危险",
+      "tone": "danger",
+      "aliases": ["danger", "threat", "危机", "危险", "危险度", "警戒度"],
+      "mvuPath": "场景.危险度",
+      "schemaShape": "number",
+      "range": "0~100",
+      "usage": "潜入、追逐、警戒、危机倒计时"
+    }
+  ]
+}

@@ -7,6 +7,7 @@ export type PendingSendItem = {
   content: string;
   hiddenUserMessage?: boolean;
   label?: string;
+  metadata?: import("@neo-tavern/shared").Message["metadata"];
 };
 
 // ── Re-exports from shared packages ──────────────────

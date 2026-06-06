@@ -100,12 +100,9 @@ export function formatCnyCost(value: number | null | undefined) {
   const abs = Math.abs(value);
   if (abs === 0) return "0 元";
   if (abs >= 1) return `${value.toFixed(2)} 元`;
-
-  const fen = value * 100;
-  if (Math.abs(fen) >= 0.001) {
-    return `${fen.toFixed(Math.abs(fen) >= 1 ? 2 : 3)} 分`;
-  }
-  return value > 0 ? "<0.001 分" : ">-0.001 分";
+  if (abs >= 0.01) return `${value.toFixed(4)} 元`;
+  if (abs >= 0.0001) return `${value.toFixed(6)} 元`;
+  return value > 0 ? "<0.0001 元" : ">-0.0001 元";
 }
 
 export function formatCnyExact(value: number | null | undefined) {

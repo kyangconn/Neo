@@ -1,4 +1,4 @@
-import { ArrowLeft, MessageSquare } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { Avatar } from "@/pages/chat/utils";
 import type { Character, Chat } from "@neo-tavern/shared";
 
@@ -6,8 +6,10 @@ interface ChatSidebarProps {
   chats: Chat[];
   characters: Character[];
   currentChatId?: string;
+  collapsed?: boolean;
   onBack: () => void;
   onSelectChat: (chatId: string) => void;
+  onToggleCollapsed?: () => void;
 }
 
 function formatChatTime(value: string) {
@@ -21,17 +23,65 @@ function formatChatTime(value: string) {
   });
 }
 
-export function ChatSidebar({ chats, characters, currentChatId, onBack, onSelectChat }: ChatSidebarProps) {
+export function ChatSidebar({
+  chats,
+  characters,
+  currentChatId,
+  collapsed = false,
+  onBack,
+  onSelectChat,
+  onToggleCollapsed,
+}: ChatSidebarProps) {
+  if (collapsed) {
+    return (
+      <aside className="app-sidebar-gradient flex min-h-0 min-w-0 flex-col items-center gap-2 overflow-hidden rounded-lg border px-2 py-3">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="展开会话记录"
+          aria-label="展开会话记录"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          title="Back"
+          aria-label="Back"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <div className="mt-1 flex h-8 w-8 items-center justify-center rounded-md border border-border/60 bg-background/35 text-muted-foreground">
+          <MessageSquare className="h-3.5 w-3.5" />
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="app-sidebar-gradient flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border">
       <div className="shrink-0 border-b p-3">
-        <button
-          onClick={onBack}
-          className="flex w-full items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex min-w-0 flex-1 items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4 shrink-0" />
+            <span className="truncate">Back</span>
+          </button>
+          <button
+            type="button"
+            onClick={onToggleCollapsed}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            title="收纳会话记录"
+            aria-label="收纳会话记录"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3">

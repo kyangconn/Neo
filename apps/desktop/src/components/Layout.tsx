@@ -1,7 +1,77 @@
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useNavigate, type NavLinkRenderProps } from "react-router";
-import { User, Settings, Home, LayoutTemplate, BookOpen, Sparkles, PenTool, History } from "lucide-react";
+import {
+  User,
+  Settings,
+  Home,
+  LayoutTemplate,
+  BookOpen,
+  Sparkles,
+  PenTool,
+  History,
+  Minus,
+  Square,
+  X,
+} from "lucide-react";
 import { cn } from "@neo-tavern/ui";
+
+async function withCurrentWindow(action: (appWindow: import("@tauri-apps/api/window").Window) => Promise<void>) {
+  if (typeof window === "undefined") return;
+  try {
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    await action(getCurrentWindow());
+  } catch {
+    /* Window API is unavailable outside the Tauri shell. */
+  }
+}
+
+function WindowTitleBar() {
+  return (
+    <div
+      data-tauri-drag-region
+      onMouseDown={(event) => {
+        if (event.button !== 0 || event.detail > 1) return;
+        void withCurrentWindow((appWindow) => appWindow.startDragging());
+      }}
+      onDoubleClick={() => void withCurrentWindow((appWindow) => appWindow.toggleMaximize())}
+      className="absolute left-16 right-0 top-0 z-50 flex h-7 items-stretch justify-end bg-transparent"
+    >
+      <button
+        type="button"
+        className="flex w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title="Minimize"
+        aria-label="Minimize"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={() => void withCurrentWindow((appWindow) => appWindow.minimize())}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <Minus className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className="flex w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title="Maximize"
+        aria-label="Maximize"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={() => void withCurrentWindow((appWindow) => appWindow.toggleMaximize())}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <Square className="h-3 w-3" />
+      </button>
+      <button
+        type="button"
+        className="flex w-12 items-center justify-center text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        title="Close"
+        aria-label="Close"
+        onMouseDown={(event) => event.stopPropagation()}
+        onClick={() => void withCurrentWindow((appWindow) => appWindow.close())}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <X className="h-4 w-4" />
+      </button>
+    </div>
+  );
+}
 
 export function Layout() {
   const { t } = useTranslation("common");
@@ -20,7 +90,8 @@ export function Layout() {
   ];
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="relative flex h-screen bg-background">
+      <WindowTitleBar />
       <aside className="app-rail w-16 flex flex-col items-center border-r py-4 gap-2">
         {navItems.map((item) => (
           <NavLink
@@ -61,7 +132,7 @@ export function Layout() {
           </button>
         </div>
       </aside>
-      <main className="flex-1 flex flex-col overflow-hidden">
+      <main className="flex-1 flex min-w-0 flex-col overflow-hidden pt-7">
         <Outlet />
       </main>
     </div>

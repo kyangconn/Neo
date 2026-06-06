@@ -13,9 +13,27 @@ import type {
   ModelProvider,
 } from "@neo-tavern/shared";
 import { shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
-import type { AgenticActionOption } from "./agentic-options";
+import { AGENTIC_STATUS_ASSET_PROMPT, createAgenticStatusBarsFromCharacter } from "./status-assets";
+export type AgenticActionOption = {
+  id: string;
+  label: string;
+  action: string;
+  probability?: number;
+  difficulty?: number;
+  description?: string;
+};
 
-export type { AgenticActionOption } from "./agentic-options";
+export interface DiceRollResult {
+  dice: string;
+  rolls: number[];
+  roll: number;
+  modifier: number;
+  total: number;
+  difficulty?: number;
+  successProbability?: number;
+  outcome: string;
+  reason: string;
+}
 
 type JsonObject = Record<string, unknown>;
 
@@ -40,7 +58,7 @@ export const AGENTIC_PLAY_OPENING_PROMPT = [
   "请读取上文中的角色 first message / 开场消息、角色卡、世界书和当前状态。",
   "不要替玩家行动，不要掷骰，不要直接推进到行动结果。",
   "请把开场停在第一个需要玩家选择的断点，并根据开场文字通过 present_player_options 工具给出恰好 5 个可选行动。",
-  "每个选项都必须给出基于当前文本判断的成功率。",
+  "每个选项都必须给出基于当前文本判断的成功率和 1d20 成功所需 DC。",
   "如果某个选项几乎必然成功，也要给出 95% 或 100%；如果风险极高，可以低至 5%。",
   "不要把选项直接写进正文；正文只写停在断点前的场景和必要提示。",
 ].join("\n");
@@ -93,7 +111,7 @@ export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
           scene_text: {
             type: "string",
             description:
-              "Visible narration up to the breakpoint. Do not include numbered options, success-rate option lines, or 'custom action' filler.",
+              "Visible narration up to the breakpoint. Do not include numbered options, success-rate option lines, unsupported prior NPC speech, or 'custom action' filler.",
           },
           question: {
             type: "string",
@@ -121,12 +139,20 @@ export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
                   maximum: 100,
                   description: "Estimated success probability for this action.",
                 },
+                difficulty: {
+                  type: "integer",
+                  minimum: 1,
+                  maximum: 20,
+                  description:
+                    "Required 1d20 total / DC for success. The app rolls real dice against this number when the player selects the option.",
+                },
                 description: {
                   type: "string",
-                  description: "Optional short note explaining risk, cost, or likely consequence.",
+                  description:
+                    "Optional short note explaining risk, cost, or likely consequence. Do not claim an NPC already spoke, warned, agreed, or revealed something unless that fact is visible in chat history.",
                 },
               },
-              required: ["label", "action", "success_probability"],
+              required: ["label", "action", "success_probability", "difficulty"],
             },
           },
         },
@@ -139,14 +165,14 @@ export const AGENTIC_PLAY_TOOL_DEFINITIONS: GenerateToolDefinition[] = [
     function: {
       name: "update_game_state",
       description:
-        "Patch the structured game state after the current turn changes location, inventory, quests, NPCs, or flags.",
+        "Patch the structured game state only with facts established by visible narration, the player's selected action JSON, or tool results. Do not save internal reasoning, unspoken NPC advice, or unused option ideas.",
       parameters: {
         type: "object",
         properties: {
           state_patch: {
             type: "object",
             description:
-              "A JSON patch-like object. Objects are deep-merged; arrays and primitives replace existing values.",
+              "A JSON patch-like object. Objects are deep-merged; arrays and primitives replace existing values. Every patched fact must be grounded in visible chat history, the current player action, or a tool result.",
           },
           reason: {
             type: "string",
@@ -166,6 +192,7 @@ export function createInitialAgenticGameState(character: Character): AgenticGame
       name: "玩家",
       hp: null,
       max_hp: null,
+      status_bars: createAgenticStatusBarsFromCharacter(character),
       traits: [],
       skills: {},
     },
@@ -209,11 +236,18 @@ function mergeJson(base: unknown, patch: unknown): unknown {
 export function normalizeAgenticGameState(value: unknown, character: Character): AgenticGameState {
   const fallback = createInitialAgenticGameState(character);
   if (!isRecord(value)) return fallback;
+  const rawPlayer = isRecord(value.player) ? value.player : {};
+  const player = { ...fallback.player, ...rawPlayer };
+  const hasPlayerStatusBars =
+    isRecord(player.status_bars) && Object.keys(player.status_bars).some((key) => isRecord((player.status_bars as JsonObject)[key]));
+  if (!hasPlayerStatusBars && isRecord(fallback.player.status_bars)) {
+    player.status_bars = fallback.player.status_bars;
+  }
   return {
     ...fallback,
     ...value,
     mode: "narrative_dice",
-    player: isRecord(value.player) ? value.player : fallback.player,
+    player,
     location: typeof value.location === "string" && value.location.trim() ? value.location : fallback.location,
     quest: isRecord(value.quest) ? value.quest : fallback.quest,
     npcs: Array.isArray(value.npcs) ? value.npcs : fallback.npcs,
@@ -234,21 +268,50 @@ export function buildAgenticPlaySystemRules(characterName: string) {
     "1. 不替玩家决定内心想法、感受或最终行动。",
     "2. 玩家输入优先于系统选项；选项只是建议。",
     "3. 如果开局或当前剧情来到需要玩家决定的断点，停止继续推进，调用 present_player_options 给出恰好 5 个行动选项。",
-    "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并放入 success_probability。",
+    "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并放入 success_probability，同时放入 difficulty（1d20 总值达到该 DC 即成功）。",
     "5. 普通、无风险、必然成功的动作不需要掷骰，但仍要说明为什么几乎必然成功。",
-    "6. 玩家选择选项或输入自定义行动后，如果行动有风险、不确定、对抗、战斗、潜行、调查、搜索、说服、欺骗、魔法或运气成分，必须先估计成功率，再调用 roll_dice。",
-    "7. 调用 roll_dice 时优先使用 1d20，并传入 success_probability；掷骰结果必须真实来自工具，禁止编造骰点。",
-    "8. 需要改变位置、物品、任务、NPC 关系、线索、危险等级或世界 flag 时，先调用 update_game_state 再输出最终回合。",
-    "9. 失败也要推动剧情，给出代价、麻烦、线索或新选择，不要让故事停死。",
-    "10. 保持世界书、角色卡、当前状态和最近历史连续，不随意重置。",
+    "6. 玩家选择结构化选项时，Whale Play 可能已经把真实 roll_dice 结果以 JSON 输入给你；若用户输入包含 dice_result，必须直接使用该结果，禁止重复掷骰。",
+    "7. 玩家输入自定义行动后，如果行动有风险、不确定、对抗、战斗、潜行、调查、搜索、说服、欺骗、魔法或运气成分，必须先估计成功率，再调用 roll_dice。",
+    "8. 调用 roll_dice 时优先使用 1d20，并传入 success_probability 或 difficulty；掷骰结果必须真实来自工具，禁止编造骰点。",
+    "9. 需要改变位置、物品、任务、NPC 关系、线索、危险等级或世界 flag 时，先调用 update_game_state 再输出最终回合。",
+    "10. 失败也要推动剧情，给出代价、麻烦、线索或新选择，不要让故事停死。",
+    "11. 保持世界书、角色卡、当前状态和最近历史连续，不随意重置。",
+    "12. 如果剧情需要血量、魔法、耐力、好感度、经验、理智或危险进度，只写结构化状态变量，不在正文伪造 UI 状态栏。",
+    "13. 连续性优先：只有可见聊天历史、当前玩家输入、结构化状态、世界书或工具结果中已经发生的内容，才能写成既成事实。",
+    "14. 不要把你的推理、备选方案或未选择的选项描述当成历史事实。",
+    "15. NPC 直接发言必须可见落地；如果某 NPC 给出警告、情报、评价或承诺，必须在同一回合输出 dialogue JSON。",
+    "16. 如果可见历史中没有该 NPC 的 dialogue JSON，不得写“某某的话”“某某已经开口”“某某告诉过你”“某某刚才说过”这类引用既有发言的句子。",
+    "17. 如果状态与可见历史冲突，以最近可见历史和当前玩家行动为准，并用保守表述修正，不继续扩写矛盾事实。",
+    "",
+    AGENTIC_STATUS_ASSET_PROMPT,
+    "",
+    "连续性与证据规则：",
+    "- 失败判定可以引入新麻烦，但新麻烦必须作为当前可见事件发生；不能把尚未写出的 NPC 警告、提示或对话写成已经发生。",
+    "- 选项的 action / description 只能写玩家将要采取的行动、风险、成本和可能收益；禁止写未发生前提，例如“杜尔南已经开了口”。",
+    "- update_game_state 只记录最终可见回复中已经发生的事实、玩家隐藏 JSON 中的选择和工具结果；不要把思考过程里的设想保存成 flag、任务目标或 NPC 关系。",
+    "- 玩家选择结构化选项后，隐藏 JSON 中的 label/action/dice_result 是权威输入；未选择的选项和选项说明不是历史。",
+    "- 错误例子：没有可见对白时写“杜尔南的话让悬赏单更重”。",
+    '- 正确例子：先输出 {"type":"dialogue","speaker":"杜尔南","text":"这活儿不止老鼠。"}，再在旁白中承接这个新发生的警告。',
     "",
     "断点规则：",
     "- 当你判断下一步必须由玩家选择时，只写到断点，不替玩家越过断点。",
     "- 断点必须调用 present_player_options；不要把选项列表直接写进正文。",
     "- present_player_options 的 scene_text 只写场景、风险和断点，不包含编号选项。",
-    "- present_player_options 必须传恰好 5 个 options，每个 option 都带 success_probability。",
+    "- present_player_options 必须传恰好 5 个 options，每个 option 都带 success_probability 和 difficulty。",
     "- 开局根据 first message 生成选项时，不要调用 roll_dice。",
+    "- 玩家选择结构化选项后，如果输入中已有 dice_result，只根据结果推进剧情，不要再次 roll_dice。",
     "- 玩家自定义行动时，先在文本中说明你判定的成功率，再根据该概率调用 roll_dice。",
+    "",
+    "对白 JSON 规则：",
+    '- 任何玩家或 NPC 的直接台词都单独输出一个 JSON 行：{"type":"dialogue","speaker":"露娜","text":"你好。"}',
+    "- text 只写说出口的话，不写动作、表情、语气说明或旁白描述。",
+    "- 旁白、场景、行动结果仍使用普通 Markdown，不要包进 dialogue JSON。",
+    '- 示例 1：{"type":"dialogue","speaker":"露娜","text":"每一个问题都能在这里找到答案。"}',
+    '- 示例 2：{"type":"dialogue","speaker":"玩家","text":"我想看看那本红封皮的书。"}',
+    '- 示例 3：{"type":"dialogue","speaker":"守卫","text":"退后，这扇门今晚不会再开。"}',
+    "",
+    "选项 JSON 例子（通过 present_player_options 工具传参，不写进正文）：",
+    '{"label":"查看门缝","action":"玩家蹲下查看门缝后的动静","success_probability":70,"difficulty":7,"description":"低风险调查，成功可获得屋内线索。"}',
     "",
     "最终可见回复必须使用 Markdown，并尽量包含：",
     "### 场景",
@@ -259,7 +322,7 @@ export function buildAgenticPlaySystemRules(characterName: string) {
     "### 状态更新",
     "断点问题交给 present_player_options 工具发起，不在正文中列选项。",
     "",
-    "行动选项要求：恰好 5 个，至少一个低风险选项、一个推进剧情选项、一个高风险高回报选项；每个选项都必须带成功率。",
+    "行动选项要求：恰好 5 个，至少一个低风险选项、一个推进剧情选项、一个高风险高回报选项；每个选项都必须带成功率和 1d20 DC。",
     "不要输出内部 JSON，不要解释工具调用过程。",
   ].join("\n");
 }
@@ -296,8 +359,9 @@ export function buildAgenticPlayPresetItems(characterName: string): AgenticPrese
         "specific_rules",
         [
           "特定规则模块：",
-          "- 断点必须调用 present_player_options 给出恰好 5 个结构化选项，每个选项包含成功率。",
+          "- 断点必须调用 present_player_options 给出恰好 5 个结构化选项，每个选项包含成功率和 1d20 DC。",
           "- 不要把断点选项写进正文；选项只进入工具参数。",
+          "- 用户选择结构化选项时，如果输入中已经包含 dice_result，直接用该结果推进，不要重复 roll_dice。",
           "- 自定义行动必须先估计成功率，再根据风险决定是否 roll_dice。",
           "- 如果选项不是风险行动，仍给成功率，但不需要掷骰。",
           "- 状态变化必须通过 update_game_state 落地。",
@@ -328,6 +392,7 @@ export function createAgenticPlayContextBlock(gameState: AgenticGameState): Cont
     title: "Agentic Play Current State",
     content: [
       "下面是当前互动剧情的结构化状态。请以它为准承接剧情，并在状态变化时调用 update_game_state。",
+      "如果结构化状态与可见聊天历史冲突，以最近可见历史和当前玩家行动为准；不要把没有可见对白证据的 NPC 发言扩写成事实。",
       "",
       JSON.stringify(gameState, null, 2),
     ].join("\n"),
@@ -364,6 +429,33 @@ function parseOptionProbability(value: unknown): number | undefined {
   return clampNumber(parsed, 0, 100);
 }
 
+function difficultyFromProbability(probability: number | undefined, modifier = 0): number | undefined {
+  if (probability === undefined) return undefined;
+  return clampNumber(21 + modifier - Math.max(1, Math.min(20, Math.round(probability / 5))), 1, 20);
+}
+
+function parseOptionDifficulty(value: unknown, probability: number | undefined): number | undefined {
+  if (value !== undefined && value !== null && value !== "") {
+    const parsed = parseInteger(value, Number.NaN);
+    if (Number.isFinite(parsed)) return clampNumber(parsed, 1, 20);
+  }
+  return difficultyFromProbability(probability);
+}
+
+function stripInlineOptionList(content: string) {
+  const cleaned = content
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return true;
+      if (/^#{1,6}\s*(?:你可以选择|可选行动|选项|行动选项)/i.test(trimmed)) return false;
+      return !/^(?:[-*]\s*)?(?:选项\s*)?(?:\d+|[A-EＡ-Ｅ])[\.、):：]\s+.*(?:成功率|DC|难度|%|％)/i.test(trimmed);
+    })
+    .join("\n")
+    .trim();
+  return cleaned || content.trim();
+}
+
 function normalizePlayerOptions(args: JsonObject): AgenticActionOption[] {
   if (!Array.isArray(args.options)) return [];
   return args.options
@@ -373,11 +465,14 @@ function normalizePlayerOptions(args: JsonObject): AgenticActionOption[] {
       const action = trimString(item.action) || trimString(item.value) || label;
       if (!action || /自定义行动|自由行动|自己输入|玩家也可以/.test(action)) return null;
       const probability = parseOptionProbability(item.success_probability ?? item.probability);
+      const difficulty = parseOptionDifficulty(item.difficulty ?? item.dc ?? item.target_number, probability);
+      if (probability === undefined || difficulty === undefined) return null;
       return {
         id: `agentic-tool-option-${index}-${action.slice(0, 24)}`,
         label: label || action,
         action,
         probability,
+        difficulty,
         description: trimString(item.description) || undefined,
       };
     })
@@ -397,7 +492,7 @@ function parseDiceExpression(value: unknown) {
 }
 
 export function rollDice(args: JsonObject) {
-  const { expression, count, sides } = parseDiceExpression(args.dice);
+const { expression, count, sides } = parseDiceExpression(args.dice);
   const modifier = parseInteger(args.modifier, 0);
   const requestedProbability = parseProbability(args.success_probability);
   const providedDifficulty =
@@ -406,7 +501,7 @@ export function rollDice(args: JsonObject) {
       : parseInteger(args.difficulty, 0);
   const probabilityDifficulty =
     providedDifficulty === undefined && requestedProbability !== undefined && expression === "1d20"
-      ? 21 + modifier - Math.max(1, Math.min(20, Math.round(requestedProbability / 5)))
+      ? difficultyFromProbability(requestedProbability, modifier)
       : undefined;
   const difficulty = providedDifficulty ?? probabilityDifficulty;
   const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
@@ -435,6 +530,15 @@ export function rollDice(args: JsonObject) {
     reason: String(args.reason ?? "Unspecified check"),
   };
 }
+
+const AGENTIC_OPTIONS_REPAIR_PROMPT = [
+  "上一轮没有正确发起 Whale Play 选项栏。",
+  "请不要继续正文，也不要把选项写进正文。",
+  "现在必须调用 present_player_options 工具，传入 scene_text、question，以及恰好 5 个 options。",
+  "每个 option 必须包含 label、action、success_probability、difficulty；difficulty 是 1d20 总值达到即可成功的 DC。",
+  "scene_text 只保留断点前的场景，不包含编号选项。",
+  "不要在 scene_text 或 option.description 中引用未在可见历史发生过的 NPC 发言；如果需要 NPC 提供信息，必须先把该 NPC 的 dialogue JSON 写进 scene_text。",
+].join("\n");
 
 function parseToolArguments(raw: string): JsonObject {
   try {
@@ -567,17 +671,21 @@ function executeTool(call: GenerateToolCall, state: AgenticGameState, character:
   if (call.function.name === "present_player_options") {
     const agenticOptions = normalizePlayerOptions(args);
     const question = trimString(args.question) || "你下一步要怎么做？";
-    const sceneText = trimString(args.scene_text) || trimString(args.content) || question;
+    const sceneText = stripInlineOptionList(trimString(args.scene_text) || trimString(args.content) || question);
+    const valid = agenticOptions.length === 5;
     return {
       nextState: state,
       result: {
-        ok: agenticOptions.length >= 2,
+        ok: valid,
         question,
         options: agenticOptions,
+        error: valid
+          ? undefined
+          : `present_player_options requires exactly 5 valid options after filtering; received ${agenticOptions.length}. Retry with exactly 5 options, each with success_probability and difficulty.`,
       },
-      stopForUser: agenticOptions.length >= 2,
-      content: sceneText,
-      agenticOptions,
+      stopForUser: valid,
+      content: valid ? sceneText : undefined,
+      agenticOptions: valid ? agenticOptions : undefined,
     };
   }
 
@@ -614,10 +722,12 @@ export interface GenerateAgenticPlayTurnOptions {
   userId?: string;
   signal?: AbortSignal;
   onToolRound?: (toolName: string) => void;
+  onDiceResult?: (result: DiceRollResult) => void;
   onFinalRound?: () => void;
   onContentDelta?: (delta: string) => void | Promise<void>;
   onReasoningDelta?: (delta: string) => void | Promise<void>;
   onContentReset?: () => void | Promise<void>;
+  requirePlayerOptions?: boolean;
 }
 
 export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOptions): Promise<{
@@ -685,6 +795,9 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
       for (const call of result.toolCalls) {
         options.onToolRound?.(call.function.name);
         const executed = executeTool(call, gameState, options.character);
+        if (call.function.name === "roll_dice") {
+          options.onDiceResult?.(executed.result as DiceRollResult);
+        }
         gameState = executed.nextState;
         messages.push({
           role: "tool",
@@ -713,6 +826,19 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
       continue;
     }
 
+    if (options.requirePlayerOptions) {
+      if (streamedContent) await options.onContentReset?.();
+      messages.push({
+        role: "assistant",
+        content: result.content || "",
+      });
+      messages.push({
+        role: "system",
+        content: AGENTIC_OPTIONS_REPAIR_PROMPT,
+      });
+      continue;
+    }
+
     options.onFinalRound?.();
     return {
       content: result.content,
@@ -732,9 +858,13 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         ...messages,
         {
           role: "system",
-          content: "工具回合已经结束。请根据已经得到的工具结果，直接输出本回合的可见 Markdown 回复，不要再调用工具。",
+          content: options.requirePlayerOptions
+            ? AGENTIC_OPTIONS_REPAIR_PROMPT
+            : "工具回合已经结束。请根据已经得到的工具结果，直接输出本回合的可见 Markdown 回复，不要再调用工具。",
         },
       ],
+      tools: options.requirePlayerOptions ? AGENTIC_PLAY_TOOL_DEFINITIONS : undefined,
+      toolChoice: options.requirePlayerOptions ? { type: "function", function: { name: "present_player_options" } } : undefined,
     },
     {
       onContentDelta: options.onContentDelta,
@@ -744,6 +874,32 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
 
   usage = addUsage(usage, finalResult.usage);
   reasoningContent = appendReasoning(reasoningContent, finalResult.reasoningContent);
+
+  if (finalResult.toolCalls?.length) {
+    messages.push({
+      role: "assistant",
+      content: finalResult.content || "",
+      toolCalls: finalResult.toolCalls,
+    });
+    for (const call of finalResult.toolCalls) {
+      options.onToolRound?.(call.function.name);
+      const executed = executeTool(call, gameState, options.character);
+      if (call.function.name === "roll_dice") {
+        options.onDiceResult?.(executed.result as DiceRollResult);
+      }
+      gameState = executed.nextState;
+      if (executed.stopForUser && executed.agenticOptions?.length) {
+        return {
+          content: executed.content || finalResult.content || "你下一步要怎么做？",
+          agenticOptions: executed.agenticOptions,
+          reasoningContent: reasoningContent || undefined,
+          usage,
+          gameState,
+          finishReason: finalResult.finishReason,
+        };
+      }
+    }
+  }
 
   return {
     content: finalResult.content,

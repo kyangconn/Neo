@@ -13,6 +13,7 @@ import type {
   NeoCreationPlan,
   NeoPersonalityPalette,
   NeoBuilderEvaluationReport,
+  NeoStatusBarConfig,
 } from "./types";
 import type { NeoMvuConfig } from "./types";
 import { REFERENCE_TEXTS } from "./references";
@@ -43,6 +44,7 @@ export interface ToolExecResult {
   personalityPalette?: NeoPersonalityPalette;
   evaluationReport?: NeoBuilderEvaluationReport;
   mvu?: NeoMvuConfig;
+  statusBars?: NeoStatusBarConfig;
   choices?: NeoBuilderChoice[];
   questions?: NeoBuilderQuestion[];
   stopForUser?: boolean;
@@ -275,6 +277,7 @@ export class WhaleBuilderToolRegistry {
         personalityPalette: pack?.personalityPalette ?? args.personalityPalette ?? options.personalityPalette ?? undefined,
         creationPlan: pack?.creationPlan ?? args.creationPlan ?? options.creationPlan ?? undefined,
         mvu: pack?.mvu ?? args.mvu ?? undefined,
+        statusBars: pack?.statusBars ?? args.statusBars ?? undefined,
       },
       options.existingCharacter,
     );
@@ -317,6 +320,7 @@ export class WhaleBuilderToolRegistry {
         personalityPalette: pack?.personalityPalette ?? args.personalityPalette ?? options.personalityPalette ?? undefined,
         creationPlan: pack?.creationPlan ?? args.creationPlan ?? options.creationPlan ?? undefined,
         mvu: pack?.mvu ?? args.mvu ?? undefined,
+        statusBars: pack?.statusBars ?? args.statusBars ?? undefined,
         notes: pack?.notes ?? args.notes,
       },
       options.existingCharacter,
@@ -336,12 +340,14 @@ export class WhaleBuilderToolRegistry {
           name: draft.character.name,
           worldbookEntries: draft.worldbookEntries.length,
           hasMvu: !!draft.mvu,
+          hasStatusBars: !!draft.statusBars?.bars.length,
         },
       },
       savedDraft: toolName === "save_character_draft" ? draft : undefined,
       personalityPalette: draft.personalityPalette,
       creationPlan: draft.creationPlan,
       mvu: draft.mvu,
+      statusBars: draft.statusBars,
     };
   }
 }
@@ -425,6 +431,32 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
               schemaTs: { type: "string", description: "TypeScript Zod schema (schema.ts content)." },
               initvarYaml: { type: "string", description: "YAML initial variable values." },
               updateRulesYaml: { type: "string", description: "YAML variable update rules." },
+            },
+          },
+          statusBars: {
+            type: "object",
+            description: "Agentic Play 初始状态栏配置。只写结构化数据，不写 HTML/CSS。",
+            properties: {
+              version: { type: "number", enum: [1] },
+              bars: {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    id: { type: "string", description: "稳定 id，如 health、mana、affection。" },
+                    assetId: { type: "string", description: "本地素材 id：health/mana/stamina/affection/experience/sanity/danger。" },
+                    label: { type: "string" },
+                    value: { type: ["number", "null"] },
+                    max: { type: "number" },
+                    min: { type: "number" },
+                    description: { type: "string" },
+                    valueLabel: { type: "string" },
+                    visible: { type: "boolean" },
+                    mvuPath: { type: "string" },
+                  },
+                  required: ["id", "assetId", "label", "value", "max"],
+                },
+              },
             },
           },
           notes: { type: "string" },
@@ -521,6 +553,32 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
                   updateRulesYaml: { type: "string" },
                 },
               },
+              statusBars: {
+                type: "object",
+                description: "Agentic Play 初始状态栏配置。状态栏 UI 由本地素材库渲染，pack 里只写结构化数据。",
+                properties: {
+                  version: { type: "number", enum: [1] },
+                  bars: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        id: { type: "string" },
+                        assetId: { type: "string" },
+                        label: { type: "string" },
+                        value: { type: ["number", "null"] },
+                        max: { type: "number" },
+                        min: { type: "number" },
+                        description: { type: "string" },
+                        valueLabel: { type: "string" },
+                        visible: { type: "boolean" },
+                        mvuPath: { type: "string" },
+                      },
+                      required: ["id", "assetId", "label", "value", "max"],
+                    },
+                  },
+                },
+              },
               creationPlan: { type: "object" },
             },
           },
@@ -580,6 +638,7 @@ const COMMON_TOOLS: GenerateToolDefinition[] = [
             },
           },
           creationPlan: { type: "object" },
+          statusBars: { type: "object", description: "Agentic Play 初始状态栏配置，与 pack.statusBars 相同。" },
           notes: { type: "string" },
         },
         required: ["character"],
