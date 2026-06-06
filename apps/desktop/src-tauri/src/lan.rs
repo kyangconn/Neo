@@ -21,7 +21,7 @@ pub async fn start(
     port: u16,
     store: Arc<Mutex<AppStore>>,
     store_path: String,
-    frontend_dir: String,
+    web_dir: String,
 ) -> std::io::Result<()> {
     let tokens: TokenStore = Arc::new(Mutex::new(std::collections::HashMap::new()));
 
@@ -32,7 +32,7 @@ pub async fn start(
     let store_path_data = web::Data::new(store_path);
 
     HttpServer::new(move || {
-        let frontend = frontend_dir.clone();
+        let web = web_dir.clone();
         App::new()
             .app_data(state.clone())
             .app_data(store_path_data.clone())
@@ -48,7 +48,7 @@ pub async fn start(
                     .route("/store", web::get().to(list_store)),
             )
             // ── SPA (no auth — LoginGate handles it) ─
-            .service(Files::new("/", &frontend).index_file("index.html"))
+            .service(Files::new("/", &web).index_file("index.html"))
     })
     .bind((addr.as_str(), port))?
     .run()
@@ -188,4 +188,123 @@ async fn list_store(state: web::Data<ServerState>) -> HttpResponse {
     let store = state.store.lock().unwrap();
     let entries: Vec<_> = store.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
     HttpResponse::Ok().json(entries)
+}
+
+// ── LAN server commands ────────────────────────────────
+
+#[tauri::command]
+pub(crate) fn lan_server_status(app: tauri::AppHandle) -> Result<String, String> {
+    let store = crate::read_app_store(&app)?;
+    let enabled = store
+        .get("neotavern_lan_enabled")
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let addr = store
+        .get("neotavern_lan_addr")
+        .cloned()
+        .unwrap_or_else(|| "0.0.0.0".into());
+    let port = store
+        .get("neotavern_lan_port")
+        .cloned()
+        .unwrap_or_else(|| "3000".into());
+
+    if enabled {
+        Ok(format!("Running on {addr}:{port}"))
+    } else {
+        Ok("Disabled".into())
+    }
+}
+
+pub(crate) fn try_start_lan_server(handle: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let mut store = crate::read_app_store(&handle).unwrap_or_default();
+            let enabled = store
+                .get("neotavern_lan_enabled")
+                .map(|v| v == "true")
+                .unwrap_or(false);
+            if !enabled {
+                return;
+            }
+
+            let addr = store
+                .get("neotavern_lan_addr")
+                .cloned()
+                .unwrap_or_else(|| "0.0.0.0".into());
+            let port: u16 = store
+                .get("neotavern_lan_port")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(3000);
+
+            let store_path = crate::app_store_path(&handle)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_default();
+
+            // Generate and persist LAN password on first launch
+            if !store.contains_key("neotavern_lan_password") {
+                let pw = random_password();
+                store.insert("neotavern_lan_password".into(), pw);
+                let _ = crate::write_store_to_path(&store, &std::path::PathBuf::from(&store_path));
+            }
+
+            let web_dir = resolve_web_dir(&handle);
+            let shared_store: Arc<Mutex<AppStore>> = Arc::new(Mutex::new(store));
+
+            if let Err(e) = start(addr, port, shared_store, store_path, web_dir).await {
+                eprintln!("LAN server failed: {e}");
+            }
+        });
+    });
+}
+
+fn random_password() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let chars: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&";
+    let mut pw = String::with_capacity(12);
+    for i in 0..12 {
+        let idx = ((seed >> (i * 4)) ^ (seed >> (i * 4 + 16))) as usize % chars.len();
+        pw.push(chars[idx] as char);
+    }
+    pw
+}
+
+/// Resolve the web assets directory at runtime.
+///
+/// Priority:
+/// 1. `<exe_dir>/web/` — bundled install (see tauri.conf.json resources)
+/// 2. `<exe_dir>/` — flat layout (NSIS installer may flatten)
+/// 3. `apps/desktop/dist` — dev fallback
+fn resolve_web_dir(_handle: &tauri::AppHandle) -> String {
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(_) => return dev_web_dir(),
+    };
+
+    let Some(install_dir) = exe.parent() else {
+        return dev_web_dir();
+    };
+
+    // Bundled layout: <install>/web/index.html
+    let web_dir = install_dir.join("web");
+    if web_dir.join("index.html").exists() {
+        return web_dir.to_string_lossy().to_string();
+    }
+
+    // Flat layout (NSIS): <install>/index.html
+    if install_dir.join("index.html").exists() {
+        return install_dir.to_string_lossy().to_string();
+    }
+
+    dev_web_dir()
+}
+
+fn dev_web_dir() -> String {
+    std::env::current_dir()
+        .map(|p| p.join("apps/desktop/dist").to_string_lossy().to_string())
+        .unwrap_or_else(|_| "apps/desktop/dist".into())
 }
