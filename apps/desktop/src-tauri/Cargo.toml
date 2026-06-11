@@ -1,6 +1,6 @@
 [package]
 name = "neo-tavern-desktop"
-version = "0.1.0"
+version = "0.1.2"
 description = "Whale Play"
 authors = ["Whale Play"]
 edition = "2021"
