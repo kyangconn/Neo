@@ -392,7 +392,7 @@ Tauri 环境下，应用数据写入系统 app-data 目录。
 ## 注意事项
 
 - Agentic Play 仍是实验模式，提示词、状态结构和工具协议还会继续调整。
-- Whale Builder 角色卡生成器中的内置 skill 基于 **Tavern Cards — SillyTavern 角色卡与世界书编写工具** 修改适配，原作者：`ai4rpg`。
+- Whale Builder 角色卡生成器中的内置 skill 基于 **Tavern Cards — SillyTavern 角色卡与世界书编写工具** 修改适配，原作者：`ai4rpg`。https://github.com/ai4rpg/tavern-cards
 - Whale Builder 的内置 skill references 和 `tavern-cards-forge.mjs` 主要服务角色卡/世界书生成工作流，不等同于独立发布的 CLI 产品。
 
 ## 许可证
