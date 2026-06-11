@@ -292,7 +292,7 @@ export function GeneralSection({ locale, setLocale, t }: GeneralSectionProps) {
                     value={tavilyApiKey}
                     onChange={(e) => setTavilyApiKey(e.target.value)}
                     placeholder="tvly-..."
-                    className="mt-1 h-8 text-xs w-52"
+                    className="mt-1 h-8 text-xs w-1/2"
                   />
                   <p className="mt-1 text-[10px] text-muted-foreground">{t("websearch.tavilyKeyHint")}</p>
                 </div>

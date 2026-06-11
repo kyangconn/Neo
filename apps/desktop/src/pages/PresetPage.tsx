@@ -427,10 +427,6 @@ export function PresetPage() {
           {t("back")}
         </button>
         <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">{t("title")}</h2>
-        <Button variant="outline" size="sm" onClick={handleCreate} className="justify-start text-xs">
-          <Plus className="h-3.5 w-3.5 mr-1" />
-          {t("newPreset")}
-        </Button>
         <ScrollArea className="flex-1 -mx-2 px-2">
           <div className="flex flex-col gap-0.5">
             {store.presets.length === 0 && !store.loading && (
@@ -446,6 +442,10 @@ export function PresetPage() {
                 {store.activePresetId === p.id && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />}
               </button>
             ))}
+            <Button variant="outline" size="sm" onClick={handleCreate} className="w-full justify-center text-xs mt-1">
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              {t("newPreset")}
+            </Button>
           </div>
         </ScrollArea>
       </div>
@@ -457,7 +457,7 @@ export function PresetPage() {
               <p>{t("selectOrCreate")}</p>
               <Button variant="outline" size="sm" onClick={handleCreate}>
                 <Plus className="h-4 w-4 mr-1" />
-                New Preset
+                {t("newPreset")}
               </Button>
             </div>
           </div>
@@ -469,20 +469,20 @@ export function PresetPage() {
                   <Input
                     value={editName}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEditName(e.target.value)}
-                    className="border-0 border-b rounded-none px-0 h-auto text-2xl font-bold focus-visible:ring-0"
-                    placeholder="Preset name"
+                    className="border-0 border-b rounded-none px-0 h-auto text-2xl font-bold shadow-none focus-visible:ring-0"
+                    placeholder={t("namePlaceholder")}
                   />
                   <Textarea
                     value={editDesc}
                     onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setEditDesc(e.target.value)}
-                    className="border-0 border-b rounded-none px-0 min-h-[40px] resize-none text-sm text-muted-foreground focus-visible:ring-0"
+                    className="border-0 border-b rounded-none px-0 min-h-[40px] resize-none text-sm text-muted-foreground shadow-none focus-visible:ring-0"
                     placeholder={t("descPlaceholder")}
                     rows={1}
                   />
                 </div>
                 <div className="flex flex-wrap gap-1 shrink-0">
                   <Button size="sm" variant="outline" onClick={handleSaveMeta}>
-                    Save
+                    {t("save")}
                   </Button>
                   <Button size="sm" variant="outline" onClick={handleExport}>
                     <Download className="h-4 w-4" />
@@ -507,7 +507,7 @@ export function PresetPage() {
 
               <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="rounded-md border bg-muted/10 p-3">
-                  <div className="flex flex-col gap-3 md:flex-row md:items-end">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center">
                     <div className="min-w-0 flex-1">
                       <Label htmlFor="extra-preset-entry" className="flex items-center gap-1.5">
                         <LibraryBig className="h-3.5 w-3.5" />
@@ -593,7 +593,7 @@ export function PresetPage() {
                             title={item.enabled ? "Disable" : "Enable"}
                           >
                             <span
-                              className={cn("inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform", item.enabled ? "translate-x-[18px]" : "translate-x-[4px]")}
+                              className={cn("inline-block h-3.5 w-3.5 transform rounded-full bg-background shadow-sm transition-transform", item.enabled ? "translate-x-[18px]" : "translate-x-[4px]")}
                             />
                           </button>
                           <div className="flex-1 min-w-0">
