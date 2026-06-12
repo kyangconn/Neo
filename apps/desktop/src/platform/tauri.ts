@@ -1,3 +1,8 @@
+/**
+ * Tauri backend — wraps all invoke() calls behind the typed Backend interface.
+ * This is the ONLY file in the frontend that imports @tauri-apps/api/core.
+ */
+
 import type { Backend } from "./types";
 
 const { invoke } = await import("@tauri-apps/api/core");

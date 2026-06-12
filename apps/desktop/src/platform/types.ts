@@ -1,9 +1,19 @@
+/**
+ * Backend interface — typed contract for all native operations.
+ *
+ * Implementations:
+ *   - platform/tauri.ts   — Tauri desktop (invoke)
+ *   - platform/rest.ts    — REST server (planned, LAN / standalone)
+ *
+ * Each section maps to a Rust module (db.rs, search.rs, comfy.rs, etc.).
+ */
+
 import type { Message } from "@neo-tavern/shared";
 import type { NeoBuilderWebSearchResult } from "@/features/character/web-search";
 import type { AgenticPlayStateRecord } from "@/db/repositories";
 
 export interface Backend {
-  // Store (key-value)
+  // ── Key-value store (app_store_* Tauri commands) ──
   store: {
     get(key: string): Promise<string | null>;
     set(key: string, value: string): Promise<void>;
@@ -11,7 +21,7 @@ export interface Backend {
     entries(): Promise<Record<string, string>>;
   };
 
-  // Messages (SQLite)
+  // ── Messages + chat persistence (sqlite_* Tauri commands → db.rs) ──
   db: {
     listMessages(chatId: string): Promise<Message[]>;
     listRecentMessages(chatId: string, limit: number): Promise<Message[]>;
@@ -28,7 +38,7 @@ export interface Backend {
     initMessages(legacyJson: string | null): Promise<void>;
   };
 
-  // Agentic play state
+  // ── Agentic play state (sqlite_* Tauri commands) ──
   agenticPlay: {
     initFromJson(json: string | null): Promise<void>;
     get(chatId: string): Promise<AgenticPlayStateRecord | null>;
@@ -37,7 +47,7 @@ export interface Backend {
     clearAll(): Promise<void>;
   };
 
-  // File operations
+  // ── File system (rfd + std::fs → file.rs) ──
   file: {
     pickFolder(): Promise<string | null>;
     saveTextFile(defaultFilename: string, content: string): Promise<string | null>;
@@ -47,12 +57,12 @@ export interface Backend {
     writeFileToPath(path: string, content: string): Promise<void>;
   };
 
-  // Search
+  // ── Web search (DuckDuckGo / Tavily / Bing → search.rs) ──
   search: {
     webSearch(query: string, limit: number): Promise<NeoBuilderWebSearchResult[]>;
   };
 
-  // ComfyUI
+  // ── ComfyUI image generation (comfy.rs) ──
   comfy: {
     getSystemStats(baseUrl: string): Promise<Record<string, unknown>>;
     queuePrompt(baseUrl: string, workflow: Record<string, unknown>, clientId: string): Promise<Record<string, unknown>>;
