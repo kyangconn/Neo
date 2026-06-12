@@ -30,12 +30,12 @@ import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
 import { withDeepSeekUsageCost } from "@/features/billing/deepseek-billing";
 import { getChatScopedDeepSeekUserId, shouldOmitTemperatureForModel } from "@/features/settings/model-capabilities";
 import {
-  buildAgenticPlayPresetItems,
   createAgenticPlayContextBlock,
   generateAgenticPlayTurn,
   type AgenticActionOption,
   type AgenticGameState,
 } from "@/features/agentic-play/agentic-play";
+import { getAgenticPlayPresetItems } from "@/features/agentic-play/agentic-preset";
 import {
   applyRegexRules,
   buildChatPrompt,
@@ -1243,7 +1243,7 @@ export function useSendMessage({
         const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
           Boolean,
         ) as ContextBlock[];
-        const effectivePresetItems = agenticRecord ? buildAgenticPlayPresetItems(character.name) : presetItems;
+        const effectivePresetItems = agenticRecord ? await getAgenticPlayPresetItems() : presetItems;
 
         const built = buildChatPrompt({
           character,
@@ -1412,7 +1412,7 @@ export function useSendMessage({
         const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
           Boolean,
         ) as ContextBlock[];
-        const effectivePresetItems = agenticRecord ? buildAgenticPlayPresetItems(character.name) : presetItems;
+        const effectivePresetItems = agenticRecord ? await getAgenticPlayPresetItems() : presetItems;
 
         const built = buildChatPrompt({
           character,

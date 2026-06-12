@@ -135,8 +135,14 @@ function insertDepthBlocks(history: GenerateMessage[], blocks: ContextBlock[], s
 export function buildChatPrompt(input: BuildPromptInput): BuiltPrompt {
   const messages: GenerateMessage[] = [];
   const uname = input.userName || "User";
+  const characterName = input.character.name || "Character";
 
-  const safeReplace = (s: string) => s.replace(/\{\{user\}\}/gi, uname).replace(/<user>/gi, uname);
+  const safeReplace = (s: string) =>
+    s
+      .replace(/\{\{user\}\}/gi, uname)
+      .replace(/<user>/gi, uname)
+      .replace(/\{\{(?:char|character)\}\}/gi, characterName)
+      .replace(/<(?:char|character)>/gi, characterName);
 
   const systemRules = input.systemRules ?? DEFAULT_SYSTEM_RULES;
   const characterBlock = safeReplace(

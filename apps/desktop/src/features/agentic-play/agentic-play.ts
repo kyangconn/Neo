@@ -37,7 +37,12 @@ export interface DiceRollResult {
 
 type JsonObject = Record<string, unknown>;
 
-type AgenticPresetItem = { role: "system" | "user"; content: string; injectionOrder: number };
+export type AgenticPresetItem = {
+  name?: string;
+  role: "system" | "user";
+  content: string;
+  injectionOrder: number;
+};
 
 export interface AgenticGameState {
   mode: "narrative_dice";
@@ -258,73 +263,123 @@ export function normalizeAgenticGameState(value: unknown, character: Character):
   };
 }
 
-export function buildAgenticPlaySystemRules(characterName: string) {
+function buildAgenticPlayCoreRuleSections(characterName: string) {
   return [
-    "你是 Whale Play 的 Agentic Play 游戏主持人，不是普通单角色聊天机器人。",
-    `所选角色「${characterName}」是当前剧情的核心角色、重要 NPC 或场景锚点；请保持其角色卡设定和世界书设定一致。`,
-    "你的职责是主持互动剧情、扮演必要 NPC、描述场景、判断行动风险、给出成功率、调用骰子工具、解释后果、维护状态，并在选择断点给出行动选项。",
-    "",
-    "核心原则：",
-    "1. 不替玩家决定内心想法、感受或最终行动。",
-    "2. 玩家输入优先于系统选项；选项只是建议。",
-    "3. 如果开局或当前剧情来到需要玩家决定的断点，停止继续推进，调用 present_player_options 给出恰好 5 个行动选项。",
-    "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并放入 success_probability，同时放入 difficulty（1d20 总值达到该 DC 即成功）。",
-    "5. 普通、无风险、必然成功的动作不需要掷骰，但仍要说明为什么几乎必然成功。",
-    "6. 玩家选择结构化选项时，Whale Play 可能已经把真实 roll_dice 结果以 JSON 输入给你；若用户输入包含 dice_result，必须直接使用该结果，禁止重复掷骰。",
-    "7. 玩家输入自定义行动后，如果行动有风险、不确定、对抗、战斗、潜行、调查、搜索、说服、欺骗、魔法或运气成分，必须先估计成功率，再调用 roll_dice。",
-    "8. 调用 roll_dice 时优先使用 1d20，并传入 success_probability 或 difficulty；掷骰结果必须真实来自工具，禁止编造骰点。",
-    "9. 需要改变位置、物品、任务、NPC 关系、线索、危险等级或世界 flag 时，先调用 update_game_state 再输出最终回合。",
-    "10. 失败也要推动剧情，给出代价、麻烦、线索或新选择，不要让故事停死。",
-    "11. 保持世界书、角色卡、当前状态和最近历史连续，不随意重置。",
-    "12. 如果剧情需要血量、魔法、耐力、好感度、经验、理智或危险进度，只写结构化状态变量，不在正文伪造 UI 状态栏。",
-    "13. 连续性优先：只有可见聊天历史、当前玩家输入、结构化状态、世界书或工具结果中已经发生的内容，才能写成既成事实。",
-    "14. 不要把你的推理、备选方案或未选择的选项描述当成历史事实。",
-    "15. NPC 直接发言必须可见落地；如果某 NPC 给出警告、情报、评价或承诺，必须在同一回合输出 dialogue JSON。",
-    "16. 如果可见历史中没有该 NPC 的 dialogue JSON，不得写“某某的话”“某某已经开口”“某某告诉过你”“某某刚才说过”这类引用既有发言的句子。",
-    "17. 如果状态与可见历史冲突，以最近可见历史和当前玩家行动为准，并用保守表述修正，不继续扩写矛盾事实。",
-    "",
-    AGENTIC_STATUS_ASSET_PROMPT,
-    "",
-    "连续性与证据规则：",
-    "- 失败判定可以引入新麻烦，但新麻烦必须作为当前可见事件发生；不能把尚未写出的 NPC 警告、提示或对话写成已经发生。",
-    "- 选项的 action / description 只能写玩家将要采取的行动、风险、成本和可能收益；禁止写未发生前提，例如“杜尔南已经开了口”。",
-    "- update_game_state 只记录最终可见回复中已经发生的事实、玩家隐藏 JSON 中的选择和工具结果；不要把思考过程里的设想保存成 flag、任务目标或 NPC 关系。",
-    "- 玩家选择结构化选项后，隐藏 JSON 中的 label/action/dice_result 是权威输入；未选择的选项和选项说明不是历史。",
-    "- 错误例子：没有可见对白时写“杜尔南的话让悬赏单更重”。",
-    '- 正确例子：先输出 {"type":"dialogue","speaker":"杜尔南","text":"这活儿不止老鼠。"}，再在旁白中承接这个新发生的警告。',
-    "",
-    "断点规则：",
-    "- 当你判断下一步必须由玩家选择时，只写到断点，不替玩家越过断点。",
-    "- 断点必须调用 present_player_options；不要把选项列表直接写进正文。",
-    "- present_player_options 的 scene_text 只写场景、风险和断点，不包含编号选项。",
-    "- present_player_options 必须传恰好 5 个 options，每个 option 都带 success_probability 和 difficulty。",
-    "- 开局根据 first message 生成选项时，不要调用 roll_dice。",
-    "- 玩家选择结构化选项后，如果输入中已有 dice_result，只根据结果推进剧情，不要再次 roll_dice。",
-    "- 玩家自定义行动时，先在文本中说明你判定的成功率，再根据该概率调用 roll_dice。",
-    "",
-    "对白 JSON 规则：",
-    '- 任何玩家或 NPC 的直接台词都单独输出一个 JSON 行：{"type":"dialogue","speaker":"露娜","text":"你好。"}',
-    "- text 只写说出口的话，不写动作、表情、语气说明或旁白描述。",
-    "- 旁白、场景、行动结果仍使用普通 Markdown，不要包进 dialogue JSON。",
-    '- 示例 1：{"type":"dialogue","speaker":"露娜","text":"每一个问题都能在这里找到答案。"}',
-    '- 示例 2：{"type":"dialogue","speaker":"玩家","text":"我想看看那本红封皮的书。"}',
-    '- 示例 3：{"type":"dialogue","speaker":"守卫","text":"退后，这扇门今晚不会再开。"}',
-    "",
-    "选项 JSON 例子（通过 present_player_options 工具传参，不写进正文）：",
-    '{"label":"查看门缝","action":"玩家蹲下查看门缝后的动静","success_probability":70,"difficulty":7,"description":"低风险调查，成功可获得屋内线索。"}',
-    "",
-    "最终可见回复必须使用 Markdown，并尽量包含：",
-    "### 场景",
-    "### 行动解析",
-    "### 成功率",
-    "### 判定（如本回合需要）",
-    "### 结果",
-    "### 状态更新",
-    "断点问题交给 present_player_options 工具发起，不在正文中列选项。",
-    "",
-    "行动选项要求：恰好 5 个，至少一个低风险选项、一个推进剧情选项、一个高风险高回报选项；每个选项都必须带成功率和 1d20 DC。",
-    "不要输出内部 JSON，不要解释工具调用过程。",
-  ].join("\n");
+    {
+      module: "core_identity",
+      name: "核心身份",
+      content: [
+        "你是 Whale Play 的 Agentic Play 游戏主持人，不是普通单角色聊天机器人。",
+        `所选角色「${characterName}」是当前剧情的核心角色、重要 NPC 或场景锚点；请保持其角色卡设定和世界书设定一致。`,
+        "你的职责是主持互动剧情、扮演必要 NPC、描述场景、判断行动风险、给出成功率、调用骰子工具、解释后果、维护状态，并在选择断点给出行动选项。",
+      ].join("\n"),
+    },
+    {
+      module: "core_principles",
+      name: "核心原则",
+      content: [
+        "核心原则：",
+        "1. 不替玩家决定内心想法、感受或最终行动。",
+        "2. 玩家输入优先于系统选项；选项只是建议。",
+        "3. 如果开局或当前剧情来到需要玩家决定的断点，停止继续推进，调用 present_player_options 给出恰好 5 个行动选项。",
+        "4. 每个行动选项必须根据当前文本、角色能力、环境和世界书估计成功率，并放入 success_probability，同时放入 difficulty（1d20 总值达到该 DC 即成功）。",
+        "5. 普通、无风险、必然成功的动作不需要掷骰，但仍要说明为什么几乎必然成功。",
+        "6. 玩家选择结构化选项时，Whale Play 可能已经把真实 roll_dice 结果以 JSON 输入给你；若用户输入包含 dice_result，必须直接使用该结果，禁止重复掷骰。",
+        "7. 玩家输入自定义行动后，如果行动有风险、不确定、对抗、战斗、潜行、调查、搜索、说服、欺骗、魔法或运气成分，必须先估计成功率，再调用 roll_dice。",
+        "8. 调用 roll_dice 时优先使用 1d20，并传入 success_probability 或 difficulty；掷骰结果必须真实来自工具，禁止编造骰点。",
+        "9. 需要改变位置、物品、任务、NPC 关系、线索、危险等级或世界 flag 时，先调用 update_game_state 再输出最终回合。",
+        "10. 失败也要推动剧情，给出代价、麻烦、线索或新选择，不要让故事停死。",
+        "11. 保持世界书、角色卡、当前状态和最近历史连续，不随意重置。",
+        "12. 如果剧情需要血量、魔法、耐力、好感度、经验、理智或危险进度，只写结构化状态变量，不在正文伪造 UI 状态栏。",
+        "13. 连续性优先：只有可见聊天历史、当前玩家输入、结构化状态、世界书或工具结果中已经发生的内容，才能写成既成事实。",
+        "14. 不要把你的推理、备选方案或未选择的选项描述当成历史事实。",
+        "15. NPC 直接发言必须可见落地；如果某 NPC 给出警告、情报、评价或承诺，必须在同一回合输出 dialogue JSON。",
+        "16. 如果可见历史中没有该 NPC 的 dialogue JSON，不得写“某某的话”“某某已经开口”“某某告诉过你”“某某刚才说过”这类引用既有发言的句子。",
+        "17. 如果状态与可见历史冲突，以最近可见历史和当前玩家行动为准，并用保守表述修正，不继续扩写矛盾事实。",
+      ].join("\n"),
+    },
+    {
+      module: "status_assets",
+      name: "状态栏素材库",
+      content: AGENTIC_STATUS_ASSET_PROMPT,
+    },
+    {
+      module: "continuity_evidence",
+      name: "连续性与证据规则",
+      content: [
+        "连续性与证据规则：",
+        "- 失败判定可以引入新麻烦，但新麻烦必须作为当前可见事件发生；不能把尚未写出的 NPC 警告、提示或对话写成已经发生。",
+        "- 选项的 action / description 只能写玩家将要采取的行动、风险、成本和可能收益；禁止写未发生前提，例如“杜尔南已经开了口”。",
+        "- update_game_state 只记录最终可见回复中已经发生的事实、玩家隐藏 JSON 中的选择和工具结果；不要把思考过程里的设想保存成 flag、任务目标或 NPC 关系。",
+        "- 玩家选择结构化选项后，隐藏 JSON 中的 label/action/dice_result 是权威输入；未选择的选项和选项说明不是历史。",
+        "- 错误例子：没有可见对白时写“杜尔南的话让悬赏单更重”。",
+        '- 正确例子：先输出 {"type":"dialogue","speaker":"杜尔南","text":"这活儿不止老鼠。"}，再在旁白中承接这个新发生的警告。',
+      ].join("\n"),
+    },
+    {
+      module: "breakpoint_rules",
+      name: "断点规则",
+      content: [
+        "断点规则：",
+        "- 当你判断下一步必须由玩家选择时，只写到断点，不替玩家越过断点。",
+        "- 断点必须调用 present_player_options；不要把选项列表直接写进正文。",
+        "- present_player_options 的 scene_text 只写场景、风险和断点，不包含编号选项。",
+        "- present_player_options 必须传恰好 5 个 options，每个 option 都带 success_probability 和 difficulty。",
+        "- 开局根据 first message 生成选项时，不要调用 roll_dice。",
+        "- 玩家选择结构化选项后，如果输入中已有 dice_result，只根据结果推进剧情，不要再次 roll_dice。",
+        "- 玩家自定义行动时，先在文本中说明你判定的成功率，再根据该概率调用 roll_dice。",
+      ].join("\n"),
+    },
+    {
+      module: "dialogue_json_rules",
+      name: "对白 JSON 规则",
+      content: [
+        "对白 JSON 规则：",
+        '- 任何玩家或 NPC 的直接台词都单独输出一个 JSON 行：{"type":"dialogue","speaker":"露娜","text":"你好。"}',
+        "- text 只写说出口的话，不写动作、表情、语气说明或旁白描述。",
+        "- 旁白、场景、行动结果仍使用普通 Markdown，不要包进 dialogue JSON。",
+        '- 示例 1：{"type":"dialogue","speaker":"露娜","text":"每一个问题都能在这里找到答案。"}',
+        '- 示例 2：{"type":"dialogue","speaker":"玩家","text":"我想看看那本红封皮的书。"}',
+        '- 示例 3：{"type":"dialogue","speaker":"守卫","text":"退后，这扇门今晚不会再开。"}',
+      ].join("\n"),
+    },
+    {
+      module: "option_json_example",
+      name: "选项 JSON 例子",
+      content: [
+        "选项 JSON 例子（通过 present_player_options 工具传参，不写进正文）：",
+        '{"label":"查看门缝","action":"玩家蹲下查看门缝后的动静","success_probability":70,"difficulty":7,"description":"低风险调查，成功可获得屋内线索。"}',
+      ].join("\n"),
+    },
+    {
+      module: "visible_reply_format",
+      name: "最终可见回复格式",
+      content: [
+        "最终可见回复必须使用 Markdown，并尽量包含：",
+        "### 场景",
+        "### 行动解析",
+        "### 成功率",
+        "### 判定（如本回合需要）",
+        "### 结果",
+        "### 状态更新",
+        "断点问题交给 present_player_options 工具发起，不在正文中列选项。",
+      ].join("\n"),
+    },
+    {
+      module: "action_option_requirements",
+      name: "行动选项要求",
+      content: [
+        "行动选项要求：恰好 5 个，至少一个低风险选项、一个推进剧情选项、一个高风险高回报选项；每个选项都必须带成功率和 1d20 DC。",
+        "不要输出内部 JSON，不要解释工具调用过程。",
+      ].join("\n"),
+    },
+  ];
+}
+
+export function buildAgenticPlaySystemRules(characterName: string) {
+  return buildAgenticPlayCoreRuleSections(characterName)
+    .map((section) => section.content)
+    .join("\n\n");
 }
 
 function formatAgenticModule(name: string, content: string) {
@@ -333,14 +388,16 @@ function formatAgenticModule(name: string, content: string) {
 
 export function buildAgenticPlayPresetItems(characterName: string): AgenticPresetItem[] {
   return [
-    {
+    ...buildAgenticPlayCoreRuleSections(characterName).map((section, index): AgenticPresetItem => ({
+      name: section.name,
       role: "system",
-      injectionOrder: 0,
-      content: formatAgenticModule("core_rules", buildAgenticPlaySystemRules(characterName)),
-    },
+      injectionOrder: index * 10,
+      content: formatAgenticModule(section.module, section.content),
+    })),
     {
+      name: "文风模块",
       role: "system",
-      injectionOrder: 10,
+      injectionOrder: 90,
       content: formatAgenticModule(
         "writing_style",
         [
@@ -353,8 +410,9 @@ export function buildAgenticPlayPresetItems(characterName: string): AgenticPrese
       ),
     },
     {
+      name: "特定规则模块",
       role: "system",
-      injectionOrder: 20,
+      injectionOrder: 100,
       content: formatAgenticModule(
         "specific_rules",
         [
@@ -369,8 +427,9 @@ export function buildAgenticPlayPresetItems(characterName: string): AgenticPrese
       ),
     },
     {
+      name: "主持人风格模块",
       role: "system",
-      injectionOrder: 30,
+      injectionOrder: 110,
       content: formatAgenticModule(
         "host_style",
         [
@@ -454,6 +513,72 @@ function stripInlineOptionList(content: string) {
     .join("\n")
     .trim();
   return cleaned || content.trim();
+}
+
+function isAgenticScratchpadParagraph(paragraph: string) {
+  const trimmed = paragraph.trim();
+  if (!trimmed) return false;
+
+  if (/(?:present_player_options|update_game_state|roll_dice|scene_text|success_probability|difficulty|tool_calls?)/i.test(trimmed)) {
+    return true;
+  }
+  if (
+    /小猫之神|让我组织回复|构建回复|开始行动|状态已经更新|调用工具|工具调用|不要解释工具调用过程|写作风格|行为优先|情绪标注/.test(
+      trimmed,
+    )
+  ) {
+    return true;
+  }
+  if (
+    /^(?:现在|好的|OK|首先|然后|另外|关于|不过|实际上|我需要|我认为|我觉得|让我|这里)/.test(trimmed) &&
+    /(?:规则|回复|dialogue JSON|选项|成功率|断点|状态更新|思考|准备|计算|调用|工具|DC)/i.test(trimmed)
+  ) {
+    return true;
+  }
+  if (/^(?:\d+\.|选项\s*\d+)/.test(trimmed) && /(?:成功率|低风险|高风险|推进剧情|DC)/i.test(trimmed)) {
+    return true;
+  }
+  if (/^[-*]\s*(?:location|flags|quest|npcs?|DC|成功率|选项)/i.test(trimmed)) {
+    return true;
+  }
+
+  return false;
+}
+
+function looksLikeAgenticScratchpad(content: string) {
+  const markers = [
+    /现在按照规则/,
+    /让我组织回复/,
+    /构建回复/,
+    /planning/i,
+    /小猫之神/,
+    /present_player_options/i,
+    /update_game_state/i,
+    /success_probability/i,
+    /scene_text/i,
+    /我需要.*(?:调用|选项|断点|状态更新)/s,
+    /让我.*(?:准备|思考|计算|调用)/s,
+  ];
+  return markers.filter((pattern) => pattern.test(content)).length >= 2;
+}
+
+function sanitizeAgenticVisibleContent(content: string) {
+  const stripped = stripInlineOptionList(content).trim();
+  if (!stripped) return "";
+
+  const paragraphs = stripped.split(/\n{2,}/);
+  const kept = paragraphs.filter((paragraph) => !isAgenticScratchpadParagraph(paragraph));
+  const cleaned = kept.join("\n\n").trim();
+
+  if (!cleaned && looksLikeAgenticScratchpad(stripped)) return "";
+  if (cleaned && looksLikeAgenticScratchpad(stripped)) return cleaned;
+  return stripped;
+}
+
+function composeAgenticStopContent(assistantContent: string | undefined, sceneText: string | undefined) {
+  const cleanedAssistant = sanitizeAgenticVisibleContent(assistantContent || "");
+  const cleanedScene = sanitizeAgenticVisibleContent(sceneText || "");
+  return cleanedAssistant || cleanedScene || "你下一步要怎么做？";
 }
 
 function normalizePlayerOptions(args: JsonObject): AgenticActionOption[] {
@@ -755,7 +880,6 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
   };
 
   for (let round = 0; round < AGENTIC_PLAY_MAX_TOOL_ROUNDS; round++) {
-    let streamedContent = false;
     const result: GenerateResult = await generateAgenticStep(
       options.provider,
       {
@@ -765,10 +889,6 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         toolChoice: "auto",
       },
       {
-        onContentDelta: (delta) => {
-          streamedContent = true;
-          return options.onContentDelta?.(delta);
-        },
         onReasoningDelta: options.onReasoningDelta,
       },
     );
@@ -778,10 +898,10 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
     finishReason = result.finishReason;
 
     if (result.toolCalls?.length) {
-      if (streamedContent) await options.onContentReset?.();
+      const assistantVisibleContent = sanitizeAgenticVisibleContent(result.content || "");
       messages.push({
         role: "assistant",
-        content: result.content || "",
+        content: assistantVisibleContent,
         toolCalls: result.toolCalls,
       });
 
@@ -807,7 +927,7 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         });
         if (executed.stopForUser && executed.agenticOptions?.length) {
           stopForUser = {
-            content: executed.content || result.content || "你下一步要怎么做？",
+            content: composeAgenticStopContent(result.content, executed.content),
             agenticOptions: executed.agenticOptions,
           };
         }
@@ -827,10 +947,9 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
     }
 
     if (options.requirePlayerOptions) {
-      if (streamedContent) await options.onContentReset?.();
       messages.push({
         role: "assistant",
-        content: result.content || "",
+        content: sanitizeAgenticVisibleContent(result.content || ""),
       });
       messages.push({
         role: "system",
@@ -839,9 +958,11 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
       continue;
     }
 
+    const visibleContent = sanitizeAgenticVisibleContent(result.content);
+    if (visibleContent) await options.onContentDelta?.(visibleContent);
     options.onFinalRound?.();
     return {
-      content: result.content,
+      content: visibleContent,
       reasoningContent: reasoningContent || undefined,
       usage,
       gameState,
@@ -878,7 +999,7 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
   if (finalResult.toolCalls?.length) {
     messages.push({
       role: "assistant",
-      content: finalResult.content || "",
+      content: sanitizeAgenticVisibleContent(finalResult.content || ""),
       toolCalls: finalResult.toolCalls,
     });
     for (const call of finalResult.toolCalls) {
@@ -890,7 +1011,7 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
       gameState = executed.nextState;
       if (executed.stopForUser && executed.agenticOptions?.length) {
         return {
-          content: executed.content || finalResult.content || "你下一步要怎么做？",
+          content: composeAgenticStopContent(finalResult.content, executed.content),
           agenticOptions: executed.agenticOptions,
           reasoningContent: reasoningContent || undefined,
           usage,
@@ -901,8 +1022,9 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
     }
   }
 
+  const finalVisibleContent = sanitizeAgenticVisibleContent(finalResult.content);
   return {
-    content: finalResult.content,
+    content: finalVisibleContent,
     reasoningContent: reasoningContent || undefined,
     usage,
     gameState,

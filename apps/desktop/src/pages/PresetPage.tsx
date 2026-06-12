@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useState, useRef, useCallback, type PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import {
@@ -33,7 +33,7 @@ import {
   DialogFooter,
 } from "@neo-tavern/ui";
 import { usePresetStore } from "@/features/preset/preset.store";
-import { EXTRA_PRESET_ITEM_TEMPLATES } from "@/features/preset/preset.templates";
+import { AGENTIC_PLAY_PRESET_ID, ensureAgenticPlayPreset } from "@/features/agentic-play/agentic-preset";
 import type { Preset, PresetItem } from "@neo-tavern/shared";
 import { getStorageItem } from "@/db/storage";
 import { invoke } from "@tauri-apps/api/core";
@@ -67,6 +67,7 @@ export function PresetPage() {
 
   const navigate = useNavigate();
   const store = usePresetStore();
+  const loadPresets = store.loadPresets;
 
   const [secretUnlocked, setSecretUnlocked] = useState(false);
 
@@ -91,12 +92,19 @@ export function PresetPage() {
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [templateId, setTemplateId] = useState(EXTRA_PRESET_ITEM_TEMPLATES[0]?.id ?? "");
+  const [sourceItemKey, setSourceItemKey] = useState("");
 
   useEffect(() => {
-    store.loadPresets();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.loadPresets]);
+    let cancelled = false;
+    ensureAgenticPlayPreset()
+      .catch(() => null)
+      .finally(() => {
+        if (!cancelled) void loadPresets();
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [loadPresets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -133,6 +141,7 @@ export function PresetPage() {
   }, [store.presets]);
 
   const selected = store.presets.find((p) => p.id === selectedId) ?? null;
+  const isAgenticPresetSelected = selected?.id === AGENTIC_PLAY_PRESET_ID;
 
   const handleCreate = async () => {
     try {
@@ -391,26 +400,43 @@ export function PresetPage() {
     if (file) setImportFile(file);
   };
 
-  const selectedTemplate =
-    EXTRA_PRESET_ITEM_TEMPLATES.find((template) => template.id === templateId) ?? EXTRA_PRESET_ITEM_TEMPLATES[0];
+  const externalPresetItemOptions = useMemo(() => {
+    if (!selected) return [];
+    return store.presets
+      .filter((preset) => preset.id !== selected.id)
+      .flatMap((preset) =>
+        sortPresetItems(preset.items)
+          .filter((item) => !item.hidden || secretUnlocked)
+          .map((item) => ({
+            key: `${preset.id}:${item.id}`,
+            preset,
+            item,
+          })),
+      );
+  }, [secretUnlocked, selected, store.presets]);
 
-  const handleAddTemplateItem = async () => {
-    if (!selected || !selectedTemplate) return;
-    if (selected.items.some((item) => item.content === selectedTemplate.content)) {
-      toast("info", tt("presetAlreadyAdded", { name: selectedTemplate.name }));
+  const selectedSourceItem =
+    externalPresetItemOptions.find((option) => option.key === sourceItemKey) ?? externalPresetItemOptions[0] ?? null;
+
+  const handleAddExternalPresetItem = async () => {
+    if (!selected || !selectedSourceItem) return;
+    const sourceItem = selectedSourceItem.item;
+    if (selected.items.some((item) => item.content === sourceItem.content)) {
+      toast("info", tt("presetAlreadyAdded", { name: sourceItem.name }));
       return;
     }
 
     const nextOrder = Math.max(0, ...selected.items.map((item) => item.injectionOrder)) + 10;
     try {
       await store.addItem(selected.id, {
-        name: selectedTemplate.name,
+        name: sourceItem.name,
         enabled: true,
-        role: selectedTemplate.role,
-        content: selectedTemplate.content,
+        hidden: sourceItem.hidden,
+        role: sourceItem.role,
+        content: sourceItem.content,
         injectionOrder: nextOrder,
       });
-      toast("success", tt("presetItemAdded", { name: selectedTemplate.name }));
+      toast("success", tt("presetItemAdded", { name: sourceItem.name }));
     } catch {
       toast("error", store.error || tt("presetFailed"));
     }
@@ -441,7 +467,14 @@ export function PresetPage() {
                 className={cn("text-left px-2 py-1.5 rounded text-sm transition-colors flex items-center justify-between gap-1", selectedId === p.id ? "bg-accent text-foreground font-medium" : "hover:bg-accent/50 text-muted-foreground hover:text-foreground")}
               >
                 <span className="truncate">{p.name}</span>
-                {store.activePresetId === p.id && <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-green-500" />}
+                <span className="flex shrink-0 items-center gap-1">
+                  {p.id === AGENTIC_PLAY_PRESET_ID && (
+                    <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-primary">
+                      Agentic
+                    </span>
+                  )}
+                  {store.activePresetId === p.id && <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                </span>
               </button>
             ))}
             <Button variant="outline" size="sm" onClick={handleCreate} className="w-full justify-center text-xs mt-1">
@@ -489,13 +522,19 @@ export function PresetPage() {
                   <Button size="sm" variant="outline" onClick={handleExport}>
                     <Download className="h-4 w-4" />
                   </Button>
-                  <Button
-                    size="sm"
-                    variant={store.activePresetId === selected.id ? "default" : "outline"}
-                    onClick={handleActivate}
-                  >
-                    {store.activePresetId === selected.id ? t("active") : t("activate")}
-                  </Button>
+                  {isAgenticPresetSelected ? (
+                    <Button size="sm" variant="outline" disabled>
+                      {t("agenticPreset.autoUsed")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant={store.activePresetId === selected.id ? "default" : "outline"}
+                      onClick={handleActivate}
+                    >
+                      {store.activePresetId === selected.id ? t("active") : t("activate")}
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     variant="ghost"
@@ -507,6 +546,12 @@ export function PresetPage() {
                 </div>
               </div>
 
+              {isAgenticPresetSelected && (
+                <div className="mt-3 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+                  {t("agenticPreset.hint")}
+                </div>
+              )}
+
               <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
                 <div className="rounded-md border bg-muted/10 p-3">
                   <div className="flex flex-col gap-3 md:flex-row md:items-center">
@@ -517,19 +562,44 @@ export function PresetPage() {
                       </Label>
                       <select
                         id="extra-preset-entry"
-                        value={templateId}
-                        onChange={(e) => setTemplateId(e.target.value)}
+                        value={selectedSourceItem?.key ?? ""}
+                        onChange={(e) => setSourceItemKey(e.target.value)}
                         className="mt-1 w-full h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                        disabled={externalPresetItemOptions.length === 0}
                       >
-                        {EXTRA_PRESET_ITEM_TEMPLATES.map((template) => (
-                          <option key={template.id} value={template.id}>
-                            {template.name}
-                          </option>
-                        ))}
+                        {externalPresetItemOptions.length === 0 ? (
+                          <option value="">{t("extraPresetEmpty")}</option>
+                        ) : (
+                          store.presets
+                            .filter((preset) => preset.id !== selected.id)
+                            .map((preset) => {
+                              const options = externalPresetItemOptions.filter((option) => option.preset.id === preset.id);
+                              if (options.length === 0) return null;
+                              return (
+                                <optgroup key={preset.id} label={preset.name}>
+                                  {options.map(({ key, item }) => (
+                                    <option key={key} value={key}>
+                                      {item.name}
+                                      {item.enabled ? "" : ` · ${t("disabled")}`}
+                                    </option>
+                                  ))}
+                                </optgroup>
+                              );
+                            })
+                        )}
                       </select>
-                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{selectedTemplate?.description}</p>
+                      <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+                        {selectedSourceItem
+                          ? `${selectedSourceItem.preset.name} · ${selectedSourceItem.item.role} · ${selectedSourceItem.item.content.slice(0, 160)}`
+                          : t("extraPresetEmptyHint")}
+                      </p>
                     </div>
-                    <Button size="sm" variant="outline" onClick={handleAddTemplateItem} disabled={!selectedTemplate}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleAddExternalPresetItem}
+                      disabled={!selectedSourceItem}
+                    >
                       <Plus className="h-3.5 w-3.5 mr-1" />
                       {t("addSelected")}
                     </Button>

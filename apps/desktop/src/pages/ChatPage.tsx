@@ -59,13 +59,13 @@ import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
 import { getChatScopedDeepSeekUserId } from "@/features/settings/model-capabilities";
 import {
   AGENTIC_PLAY_OPENING_PROMPT,
-  buildAgenticPlayPresetItems,
   createAgenticPlayContextBlock,
   rollDice,
   type AgenticActionOption,
   type AgenticGameState,
   type DiceRollResult,
 } from "@/features/agentic-play/agentic-play";
+import { getAgenticPlayPresetItems } from "@/features/agentic-play/agentic-preset";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ChatSidebar } from "@/pages/chat/ChatSidebar";
 import { ChatRightPanel } from "@/pages/chat/ChatRightPanel";
@@ -454,7 +454,7 @@ export function ChatPage() {
   }, [currentChat?.id, character]);
 
   const updatePreview = useCallback(
-    (userInput: string) => {
+    async (userInput: string) => {
       if (!character) return;
       const settingsState = useSettingsStore.getState();
       const cs = settingsState.contextTokens ?? 64000;
@@ -493,12 +493,13 @@ export function ChatPage() {
       const agenticBlock =
         agenticPlayEnabled && agenticGameState ? createAgenticPlayContextBlock(agenticGameState) : null;
       const allContextBlocks = [memoryBlock, agenticBlock, ...(contextBlocks ?? [])].filter(Boolean);
+      const presetItems = agenticPlayEnabled ? await getAgenticPlayPresetItems() : presetItemsRef.current;
       const built = buildChatPrompt({
         character,
         recentMessages: memorySplit.recentMessages,
         userInput: userInput || "(your message)",
         maxTotalTokens: cs,
-        presetItems: agenticPlayEnabled ? buildAgenticPlayPresetItems(character.name) : presetItemsRef.current,
+        presetItems,
         contextBlocks: allContextBlocks as ContextBlock[],
         userName: settingsState.personaName,
       });
