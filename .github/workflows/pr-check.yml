@@ -60,7 +60,9 @@ jobs:
         run: pnpm lint 2>&1 || pnpm exec eslint 'apps/desktop/src/**/*.{ts,tsx}' --max-warnings=0
 
       - name: TypeScript check
-        run: pnpm --filter @neo-tavern/desktop exec tsc --noEmit
+        run: |
+          pnpm --filter @neo-tavern/desktop exec tsc -b
+          pnpm --filter @neo-tavern/desktop exec tsc --noEmit
 
   check-rust:
     name: Rust Check
@@ -89,6 +91,9 @@ jobs:
 
       - name: Install JS dependencies (needed for Tauri build scripts)
         run: pnpm install --frozen-lockfile
+
+      - name: Build dist
+        run: pnpm build
 
       - name: Cache Rust target
         uses: actions/cache@v4
