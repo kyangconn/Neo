@@ -1,6 +1,10 @@
 import { useTranslation } from "react-i18next";
-import { ExternalLink, MessageCircle, Scale, BookOpen } from "lucide-react";
-import { Button } from "@neo-tavern/ui";
+import { useState, useEffect } from "react";
+import { ExternalLink, MessageCircle, Scale, BookOpen, Download, RotateCw, ArrowUpCircle } from "lucide-react";
+import { Button, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@neo-tavern/ui";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
+import { getVersion } from "@tauri-apps/api/app";
 
 // ── GitHub SVG icon (not available in lucide-react) ──
 const GithubIcon = (
@@ -25,55 +29,171 @@ const linkRow =
 
 export function AboutPage() {
   const { t } = useTranslation("about");
+  const [appVersion, setAppVersion] = useState("");
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestVersion, setLatestVersion] = useState("");
+  const [updateNotes, setUpdateNotes] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [downloadPercent, setDownloadPercent] = useState(0);
+  const [downloadReady, setDownloadReady] = useState(false);
+  const [restartDialogOpen, setRestartDialogOpen] = useState(false);
+
+  useEffect(() => {
+    getVersion().then(setAppVersion).catch(() => setAppVersion("0.1.0"));
+    // Check for updates on mount
+    void (async () => {
+      try {
+        const update = await check();
+        if (update) {
+          setUpdateAvailable(true);
+          setLatestVersion(update.version);
+          setUpdateNotes(update.body || "");
+        }
+      } catch { /* no update or check failed */ }
+    })();
+    // Listen for dev mock update (window.__mockUpdate() in console)
+    const onMock = (e: Event) => {
+      const { version, body } = (e as CustomEvent).detail;
+      setUpdateAvailable(true);
+      setLatestVersion(version);
+      setUpdateNotes(body);
+    };
+    window.addEventListener("neotavern-mock-update", onMock);
+    return () => window.removeEventListener("neotavern-mock-update", onMock);
+  }, []);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    setDownloadPercent(0);
+    try {
+      const update = await check();
+      if (!update) return;
+
+      let downloaded = 0;
+      let total = 0;
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case 'Started':
+            total = event.data.contentLength ?? 0;
+            break;
+          case 'Progress':
+            downloaded += event.data.chunkLength;
+            if (total > 0) {
+              setDownloadPercent(Math.round((downloaded / total) * 100));
+            }
+            break;
+          case 'Finished':
+            setDownloadReady(true);
+            setDownloading(false);
+            setRestartDialogOpen(true);
+            break;
+        }
+      });
+    } catch (e) {
+      console.error("Update download failed:", e);
+      setDownloading(false);
+    }
+  };
+
+  const handleRestartNow = async () => {
+    await relaunch();
+  };
 
   return (
-    <div className="flex h-full items-center justify-center p-8">
-      <div className="flex max-w-sm flex-col items-center gap-6 text-center">
-        <img src="/icons/128x128.png" alt="Whale Play" className="h-24 w-24 rounded-2xl shadow-lg" />
+    <>
+      <div className="flex h-full items-center justify-center p-8">
+        <div className="flex max-w-sm flex-col items-center gap-6 text-center">
+          <img src="/icons/128x128.png" alt="Whale Play" className="h-24 w-24 rounded-2xl shadow-lg" />
 
-        <div>
-          <h1 className="text-2xl font-bold">Whale Play</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{t("description")}</p>
-        </div>
+          <div>
+            <h1 className="text-2xl font-bold">Whale Play</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("description")}
+              {updateAvailable && <ArrowUpCircle className="ml-1 inline h-3.5 w-3.5 text-amber-500" />}
+            </p>
+            {appVersion && <p className="mt-1 text-xs text-muted-foreground">v{appVersion}{latestVersion && updateAvailable && ` → v${latestVersion}`}</p>}
+          </div>
 
-        <div className="flex w-full flex-col gap-3">
-          <a href="https://github.com/YELEBAI/Whaleplay" target="_blank" rel="noopener noreferrer" className={linkRow}>
-            {GithubIcon}
-            {t("repository")}
-            <ExternalLink className="h-3 w-3 text-muted-foreground" />
-          </a>
+          <div className="flex w-full flex-col gap-3">
+            {updateAvailable && (
+              <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
+                {updateNotes && <p className="mb-2 text-xs text-left text-muted-foreground">{updateNotes}</p>}
+                {downloading ? (
+                  <div>
+                    <div className="h-1.5 w-full rounded-full bg-muted mb-1.5">
+                      <div className="h-1.5 rounded-full bg-primary transition-all" style={{ width: `${downloadPercent}%` }} />
+                    </div>
+                    <p className="text-xs text-muted-foreground">{downloadPercent}%</p>
+                  </div>
+                ) : downloadReady ? (
+                  <Button variant="default" className="w-full gap-2" onClick={() => setRestartDialogOpen(true)}>
+                    <RotateCw className="h-4 w-4" />
+                    {t("update.restart")}
+                  </Button>
+                ) : (
+                  <Button variant="default" className="w-full gap-2" onClick={handleDownload}>
+                    <Download className="h-4 w-4" />
+                    {t("update.download", { version: latestVersion })}
+                  </Button>
+                )}
+              </div>
+            )}
 
-          <a
-            href="https://github.com/YELEBAI/Whaleplay/issues"
-            target="_blank"
-            rel="noopener noreferrer"
-            className={linkRow}
-          >
-            <MessageCircle className="h-4 w-4" />
-            {t("feedback")}
-            <ExternalLink className="h-3 w-3 text-muted-foreground" />
-          </a>
+            <a href="https://github.com/YELEBAI/Whaleplay" target="_blank" rel="noopener noreferrer" className={linkRow}>
+              {GithubIcon}
+              {t("repository")}
+              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+            </a>
 
-          <span className={linkRow}>
-            <Scale className="h-4 w-4" />
-            {t("license")}
-            <Tooltip text={t("licenseHint")}>
-              <span className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
-                ?
-              </span>
-            </Tooltip>
-          </span>
+            <a
+              href="https://github.com/YELEBAI/Whaleplay/issues"
+              target="_blank"
+              rel="noopener noreferrer"
+              className={linkRow}
+            >
+              <MessageCircle className="h-4 w-4" />
+              {t("feedback")}
+              <ExternalLink className="h-3 w-3 text-muted-foreground" />
+            </a>
 
-          <Button
-            variant="outline"
-            onClick={() => window.open("https://github.com/YELEBAI/Whaleplay/tree/main/docs/zh", "_blank")}
-            className="gap-2"
-          >
-            <BookOpen className="h-4 w-4" />
-            {t("documentation")}
-          </Button>
+            <span className={linkRow}>
+              <Scale className="h-4 w-4" />
+              {t("license")}
+              <Tooltip text={t("licenseHint")}>
+                <span className="inline-flex h-5 w-5 cursor-help items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                  ?
+                </span>
+              </Tooltip>
+            </span>
+
+            <Button
+              variant="outline"
+              onClick={() => window.open("https://github.com/YELEBAI/Whaleplay/tree/main/docs", "_blank")}
+              className="gap-2"
+            >
+              <BookOpen className="h-4 w-4" />
+              {t("documentation")}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+
+      <Dialog open={restartDialogOpen} onOpenChange={setRestartDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("update.restartTitle")}</DialogTitle>
+            <DialogDescription>{t("update.restartDescription")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setRestartDialogOpen(false)}>
+              {t("update.later")}
+            </Button>
+            <Button onClick={handleRestartNow}>
+              {t("update.restartNow")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

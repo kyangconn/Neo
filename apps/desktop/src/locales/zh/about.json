@@ -1,8 +1,17 @@
 {
-  "description": "一个面向角色卡创作和角色扮演聊天的桌面应用。",
-  "repository": "仓库",
-  "feedback": "反馈",
-  "license": "MIT 许可证",
-  "licenseHint": "你可以自由使用、修改和分发本软件。完整条款请查看 LICENSE 文件。",
-  "documentation": "文档"
+  "description": "桌面端 AI 角色扮演与角色卡创作工具",
+  "repository": "GitHub 仓库",
+  "feedback": "反馈与建议",
+  "license": "MIT 开源协议",
+  "licenseHint": "可自由使用、修改与分发",
+  "documentation": "使用文档",
+  "update": {
+    "download": "下载 v{{version}}",
+    "downloading": "正在下载...",
+    "restart": "安装并重启",
+    "restartTitle": "更新已就绪",
+    "restartDescription": "更新已下载完成。是否立即重启应用以完成安装？",
+    "restartNow": "立即重启",
+    "later": "稍后"
+  }
 }

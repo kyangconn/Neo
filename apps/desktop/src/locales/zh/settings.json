@@ -107,7 +107,11 @@
     "dailyCostHint": "当日 DeepSeek 消费达到每日人民币限额的 80% 时提醒一次。",
     "dailyCostLimitYuan": "每日费用限额 (元)",
     "toggleDebug": "切换调试模式",
-    "toggleDailyCost": "切换每日费用预警"
+    "toggleDailyCost": "切换每日费用预警",
+    "autoUpdate": "自动更新",
+    "autoUpdateToggle": "自动更新",
+    "autoUpdateHint": "应用启动时自动检查并下载更新。手动安装需前往关于页面。",
+    "autoUpdateToggleHint": "开启后将在后台自动下载新版本"
   },
   "image": {
     "title": "图片生成",

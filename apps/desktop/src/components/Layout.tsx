@@ -1,5 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useNavigate, type NavLinkRenderProps } from "react-router";
+import { useState, useEffect } from "react";
+import { check } from "@tauri-apps/plugin-updater";
 import {
   User,
   Settings,
@@ -76,8 +78,19 @@ function WindowTitleBar() {
 export function Layout() {
   const { t } = useTranslation("common");
   const navigate = useNavigate();
+  const [updateDot, setUpdateDot] = useState(false);
 
   const lastChatId = typeof window !== "undefined" ? localStorage.getItem("neo:last-chat-id") : null;
+
+  // Check for updates on mount — show red dot if available
+  useEffect(() => {
+    void (async () => {
+      try {
+        const update = await check();
+        if (update) setUpdateDot(true);
+      } catch { /* ignore */ }
+    })();
+  }, []);
 
   const navItems = [
     { to: "/", icon: Home, label: t("nav.home") },
@@ -123,7 +136,8 @@ export function Layout() {
           </button>
         )}
 
-        <div className="h-12 flex items-center justify-center">
+        <div className="h-12 flex items-center justify-center relative">
+          {updateDot && <span className="absolute -top-0.5 -right-1 h-2 w-2 rounded-full bg-red-500" />}
           <button
             onClick={() => navigate("/about")}
             className="text-xs text-muted-foreground font-medium -rotate-90 whitespace-nowrap leading-none hover:text-foreground transition-colors"

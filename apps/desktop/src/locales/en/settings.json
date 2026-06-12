@@ -108,7 +108,11 @@
     "dailyCostHint": "Warn when today's DeepSeek spend reaches 80% of the daily limit.",
     "dailyCostLimitYuan": "Daily Cost Limit (¥)",
     "toggleDebug": "Toggle debug prompt saving",
-    "toggleDailyCost": "Toggle daily cost warning"
+    "toggleDailyCost": "Toggle daily cost warning",
+    "autoUpdate": "Auto Update",
+    "autoUpdateToggle": "Auto Update",
+    "autoUpdateHint": "Automatically check and download updates on startup. Visit the About page to install.",
+    "autoUpdateToggleHint": "New versions will be downloaded silently in the background"
   },
   "image": {
     "title": "Image Generation",

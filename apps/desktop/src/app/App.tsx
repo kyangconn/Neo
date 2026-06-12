@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { RouterProvider } from "react-router";
 import { router } from "./router";
 import { registerDevFixtures } from "./dev-fixtures";
+import { check } from "@tauri-apps/plugin-updater";
 import {
   seedTestCharacter,
   seedBuiltinRegex,
@@ -53,12 +54,31 @@ function AppContent() {
       await useSettingsStore.getState().loadRegexRules();
       await useSettingsStore.getState().loadPersona();
       await useSettingsStore.getState().loadDebugMode();
+      await useSettingsStore.getState().loadAutoUpdateEnabled();
       await useSettingsStore.getState().loadDailyCostWarningSettings();
       await useSettingsStore.getState().loadDailyCostSpent();
       await useSettingsStore.getState().loadWebSearchSettings();
       await useWorldbookStore.getState().loadWorldbooks();
     })();
   }, [themeInit]);
+
+  // Auto-update check on startup
+  useEffect(() => {
+    const store = useSettingsStore.getState();
+    if (!store.autoUpdateEnabled) return;
+    void (async () => {
+      try {
+        const update = await check();
+        if (update) {
+          // Download in background
+          await update.downloadAndInstall(() => {});
+          console.warn("[updater] Update downloaded, will install on next restart");
+        }
+      } catch {
+        // No update or check failed — silently ignore
+      }
+    })();
+  }, []);
 
   return (
     <>

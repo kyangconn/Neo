@@ -1,8 +1,17 @@
 {
-  "description": "A desktop app for character card creation and roleplay chat.",
-  "repository": "Repository",
-  "feedback": "Feedback",
+  "description": "Desktop AI roleplay & character card creation tool",
+  "repository": "GitHub Repository",
+  "feedback": "Feedback & Suggestions",
   "license": "MIT License",
-  "licenseHint": "You are free to use, modify, and distribute this software. See the LICENSE file for full terms.",
-  "documentation": "Documentation"
+  "licenseHint": "Free to use, modify, and redistribute",
+  "documentation": "Documentation",
+  "update": {
+    "download": "Download v{{version}}",
+    "downloading": "Downloading...",
+    "restart": "Install & Restart",
+    "restartTitle": "Update Ready",
+    "restartDescription": "The update has been downloaded. Restart now to complete the installation?",
+    "restartNow": "Restart Now",
+    "later": "Later"
+  }
 }

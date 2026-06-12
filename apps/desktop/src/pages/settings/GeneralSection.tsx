@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Bell, Bug, Globe } from "lucide-react";
+import { Bell, Bug, Globe, RefreshCw } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, Input, Label, Button, cn } from "@neo-tavern/ui";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { getStorageItem, setStorageItem } from "@/db/storage";
@@ -44,6 +44,8 @@ export function GeneralSection({ locale, setLocale, t }: GeneralSectionProps) {
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
   const setTavilyApiKey = useSettingsStore((s) => s.setTavilyApiKey);
   const setTavilySearchDepth = useSettingsStore((s) => s.setTavilySearchDepth);
+  const autoUpdateEnabled = useSettingsStore((s) => s.autoUpdateEnabled);
+  const setAutoUpdateEnabled = useSettingsStore((s) => s.setAutoUpdateEnabled);
 
   const [lanEnabled, setLanEnabled] = useState(false);
   const [lanAddr, setLanAddr] = useState("0.0.0.0");
@@ -313,6 +315,25 @@ export function GeneralSection({ locale, setLocale, t }: GeneralSectionProps) {
                 </div>
               </>
             )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="card-title-row">
+            <RefreshCw className="h-5 w-5" />
+            {t("general.autoUpdate")}
+          </CardTitle>
+          <CardDescription>{t("general.autoUpdateHint")}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center justify-between rounded-md border px-3 py-3">
+            <div>
+              <p className="text-sm font-medium">{t("general.autoUpdateToggle")}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{t("general.autoUpdateToggleHint")}</p>
+            </div>
+            <SwitchButton checked={autoUpdateEnabled} onClick={() => setAutoUpdateEnabled(!autoUpdateEnabled)} label={t("general.autoUpdateToggle")} />
           </div>
         </CardContent>
       </Card>

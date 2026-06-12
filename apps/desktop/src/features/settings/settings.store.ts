@@ -57,6 +57,7 @@ interface SettingsState {
   dailyCostWarningEnabled: boolean;
   dailyCostWarningLimitCny: number;
   dailyCostSpentCny: number;
+  autoUpdateEnabled: boolean;
   webSearchProvider: "default" | "tavily";
   tavilyApiKey: string;
   tavilySearchDepth: "basic" | "advanced" | "fast" | "ultra-fast";
@@ -94,6 +95,8 @@ interface SettingsState {
   loadDailyCostSpent: () => Promise<void>;
   setDailyCostWarningEnabled: (enabled: boolean) => void;
   setDailyCostWarningLimitCny: (limitCny: number) => void;
+  loadAutoUpdateEnabled: () => Promise<void>;
+  setAutoUpdateEnabled: (enabled: boolean) => void;
   loadWebSearchSettings: () => Promise<void>;
   setWebSearchProvider: (provider: "default" | "tavily") => void;
   setTavilyApiKey: (key: string) => void;
@@ -123,6 +126,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   dailyCostWarningEnabled: false,
   dailyCostWarningLimitCny: DEFAULT_DAILY_COST_WARNING_LIMIT_CNY,
   dailyCostSpentCny: 0,
+  autoUpdateEnabled: false,
   webSearchProvider: "default" as const,
   tavilyApiKey: "",
   tavilySearchDepth: "basic" as const,
@@ -266,6 +270,16 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setDebugMode: (enabled: boolean) => {
     void settingsRepository.set("debugMode", enabled ? "1" : "0");
     set({ debugMode: enabled });
+  },
+
+  loadAutoUpdateEnabled: async () => {
+    const raw = await settingsRepository.get("autoUpdateEnabled");
+    if (raw !== null && raw !== undefined) set({ autoUpdateEnabled: raw === "1" });
+  },
+
+  setAutoUpdateEnabled: (enabled: boolean) => {
+    void settingsRepository.set("autoUpdateEnabled", enabled ? "1" : "0");
+    set({ autoUpdateEnabled: enabled });
   },
 
   loadDailyCostWarningSettings: async () => {
