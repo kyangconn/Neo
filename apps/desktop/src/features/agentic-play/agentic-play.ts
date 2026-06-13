@@ -244,7 +244,8 @@ export function normalizeAgenticGameState(value: unknown, character: Character):
   const rawPlayer = isRecord(value.player) ? value.player : {};
   const player = { ...fallback.player, ...rawPlayer };
   const hasPlayerStatusBars =
-    isRecord(player.status_bars) && Object.keys(player.status_bars).some((key) => isRecord((player.status_bars as JsonObject)[key]));
+    isRecord(player.status_bars) &&
+    Object.keys(player.status_bars).some((key) => isRecord((player.status_bars as JsonObject)[key]));
   if (!hasPlayerStatusBars && isRecord(fallback.player.status_bars)) {
     player.status_bars = fallback.player.status_bars;
   }
@@ -388,12 +389,14 @@ function formatAgenticModule(name: string, content: string) {
 
 export function buildAgenticPlayPresetItems(characterName: string): AgenticPresetItem[] {
   return [
-    ...buildAgenticPlayCoreRuleSections(characterName).map((section, index): AgenticPresetItem => ({
-      name: section.name,
-      role: "system",
-      injectionOrder: index * 10,
-      content: formatAgenticModule(section.module, section.content),
-    })),
+    ...buildAgenticPlayCoreRuleSections(characterName).map(
+      (section, index): AgenticPresetItem => ({
+        name: section.name,
+        role: "system",
+        injectionOrder: index * 10,
+        content: formatAgenticModule(section.module, section.content),
+      }),
+    ),
     {
       name: "文风模块",
       role: "system",
@@ -519,7 +522,11 @@ function isAgenticScratchpadParagraph(paragraph: string) {
   const trimmed = paragraph.trim();
   if (!trimmed) return false;
 
-  if (/(?:present_player_options|update_game_state|roll_dice|scene_text|success_probability|difficulty|tool_calls?)/i.test(trimmed)) {
+  if (
+    /(?:present_player_options|update_game_state|roll_dice|scene_text|success_probability|difficulty|tool_calls?)/i.test(
+      trimmed,
+    )
+  ) {
     return true;
   }
   if (
@@ -617,7 +624,7 @@ function parseDiceExpression(value: unknown) {
 }
 
 export function rollDice(args: JsonObject) {
-const { expression, count, sides } = parseDiceExpression(args.dice);
+  const { expression, count, sides } = parseDiceExpression(args.dice);
   const modifier = parseInteger(args.modifier, 0);
   const requestedProbability = parseProbability(args.success_probability);
   const providedDifficulty =
@@ -905,12 +912,10 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         toolCalls: result.toolCalls,
       });
 
-      let stopForUser:
-        | {
-            content: string;
-            agenticOptions: AgenticActionOption[];
-          }
-        | null = null;
+      let stopForUser: {
+        content: string;
+        agenticOptions: AgenticActionOption[];
+      } | null = null;
 
       for (const call of result.toolCalls) {
         options.onToolRound?.(call.function.name);
@@ -985,7 +990,9 @@ export async function generateAgenticPlayTurn(options: GenerateAgenticPlayTurnOp
         },
       ],
       tools: options.requirePlayerOptions ? AGENTIC_PLAY_TOOL_DEFINITIONS : undefined,
-      toolChoice: options.requirePlayerOptions ? { type: "function", function: { name: "present_player_options" } } : undefined,
+      toolChoice: options.requirePlayerOptions
+        ? { type: "function", function: { name: "present_player_options" } }
+        : undefined,
     },
     {
       onContentDelta: options.onContentDelta,

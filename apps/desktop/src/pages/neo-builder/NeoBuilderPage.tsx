@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useLayoutEffect, useState } from "react";
+import { startTransition, useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { ArrowLeft, CheckCircle2, Globe2, Send } from "lucide-react";
@@ -11,19 +11,17 @@ import {
   type ChoiceInputPanelQuestion,
 } from "@/components/ChoiceInputPanel";
 import { characterRepository, worldbookRepository } from "@/db/repositories";
+import { builderSessions, useBuilderSession } from "@/features/character/builder-session.store";
 import { recordUsageCostAndWarn } from "@/features/billing/usage-cost";
-import { runNeoCharacterBuilderTurn } from "@/features/character/neo-character-builder";
 import { exportPackToFolder, type CharacterCardPack } from "@/features/character/neo-character-builder";
 import { deleteWorkspaceDir } from "@/features/character/builder/workspace-files";
-import { searchWeb } from "@/features/character/web-search";
 import { toast } from "@/utils/toast";
 import { useCharacterStore } from "@/features/character/character.store";
-import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 
-import { BuilderWorkspaceList } from "./neo-builder/WorkspaceList";
-import { BuilderChatMessage } from "./neo-builder/ChatMessage";
-import { ArtifactsPanel } from "./neo-builder/ArtifactsPanel";
+import { BuilderWorkspaceList } from "./WorkspaceList";
+import { BuilderChatMessage } from "./ChatMessage";
+import { ArtifactsPanel } from "./ArtifactsPanel";
 
 import type {
   BuilderMessage,
@@ -32,8 +30,8 @@ import type {
   BuilderWorkspaceSnapshot,
   WorldbookDraft,
   ArtifactView,
-} from "./neo-builder/types";
-import type { Character, CreateCharacterInput, Worldbook } from "./neo-builder/types";
+} from "./types";
+import type { Character, CreateCharacterInput, Worldbook } from "./types";
 import type {
   NeoBuilderEvaluationReport,
   NeoBuilderTurnResult,
@@ -41,7 +39,7 @@ import type {
   NeoPersonalityPalette,
   NeoMvuConfig,
   NeoStatusBarConfig,
-} from "./neo-builder/types";
+} from "./types";
 
 import {
   NEW_TARGET,
@@ -54,14 +52,9 @@ import {
   hasWorkspaceProgress,
   writeBuilderWorkspaceSnapshot,
   writeBuilderWorkspaceRecords,
-  applyEntryProgressEvent,
-  shouldRunBuilderTurnInBackground,
-  getBackgroundResultContent,
-  toConversation,
-  upsertToolEvent,
   getChoicePanelTitle,
   formatCharacterUpdatedAt,
-} from "./neo-builder/utils";
+} from "./utils";
 
 export function NeoBuilderPage() {
   const { t } = useTranslation("neo-builder");
@@ -70,12 +63,12 @@ export function NeoBuilderPage() {
   const { loadCharacters, createCharacter, updateCharacter } = useCharacterStore();
   const [initialSnapshot] = useState(() => readInitialBuilderSnapshot());
   const [targetId, setTargetId] = useState<BuilderTarget>(() => initialSnapshot?.targetId ?? NEW_TARGET);
-  const [messages, setMessages] = useState<BuilderMessage[]>(() => initialSnapshot?.messages ?? initialMessages());
+  const [builderSessionId, setBuilderSessionId] = useState(() => initialSnapshot?.builderSessionId ?? generateId());
+  const session = useBuilderSession(builderSessionId);
+  const { messages, running, error } = session;
   const [input, setInput] = useState(() => initialSnapshot?.input ?? "");
-  const [running, setRunning] = useState(false);
   const [saving, setSaving] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(() => initialSnapshot?.webSearchEnabled ?? false);
-  const [error, setError] = useState<string | null>(null);
   const [dismissedChoiceMessageId, setDismissedChoiceMessageId] = useState<string | null>(null);
   const [lastResult, setLastResult] = useState<NeoBuilderTurnResult | null>(() => initialSnapshot?.lastResult ?? null);
   const [draft, setDraft] = useState<CreateCharacterInput | null>(() => initialSnapshot?.draft ?? null);
@@ -100,7 +93,17 @@ export function NeoBuilderPage() {
   const [workspaceRecords, setWorkspaceRecords] = useState<BuilderWorkspaceRecord[]>(() =>
     readInitialBuilderRecords(initialSnapshot ?? null),
   );
-  const [builderSessionId, setBuilderSessionId] = useState(() => initialSnapshot?.builderSessionId ?? generateId());
+
+  // Restore snapshot messages into the persistent session store on mount
+  const restoredRef = useRef(false);
+  useEffect(() => {
+    if (restoredRef.current) return;
+    restoredRef.current = true;
+    if (initialSnapshot?.messages?.length) {
+      builderSessions.restore(builderSessionId, initialSnapshot.messages);
+    }
+  }, [builderSessionId, initialSnapshot]);
+
   const visibleMessages = messages.filter((message) => !message.hidden);
 
   const {
@@ -178,8 +181,9 @@ export function NeoBuilderPage() {
 
   const resetWorkspace = () => {
     setTargetId(NEW_TARGET);
-    setBuilderSessionId(generateId());
-    setMessages(initialMessages());
+    const newId = generateId();
+    setBuilderSessionId(newId);
+    builderSessions.restore(newId, initialMessages());
     setLastResult(null);
     setDraft(null);
     setWorldbookDraft(null);
@@ -190,7 +194,6 @@ export function NeoBuilderPage() {
     setStatusBars(null);
     setArtifactView(null);
     setSavedCharacterId(null);
-    setError(null);
     setInput("");
   };
 
@@ -201,7 +204,7 @@ export function NeoBuilderPage() {
   const handleSelectWorkspace = (record: BuilderWorkspaceRecord) => {
     setTargetId(record.targetId);
     setBuilderSessionId(record.builderSessionId);
-    setMessages(normalizeRestoredMessages(record.messages));
+    builderSessions.restore(record.builderSessionId, normalizeRestoredMessages(record.messages));
     setInput(record.input);
     setWebSearchEnabled(record.webSearchEnabled);
     setLastResult(record.lastResult);
@@ -214,7 +217,6 @@ export function NeoBuilderPage() {
     setStatusBars(record.statusBars ?? record.draft?.statusBars ?? null);
     setSavedCharacterId(record.savedCharacterId);
     setArtifactView(null);
-    setError(null);
   };
 
   const handleDeleteWorkspace = (record: BuilderWorkspaceRecord) => {
@@ -249,116 +251,23 @@ export function NeoBuilderPage() {
   };
 
   const sendMessage = async (content: string, webSearchOverride = webSearchEnabled, hiddenUserMessage = false) => {
-    const clean = content.trim();
-    if (!clean || running) return;
-
-    const config = useSettingsStore.getState().modelConfig;
-    if (!config) {
-      const message = tt("noApiConfig");
-      setError(message);
-      toast("error", message);
-      return;
+    if (hiddenUserMessage) {
+      // Hidden user messages bypass the store — they're added locally for context
+      const userMsg: BuilderMessage = { id: generateId(), role: "user", content: content.trim(), hidden: true };
+      builderSessions.setMessages(builderSessionId, [...messages, userMsg]);
     }
-
-    const userMessage: BuilderMessage = { id: generateId(), role: "user", content: clean, hidden: hiddenUserMessage };
-    const assistantId = generateId();
-    const backgroundCreation = shouldRunBuilderTurnInBackground(clean, creationPlan, draft, hiddenUserMessage);
-    const assistantMessage: BuilderMessage = {
-      id: assistantId,
-      role: "assistant",
-      content: "",
-      pending: true,
-      backgroundCreation,
-      startedAt: Date.now(),
-    };
-    const nextMessages = [...messages, userMessage];
-
-    setMessages([...nextMessages, assistantMessage]);
-    setInput("");
-    setRunning(true);
-    setError(null);
-
-    try {
-      const result = await runNeoCharacterBuilderTurn({
-        conversation: toConversation(nextMessages),
-        existingCharacter: null,
-        currentDraft: draft,
-        currentWorldbookEntries: worldbookDraft?.entries ?? [],
-        creationPlan,
-        personalityPalette,
-        currentMvu: mvu,
-        currentStatusBars: statusBars,
-        modelConfig: config,
-        scopeId: builderSessionId,
-        webSearchEnabled: webSearchOverride,
-        searchWeb,
-        onContentDelta: (delta) => {
-          if (backgroundCreation) return;
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId ? { ...message, content: `${message.content}${delta}` } : message,
-            ),
-          );
-        },
-        onReasoningDelta: (delta) => {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, reasoningContent: `${message.reasoningContent ?? ""}${delta}` }
-                : message,
-            ),
-          );
-        },
-        onToolEvent: (event) => {
-          if (event.name === "record_entry_output") {
-            setCreationPlan((prev) => applyEntryProgressEvent(prev, event));
-          }
-          setMessages((prev) =>
-            prev.map((message) =>
-              message.id === assistantId
-                ? { ...message, toolEvents: upsertToolEvent(message.toolEvents, event) }
-                : message,
-            ),
-          );
-        },
-      });
-
-      setLastResult(result);
-      applyDraftFromResult(result);
-      void recordUsageCostAndWarn(result.usage);
-      const keepBackgroundCreation = backgroundCreation && !result.choices?.length && !result.questions?.length;
-      setMessages((prev) =>
-        prev.map((message) =>
-          message.id === assistantId
-            ? {
-                ...message,
-                content: keepBackgroundCreation ? getBackgroundResultContent(result) : result.content,
-                choices: result.choices,
-                questions: result.questions,
-                backgroundCreation: keepBackgroundCreation,
-                reasoningContent: result.reasoningContent,
-                toolEvents: result.toolEvents,
-                usage: result.usage,
-                pending: false,
-                completedAt: Date.now(),
-              }
-            : message,
-        ),
-      );
-    } catch (err) {
-      const message = (err as Error).message || tt("builderFailed");
-      setError(message);
-      setMessages((prev) =>
-        prev.map((item) =>
-          item.id === assistantId
-            ? { ...item, content: message, backgroundCreation: false, pending: false, completedAt: Date.now() }
-            : item,
-        ),
-      );
-      toast("error", message);
-    } finally {
-      setRunning(false);
-    }
+    const result = await builderSessions.sendMessage(builderSessionId, content, webSearchOverride, {
+      draft,
+      worldbookDraft,
+      creationPlan,
+      personalityPalette,
+      mvu,
+      statusBars,
+    });
+    if (!result) return;
+    setLastResult(result);
+    applyDraftFromResult(result);
+    void recordUsageCostAndWarn(result.usage);
   };
 
   const handleChoice = (value: string, choice?: ChoiceInputPanelChoice) => {
@@ -413,7 +322,9 @@ export function NeoBuilderPage() {
 
     const normalizedName = nextDraft.name.trim();
     if (!normalizedName) return null;
-    const sameName = (await characterRepository.list(true)).filter((character) => character.name.trim() === normalizedName);
+    const sameName = (await characterRepository.list(true)).filter(
+      (character) => character.name.trim() === normalizedName,
+    );
     return sameName.length === 1 ? sameName[0].id : null;
   };
 
@@ -421,7 +332,6 @@ export function NeoBuilderPage() {
     if (!draft?.name.trim()) return;
 
     setSaving(true);
-    setError(null);
     try {
       const nextDraft = { ...draft, statusBars: statusBars ?? draft.statusBars };
       const existingCharacterId = await findExistingCharacterIdForSave(nextDraft);
@@ -440,7 +350,6 @@ export function NeoBuilderPage() {
       toast("success", tt("saveSuccess", { name: saved.name }));
     } catch (err) {
       const message = (err as Error).message || tt("saveFailed");
-      setError(message);
       toast("error", message);
     } finally {
       setSaving(false);
@@ -573,7 +482,7 @@ export function NeoBuilderPage() {
         <div className="flex min-w-0 items-center justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold">{t("title")}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{t("subtitle")}</p>
+            <p className="text-muted-foreground mt-1 text-sm">{t("subtitle")}</p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => navigate("/character")}>
@@ -584,7 +493,7 @@ export function NeoBuilderPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[230px_1fr] xl:grid-cols-[230px_1fr_340px] gap-4 p-4 flex-1 overflow-hidden">
+      <div className="grid flex-1 grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[230px_1fr] xl:grid-cols-[230px_1fr_340px]">
         <BuilderWorkspaceList
           records={workspaceRecords}
           activeWorkspaceId={builderSessionId}
@@ -594,7 +503,7 @@ export function NeoBuilderPage() {
           onDelete={handleDeleteWorkspace}
         />
 
-        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border bg-background">
+        <section className="bg-background flex min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border">
           <VirtualList
             virtualizer={builderVirtualizer}
             containerRef={builderScrollRef}
@@ -604,17 +513,17 @@ export function NeoBuilderPage() {
               const message = visibleMessages[index];
               if (!message) return null;
               return (
-                <div className="mx-auto w-full min-w-0 max-w-4xl pb-5">
+                <div className="mx-auto w-full max-w-4xl min-w-0 pb-5">
                   <BuilderChatMessage message={message} creationPlan={creationPlan} />
                 </div>
               );
             }}
           />
 
-          {error && <div className="mx-5 mb-3 rounded-md bg-destructive/10 p-3 text-sm text-destructive">{error}</div>}
+          {error && <div className="bg-destructive/10 text-destructive mx-5 mb-3 rounded-md p-3 text-sm">{error}</div>}
 
-          <div className="shrink-0 border-t bg-card p-4">
-            <div className="mx-auto w-full min-w-0 max-w-4xl">
+          <div className="bg-card shrink-0 border-t p-4">
+            <div className="mx-auto w-full max-w-4xl min-w-0">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
@@ -710,12 +619,12 @@ export function NeoBuilderPage() {
           </DialogHeader>
           {creationPlan ? (
             <div className="space-y-4 text-sm">
-              <div className="grid gap-2 rounded-md border bg-background p-3 text-xs text-muted-foreground sm:grid-cols-3">
+              <div className="bg-background text-muted-foreground grid gap-2 rounded-md border p-3 text-xs sm:grid-cols-3">
                 <span>项目：{creationPlan.project.name}</span>
                 <span>条目：{creationPlan.entries.length}</span>
                 <span>更新：{formatCharacterUpdatedAt(creationPlan.updatedAt)}</span>
               </div>
-              <pre className="max-h-[58vh] overflow-auto whitespace-pre-wrap wrap-break-word rounded-md border bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+              <pre className="bg-muted/30 max-h-[58vh] overflow-auto rounded-md border p-4 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {creationPlan.yaml}
               </pre>
             </div>
@@ -737,27 +646,27 @@ export function NeoBuilderPage() {
           {personalityPalette ? (
             <div className="space-y-4 text-sm">
               <div className="grid gap-3 sm:grid-cols-3">
-                <section className="rounded-md border bg-background p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground">底色</h3>
+                <section className="bg-background rounded-md border p-3">
+                  <h3 className="text-muted-foreground text-xs font-semibold">底色</h3>
                   <p className="mt-2 wrap-break-word">{personalityPalette.base || "-"}</p>
                 </section>
-                <section className="rounded-md border bg-background p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground">主色调</h3>
+                <section className="bg-background rounded-md border p-3">
+                  <h3 className="text-muted-foreground text-xs font-semibold">主色调</h3>
                   <p className="mt-2 wrap-break-word">{personalityPalette.main.join("、") || "-"}</p>
                 </section>
-                <section className="rounded-md border bg-background p-3">
-                  <h3 className="text-xs font-semibold text-muted-foreground">点缀</h3>
+                <section className="bg-background rounded-md border p-3">
+                  <h3 className="text-muted-foreground text-xs font-semibold">点缀</h3>
                   <p className="mt-2 wrap-break-word">{personalityPalette.accents.join("、") || "-"}</p>
                 </section>
               </div>
               {personalityPalette.derivatives.map((derivative) => (
-                <section key={derivative.color} className="rounded-md border bg-background p-4">
+                <section key={derivative.color} className="bg-background rounded-md border p-4">
                   <h3 className="mb-2 text-sm font-semibold">{derivative.color}衍生</h3>
                   <div className="space-y-2">
                     {derivative.items.map((item, index) => (
                       <p
                         key={`${derivative.color}-${index}`}
-                        className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed"
+                        className="text-sm leading-relaxed wrap-break-word whitespace-pre-wrap"
                       >
                         {index + 1}. {item}
                       </p>
@@ -766,11 +675,14 @@ export function NeoBuilderPage() {
                 </section>
               ))}
               {personalityPalette.futureDerivatives?.length ? (
-                <section className="rounded-md border bg-background p-4">
+                <section className="bg-background rounded-md border p-4">
                   <h3 className="mb-2 text-sm font-semibold">未来衍生</h3>
                   <div className="space-y-2">
                     {personalityPalette.futureDerivatives.map((item, index) => (
-                      <p key={`${item}-${index}`} className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
+                      <p
+                        key={`${item}-${index}`}
+                        className="text-sm leading-relaxed wrap-break-word whitespace-pre-wrap"
+                      >
                         {item}
                       </p>
                     ))}
@@ -779,8 +691,8 @@ export function NeoBuilderPage() {
               ) : null}
               {personalityPalette.compiledText ? (
                 <section>
-                  <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Compiled Personality</h3>
-                  <p className="whitespace-pre-wrap wrap-break-word rounded-md border bg-muted/30 p-3 text-sm leading-relaxed">
+                  <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">Compiled Personality</h3>
+                  <p className="bg-muted/30 rounded-md border p-3 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap">
                     {personalityPalette.compiledText}
                   </p>
                 </section>
@@ -805,27 +717,27 @@ export function NeoBuilderPage() {
             <div className="space-y-4 text-sm">
               <div className="grid gap-3 sm:grid-cols-2">
                 {statusBars.bars.map((bar) => (
-                  <section key={bar.id} className="rounded-md border bg-background p-3">
+                  <section key={bar.id} className="bg-background rounded-md border p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="break-words text-sm font-semibold">{bar.label}</h3>
-                        <p className="mt-1 text-xs text-muted-foreground">
+                        <h3 className="text-sm font-semibold break-words">{bar.label}</h3>
+                        <p className="text-muted-foreground mt-1 text-xs">
                           {bar.assetId} · {bar.id}
                         </p>
                       </div>
-                      <span className="shrink-0 rounded bg-muted px-2 py-1 text-xs">
+                      <span className="bg-muted shrink-0 rounded px-2 py-1 text-xs">
                         {bar.value ?? "-"} / {bar.max}
                       </span>
                     </div>
                     {bar.description ? (
-                      <p className="mt-3 whitespace-pre-wrap wrap-break-word text-xs text-muted-foreground">
+                      <p className="text-muted-foreground mt-3 text-xs wrap-break-word whitespace-pre-wrap">
                         {bar.description}
                       </p>
                     ) : null}
                   </section>
                 ))}
               </div>
-              <pre className="max-h-[38vh] overflow-auto whitespace-pre-wrap wrap-break-word rounded-md border bg-muted/30 p-4 font-mono text-xs leading-relaxed">
+              <pre className="bg-muted/30 max-h-[38vh] overflow-auto rounded-md border p-4 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                 {JSON.stringify(statusBars, null, 2)}
               </pre>
             </div>
@@ -846,24 +758,24 @@ export function NeoBuilderPage() {
           </DialogHeader>
           {evaluationReport ? (
             <div className="space-y-4 text-sm">
-              <section className="rounded-md border bg-background p-4">
+              <section className="bg-background rounded-md border p-4">
                 <h3 className="mb-2 text-sm font-semibold">摘要</h3>
-                <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">{evaluationReport.summary}</p>
+                <p className="leading-relaxed wrap-break-word whitespace-pre-wrap">{evaluationReport.summary}</p>
                 {typeof evaluationReport.score === "number" ? (
-                  <p className="mt-2 text-xs text-muted-foreground">Score {evaluationReport.score}/100</p>
+                  <p className="text-muted-foreground mt-2 text-xs">Score {evaluationReport.score}/100</p>
                 ) : null}
               </section>
-              <section className="rounded-md border bg-background p-4">
+              <section className="bg-background rounded-md border p-4">
                 <h3 className="mb-2 text-sm font-semibold">问题</h3>
                 {evaluationReport.issues.length ? (
                   <div className="space-y-2">
                     {evaluationReport.issues.map((issue, index) => (
-                      <div key={`${issue.target}-${index}`} className="rounded-md border bg-muted/20 p-3">
-                        <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <div key={`${issue.target}-${index}`} className="bg-muted/20 rounded-md border p-3">
+                        <div className="text-muted-foreground mb-1 flex flex-wrap items-center gap-2 text-xs">
                           <span>{issue.severity}</span>
                           <span>{issue.target}</span>
                         </div>
-                        <p className="whitespace-pre-wrap wrap-break-word">{issue.message}</p>
+                        <p className="wrap-break-word whitespace-pre-wrap">{issue.message}</p>
                       </div>
                     ))}
                   </div>
@@ -871,11 +783,11 @@ export function NeoBuilderPage() {
                   <p className="text-muted-foreground">暂无问题</p>
                 )}
               </section>
-              <section className="rounded-md border bg-background p-4">
+              <section className="bg-background rounded-md border p-4">
                 <h3 className="mb-2 text-sm font-semibold">修改建议</h3>
                 <div className="space-y-2">
                   {evaluationReport.suggestions.map((item, index) => (
-                    <p key={`${item}-${index}`} className="whitespace-pre-wrap wrap-break-word">
+                    <p key={`${item}-${index}`} className="wrap-break-word whitespace-pre-wrap">
                       {index + 1}. {item}
                     </p>
                   ))}
@@ -902,33 +814,33 @@ export function NeoBuilderPage() {
               {draft.tags?.length ? (
                 <div className="flex flex-wrap gap-2">
                   {draft.tags.map((tag) => (
-                    <span key={tag} className="rounded-md bg-muted px-2 py-1 text-xs text-muted-foreground">
+                    <span key={tag} className="bg-muted text-muted-foreground rounded-md px-2 py-1 text-xs">
                       {tag}
                     </span>
                   ))}
                 </div>
               ) : null}
               <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Description</h3>
-                <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">{draft.description || "-"}</p>
+                <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">Description</h3>
+                <p className="leading-relaxed wrap-break-word whitespace-pre-wrap">{draft.description || "-"}</p>
               </section>
               <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Personality</h3>
-                <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">{draft.personality || "-"}</p>
+                <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">Personality</h3>
+                <p className="leading-relaxed wrap-break-word whitespace-pre-wrap">{draft.personality || "-"}</p>
               </section>
               <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Scenario</h3>
-                <p className="whitespace-pre-wrap wrap-break-word leading-relaxed">{draft.scenario || "-"}</p>
+                <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">Scenario</h3>
+                <p className="leading-relaxed wrap-break-word whitespace-pre-wrap">{draft.scenario || "-"}</p>
               </section>
               <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">First Message</h3>
-                <p className="whitespace-pre-wrap wrap-break-word rounded-md border bg-muted/30 p-3 leading-relaxed">
+                <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">First Message</h3>
+                <p className="bg-muted/30 rounded-md border p-3 leading-relaxed wrap-break-word whitespace-pre-wrap">
                   {draft.firstMessage || "-"}
                 </p>
               </section>
               <section>
-                <h3 className="mb-2 text-xs font-semibold uppercase text-muted-foreground">Example Dialogues</h3>
-                <p className="whitespace-pre-wrap wrap-break-word rounded-md border bg-background p-3 font-mono text-xs leading-relaxed">
+                <h3 className="text-muted-foreground mb-2 text-xs font-semibold uppercase">Example Dialogues</h3>
+                <p className="bg-background rounded-md border p-3 font-mono text-xs leading-relaxed wrap-break-word whitespace-pre-wrap">
                   {draft.exampleDialogues || "-"}
                 </p>
               </section>
@@ -951,23 +863,25 @@ export function NeoBuilderPage() {
           {worldbookDraft?.entries.length ? (
             <div className="space-y-4">
               {worldbookDraft.entries.map((entry, index) => (
-                <section key={`${entry.title}-${index}`} className="rounded-md border bg-background p-4">
+                <section key={`${entry.title}-${index}`} className="bg-background rounded-md border p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <h3 className="min-w-0 wrap-break-word text-sm font-semibold">{entry.title}</h3>
-                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      <span className="rounded bg-muted px-2 py-1">{entry.type}</span>
-                      <span className="rounded bg-muted px-2 py-1">{entry.position || "afterHistory"}</span>
-                      <span className="rounded bg-muted px-2 py-1">priority {entry.priority}</span>
-                      <span className="rounded bg-muted px-2 py-1">{entry.triggerMode}</span>
+                    <h3 className="min-w-0 text-sm font-semibold wrap-break-word">{entry.title}</h3>
+                    <div className="text-muted-foreground flex flex-wrap gap-2 text-xs">
+                      <span className="bg-muted rounded px-2 py-1">{entry.type}</span>
+                      <span className="bg-muted rounded px-2 py-1">{entry.position || "afterHistory"}</span>
+                      <span className="bg-muted rounded px-2 py-1">priority {entry.priority}</span>
+                      <span className="bg-muted rounded px-2 py-1">{entry.triggerMode}</span>
                     </div>
                   </div>
                   {entry.keys ? (
-                    <p className="mt-3 wrap-break-word text-xs text-muted-foreground">Keys: {entry.keys}</p>
+                    <p className="text-muted-foreground mt-3 text-xs wrap-break-word">Keys: {entry.keys}</p>
                   ) : null}
                   {entry.secondaryKeys ? (
-                    <p className="mt-1 wrap-break-word text-xs text-muted-foreground">Secondary: {entry.secondaryKeys}</p>
+                    <p className="text-muted-foreground mt-1 text-xs wrap-break-word">
+                      Secondary: {entry.secondaryKeys}
+                    </p>
                   ) : null}
-                  <p className="mt-3 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">{entry.content}</p>
+                  <p className="mt-3 text-sm leading-relaxed wrap-break-word whitespace-pre-wrap">{entry.content}</p>
                 </section>
               ))}
             </div>

@@ -3,26 +3,53 @@ import { useNavigate } from "react-router";
 import { Bug, Plug, Palette, Regex, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { getStorageItem, setStorageItem } from "@/db/storage";
-import { SettingsSidebar } from "./settings/SettingsSidebar";
-import { AppearanceSection } from "./settings/AppearanceSection";
-import { ContextSection } from "./settings/ContextSection";
-import { GeneralSection } from "./settings/GeneralSection";
-import { ApiSection } from "./settings/ApiSection";
-import { ImageSection } from "./settings/ImageSection";
-import { RegexSection } from "./settings/RegexSection";
+import { SettingsSidebar } from "./SettingsSidebar";
+import { AppearanceSection } from "./AppearanceSection";
+import { ContextSection } from "./ContextSection";
+import { GeneralSection } from "./GeneralSection";
+import { ApiSection } from "./ApiSection";
+import { ImageSection } from "./ImageSection";
+import { RegexSection } from "./RegexSection";
 import { toast } from "@/utils/toast";
 import { getLocale, type Locale } from "@/i18n";
 import { useTranslation } from "react-i18next";
-import type { Section, SectionWithLabel } from "./settings/types";
+import type { Section, SectionWithLabel } from "./types";
+
+const SETTINGS_TAB_KEY = "neotavern_settings_tab";
+const SETTINGS_TAB_TTL_MS = 60_000; // 1 minute
+
+function readCachedTab(): Section | null {
+  try {
+    const raw = sessionStorage.getItem(SETTINGS_TAB_KEY);
+    if (!raw) return null;
+    const { tab, ts } = JSON.parse(raw) as { tab: string; ts: number };
+    if (Date.now() - ts > SETTINGS_TAB_TTL_MS) {
+      sessionStorage.removeItem(SETTINGS_TAB_KEY);
+      return null;
+    }
+    return tab as Section;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedTab(tab: Section) {
+  sessionStorage.setItem(SETTINGS_TAB_KEY, JSON.stringify({ tab, ts: Date.now() }));
+}
 
 export function SettingsPage() {
   const { t } = useTranslation("settings");
   const { t: tt } = useTranslation("toast");
   const navigate = useNavigate();
-  const [section, setSection] = useState<Section>("api");
+  const [section, setSection] = useState<Section>(() => readCachedTab() ?? "api");
   const [locale, setLocale] = useState<Locale>(getLocale);
   const [easterEggClicks, setEasterEggClicks] = useState(0);
   const [secretUnlocked, setSecretUnlocked] = useState(false);
+
+  // Persist selected tab to sessionStorage (1-minute TTL)
+  useEffect(() => {
+    writeCachedTab(section);
+  }, [section]);
 
   const contextTokens = useSettingsStore((s) => s.contextTokens);
   const setContextTokens = useSettingsStore((s) => s.setContextTokens);
@@ -56,7 +83,14 @@ export function SettingsPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadAllConfigs, loadRegexRules, loadMemorySettings, loadImageGenerationSettings, loadDailyCostWarningSettings, loadDailyCostSpent]);
+  }, [
+    loadAllConfigs,
+    loadRegexRules,
+    loadMemorySettings,
+    loadImageGenerationSettings,
+    loadDailyCostWarningSettings,
+    loadDailyCostSpent,
+  ]);
 
   const handleContextEasterEgg = () => {
     if (secretUnlocked) {
@@ -85,7 +119,7 @@ export function SettingsPage() {
         t={t}
       />
 
-      <div className="flex-1 p-6 overflow-auto">
+      <div className="flex-1 overflow-auto p-6">
         {section === "general" && <GeneralSection locale={locale} setLocale={setLocale} t={t} />}
         {section === "api" && <ApiSection t={t} />}
         {section === "appearance" && <AppearanceSection t={t} />}

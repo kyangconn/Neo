@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useState, useRef } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router";
 import {
-  ChevronDown,
   ChevronRight,
   Copy,
   Pencil,
@@ -14,7 +13,6 @@ import {
   Bot,
   User as UserIcon,
   CircleDashed,
-  CheckCircle2,
 } from "lucide-react";
 import { Button, Card, CardContent, cn } from "@neo-tavern/ui";
 import { useCharacterStore } from "@/features/character/character.store";
@@ -67,36 +65,33 @@ import {
 } from "@/features/agentic-play/agentic-play";
 import { getAgenticPlayPresetItems } from "@/features/agentic-play/agentic-preset";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChatSidebar } from "@/pages/chat/ChatSidebar";
-import { ChatRightPanel } from "@/pages/chat/ChatRightPanel";
-import { ChatInputArea } from "@/pages/chat/ChatInputArea";
-import { useBranchNavigation } from "@/pages/chat/hooks/useBranchNavigation";
-import { useSavepointManager } from "@/pages/chat/hooks/useSavepointManager";
 import {
+  ChatSidebar,
+  ChatRightPanel,
+  ChatInputArea,
+  useBranchNavigation,
+  useSavepointManager,
+  ChatActivityTimeline,
   ImageDisplayBlockView,
   ensureImageSlots,
   clipImageReference,
   resolveImagePlannerConfig,
-} from "@/pages/chat/DisplayBlocks";
-import { toast } from "@/utils/toast";
-
-import {
   Avatar,
   SideBlockView,
   TemplateDisplayBlockView,
+} from "@/pages/chat";
+import { toast } from "@/utils/toast";
+import {
   CONTINUE_PROMPT,
   DEEPSEEK_CONTEXT_LIMIT,
   CHAT_FONT_SIZE_KEY,
   clampChatFontSize,
   getChatDraftKey,
-  formatDuration,
   getGenerationStatus,
   replaceUserPlaceholders,
   type PendingSendItem,
-} from "@/pages/chat/utils";
-import { MessageEditBox } from "@/pages/chat/MessageEditBox";
-import type { TokenUsageView } from "@/pages/chat/types";
-import {
+  type TokenUsageView,
+  MessageEditBox,
   ImagePromptDialog,
   PromptDialog,
   SaveDialog,
@@ -105,7 +100,7 @@ import {
   DeleteMessageDialog,
   ThinkingDialog,
   RegenerateDialog,
-} from "@/pages/chat/ChatDialogs";
+} from "@/pages/chat";
 
 function getChoiceAgenticOption(choice?: ChoiceInputPanelChoice): AgenticActionOption | null {
   const raw = choice?.meta?.agenticOption;
@@ -128,86 +123,6 @@ function buildAgenticChoicePayload(option: AgenticActionOption, roll: DiceRollRe
     },
     null,
     2,
-  );
-}
-
-function ChatActivityTimeline({
-  message,
-  active,
-  generationStatus,
-}: {
-  message: Message;
-  active: boolean;
-  generationStatus: ReturnType<typeof getGenerationStatus>;
-}) {
-  const [now, setNow] = useState(() => Date.now());
-  const [thinkingOpen, setThinkingOpen] = useState(false);
-
-  useEffect(() => {
-    if (!active) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, [active]);
-
-  const startedAt = new Date(message.createdAt).getTime();
-  const activeElapsed = active && Number.isFinite(startedAt) ? now - startedAt : null;
-  const finalElapsed = message.generateDuration ?? message.thinkingDuration ?? null;
-  const elapsed = activeElapsed ?? finalElapsed;
-
-  const reasoningLines = (message.reasoningContent ?? "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-  const reasoningPreview = reasoningLines.length
-    ? reasoningLines[reasoningLines.length - 1]
-    : active
-      ? generationStatus.detail
-      : "回复已生成";
-
-  return (
-    <div className="mb-3 min-w-0">
-      {elapsed != null && (
-        <div className="mb-3 grid grid-cols-[minmax(0,1fr)_6.5rem_minmax(0,1fr)] items-center gap-3 text-xs text-muted-foreground">
-          <div className="h-px flex-1 bg-border" />
-          <span className="shrink-0 text-center tabular-nums">任务耗时 {formatDuration(Math.max(0, elapsed))}</span>
-          <div className="h-px flex-1 bg-border" />
-        </div>
-      )}
-
-      <div className="min-w-0 border-l border-border/80">
-        <div className="relative pb-3 pl-5">
-          <span
-            className={`absolute left-0 top-1 flex h-3 w-3 items-center justify-center rounded-full bg-background ${
-              active ? "text-primary" : "text-emerald-500"
-            }`}
-          >
-            {active ? <CircleDashed className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-          </span>
-          <button
-            type="button"
-            className="flex w-full min-w-0 max-w-full items-center gap-1 overflow-hidden text-left text-sm font-medium disabled:cursor-default"
-            onClick={() => setThinkingOpen((open) => !open)}
-            disabled={!message.reasoningContent}
-          >
-            <Brain className="h-3.5 w-3.5 shrink-0" />
-            <span className="shrink-0">{active ? "正在思考" : "已完成思考"}</span>
-            {!thinkingOpen && reasoningPreview ? (
-              <span className="min-w-0 truncate text-muted-foreground">· {reasoningPreview}</span>
-            ) : null}
-            {thinkingOpen ? (
-              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            )}
-          </button>
-          {thinkingOpen && message.reasoningContent ? (
-            <div className="mt-2 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed text-muted-foreground">
-              {message.reasoningContent}
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -576,7 +491,15 @@ export function ChatPage() {
         metadata: options.metadata,
       });
     },
-    [currentChat, sending, branch.visibleMessages.length, character?.firstMessage, addMessage, personaName, sendMessage],
+    [
+      currentChat,
+      sending,
+      branch.visibleMessages.length,
+      character?.firstMessage,
+      addMessage,
+      personaName,
+      sendMessage,
+    ],
   );
 
   const handleAgenticChoiceSubmit = (value: string, choice?: ChoiceInputPanelChoice) => {
@@ -1245,7 +1168,10 @@ export function ChatPage() {
   return (
     <div className="flex h-full flex-col" style={{ "--chat-font-size": fontSize + "px" } as React.CSSProperties}>
       <div
-        className={cn("grid grid-cols-1 flex-1 gap-3 overflow-hidden p-4 transition-[grid-template-columns] duration-200", chatLayoutColumns)}
+        className={cn(
+          "grid flex-1 grid-cols-1 gap-3 overflow-hidden p-4 transition-[grid-template-columns] duration-200",
+          chatLayoutColumns,
+        )}
       >
         <ChatSidebar
           chats={chatRecords}
@@ -1257,20 +1183,20 @@ export function ChatPage() {
           onToggleCollapsed={() => setChatListCollapsed((value) => !value)}
         />
 
-        <section className="flex chat-grid-cell flex-col rounded-lg border bg-background">
+        <section className="chat-grid-cell bg-background flex flex-col rounded-lg border">
           <div
             ref={messagesContainerRef}
             onScroll={handleChatScroll}
-            className="flex-1 overflow-y-auto p-5 mx-3 my-2 rounded-xl border border-border/40 bg-background/50"
+            className="border-border/40 bg-background/50 mx-3 my-2 flex-1 overflow-y-auto rounded-xl border p-5"
           >
-            {loading && <p className="text-sm text-muted-foreground text-center">Loading...</p>}
+            {loading && <p className="text-muted-foreground text-center text-sm">Loading...</p>}
             {!loading && branch.visibleMessages.length === 0 && !isGeneratingCurrentChat && (
               <div className={cn(chatContentWidthClass, "mx-auto")}>
                 {character ? (
                   <div>
-                    <div className="flex items-center gap-2 mb-1.5 px-1">
+                    <div className="mb-1.5 flex items-center gap-2 px-1">
                       <Avatar name={character.name} src={character.avatar} />
-                      <span className="text-xs font-medium text-muted-foreground">{character.name}</span>
+                      <span className="text-muted-foreground text-xs font-medium">{character.name}</span>
                     </div>
                     <div className="flex gap-3">
                       <div className={cn(firstMessageWidthClass, "min-w-0")}>
@@ -1288,7 +1214,7 @@ export function ChatPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground text-center mt-8">Select a character to start chatting</p>
+                  <p className="text-muted-foreground mt-8 text-center text-sm">Select a character to start chatting</p>
                 )}
               </div>
             )}
@@ -1328,7 +1254,7 @@ export function ChatPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                className="text-muted-foreground hover:text-foreground h-6 w-6"
                                 title="Copy"
                                 onClick={() => handleCopy(msg.content, msg.id)}
                               >
@@ -1341,50 +1267,50 @@ export function ChatPage() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                className="text-muted-foreground hover:text-destructive h-6 w-6"
                                 title="Delete"
                                 onClick={() => setDeleteMsgTarget(msg)}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
                               </Button>
                             </div>
-                            <div className="rounded-lg border bg-primary p-4 text-primary-foreground">
-                            {editingMsgId === msg.id ? (
-                              <MessageEditBox
-                                initialContent={msg.content}
-                                fontSize={fontSize}
-                                onCancel={cancelEdit}
-                                onSave={saveEdit}
-                              />
-                            ) : (
-                              <p
-                                className="whitespace-pre-wrap wrap-break-word leading-relaxed"
-                                style={{ fontSize: `${fontSize}px` }}
-                              >
-                                {displayContent}
-                              </p>
-                            )}
+                            <div className="bg-primary text-primary-foreground rounded-lg border p-4">
+                              {editingMsgId === msg.id ? (
+                                <MessageEditBox
+                                  initialContent={msg.content}
+                                  fontSize={fontSize}
+                                  onCancel={cancelEdit}
+                                  onSave={saveEdit}
+                                />
+                              ) : (
+                                <p
+                                  className="leading-relaxed wrap-break-word whitespace-pre-wrap"
+                                  style={{ fontSize: `${fontSize}px` }}
+                                >
+                                  {displayContent}
+                                </p>
+                              )}
                             </div>
                           </div>
-                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted">
+                          <div className="bg-muted mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
                             <UserIcon className="h-4 w-4" />
                           </div>
                         </div>
                       ) : (
                         <div className="flex min-w-0 justify-start gap-3 pb-5">
-                          <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                          <div className="bg-primary text-primary-foreground mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
                             <Bot className="h-4 w-4" />
                           </div>
-                          <div className={cn("group min-w-0 w-full overflow-hidden py-1", chatContentWidthClass)}>
+                          <div className={cn("group w-full min-w-0 overflow-hidden py-1", chatContentWidthClass)}>
                             <div className="mb-2 flex min-w-0 items-center justify-between gap-3">
-                              <span className="min-w-0 truncate text-xs font-medium text-muted-foreground">
+                              <span className="text-muted-foreground min-w-0 truncate text-xs font-medium">
                                 {aiName}
                               </span>
                               <div className="flex shrink-0 gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                  className="text-muted-foreground hover:text-foreground h-6 w-6"
                                   title="Copy"
                                   onClick={() => handleCopy(msg.content, msg.id)}
                                 >
@@ -1397,7 +1323,7 @@ export function ChatPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                  className="text-muted-foreground hover:text-foreground h-6 w-6"
                                   title="Edit"
                                   onClick={() => startEdit(msg)}
                                 >
@@ -1406,7 +1332,7 @@ export function ChatPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                  className="text-muted-foreground hover:text-foreground h-6 w-6"
                                   title="View full prompt"
                                   onClick={showPromptDialog}
                                 >
@@ -1416,7 +1342,7 @@ export function ChatPage() {
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 text-muted-foreground hover:text-purple-400"
+                                    className="text-muted-foreground h-6 w-6 hover:text-purple-400"
                                     title="查看创作过程"
                                     onClick={() => setThinkingMsg(msg)}
                                   >
@@ -1430,21 +1356,19 @@ export function ChatPage() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                      className="text-muted-foreground hover:text-foreground h-6 w-6"
                                       title={isMessageImageBusy ? "图片生成中" : "生成图片"}
                                       onClick={() => void handleGenerateMessageImages(msg)}
                                       disabled={isMessageImageBusy}
                                     >
-                                      <ImageIcon
-                                        className={cn("h-3.5 w-3.5", isMessageImageBusy && "animate-pulse")}
-                                      />
+                                      <ImageIcon className={cn("h-3.5 w-3.5", isMessageImageBusy && "animate-pulse")} />
                                     </Button>
                                   )}
                                 {isFinalAi && (
                                   <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="h-6 w-6 text-muted-foreground hover:text-foreground"
+                                    className="text-muted-foreground hover:text-foreground h-6 w-6"
                                     title="Regenerate"
                                     onClick={() => {
                                       if (!sending) setRegenerateDialogOpen(true);
@@ -1457,7 +1381,7 @@ export function ChatPage() {
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="h-6 w-6 text-muted-foreground hover:text-destructive"
+                                  className="text-muted-foreground hover:text-destructive h-6 w-6"
                                   title="Delete"
                                   onClick={() => setDeleteMsgTarget(msg)}
                                 >
@@ -1508,13 +1432,13 @@ export function ChatPage() {
                                   ) : block.type === "dialogue" ? (
                                     <div
                                       key={bi}
-                                      className="relative mt-3 rounded-md border bg-accent/40 p-3 first:mt-0"
+                                      className="bg-accent/40 relative mt-3 rounded-md border p-3 first:mt-0"
                                     >
-                                      <span className="absolute -top-2.5 left-3 rounded bg-primary px-2 py-0.5 text-[10px] font-semibold text-primary-foreground">
+                                      <span className="bg-primary text-primary-foreground absolute -top-2.5 left-3 rounded px-2 py-0.5 text-[10px] font-semibold">
                                         {block.speaker}
                                       </span>
                                       <p
-                                        className="whitespace-pre-wrap wrap-break-word pt-0.5"
+                                        className="pt-0.5 wrap-break-word whitespace-pre-wrap"
                                         style={{ fontSize: `${fontSize}px` }}
                                       >
                                         {block.content}
@@ -1523,7 +1447,7 @@ export function ChatPage() {
                                   ) : (
                                     <p
                                       key={bi}
-                                      className="whitespace-pre-wrap wrap-break-word leading-relaxed"
+                                      className="leading-relaxed wrap-break-word whitespace-pre-wrap"
                                       style={{ fontSize: `${fontSize}px` }}
                                     >
                                       {block.content}
@@ -1533,16 +1457,16 @@ export function ChatPage() {
                               </div>
                             ) : isStreamingAi && !hasDisplayContent ? (
                               <div className="space-y-2">
-                                <p className="text-sm text-muted-foreground">{generationStatus.detail}</p>
+                                <p className="text-muted-foreground text-sm">{generationStatus.detail}</p>
                                 <div className="flex gap-1" aria-label={generationStatus.label}>
-                                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:0ms]" />
-                                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:150ms]" />
-                                  <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:300ms]" />
+                                  <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:0ms]" />
+                                  <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:150ms]" />
+                                  <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:300ms]" />
                                 </div>
                               </div>
                             ) : (
                               <p
-                                className="whitespace-pre-wrap wrap-break-word leading-relaxed"
+                                className="leading-relaxed wrap-break-word whitespace-pre-wrap"
                                 style={{ fontSize: `${fontSize}px` }}
                               >
                                 {displayContent}
@@ -1563,27 +1487,27 @@ export function ChatPage() {
               </div>
               {isGeneratingCurrentChat && !hasStreamingMessage && (
                 <div className="flex min-w-0 justify-start gap-3 pb-5">
-                  <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <div className="bg-primary text-primary-foreground mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-md">
                     <Bot className="h-4 w-4" />
                   </div>
-                  <div className={cn("min-w-0 w-full py-1", chatContentWidthClass)}>
-                    <div className="mb-3 min-w-0 border-l border-border/80">
+                  <div className={cn("w-full min-w-0 py-1", chatContentWidthClass)}>
+                    <div className="border-border/80 mb-3 min-w-0 border-l">
                       <div className="relative pb-3">
-                        <span className="absolute left-0 top-1 flex h-3 w-3 items-center justify-center rounded-full bg-background text-primary">
+                        <span className="bg-background text-primary absolute top-1 left-0 flex h-3 w-3 items-center justify-center rounded-full">
                           <CircleDashed className="h-3.5 w-3.5 animate-spin" />
                         </span>
                         <div className="flex min-w-0 items-center gap-1 overflow-hidden text-sm font-medium">
                           <Brain className="h-3.5 w-3.5 shrink-0" />
                           <span className="shrink-0">正在思考</span>
-                          <span className="min-w-0 truncate text-muted-foreground">· {generationStatus.detail}</span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          <span className="text-muted-foreground min-w-0 truncate">· {generationStatus.detail}</span>
+                          <ChevronRight className="text-muted-foreground h-3.5 w-3.5 shrink-0" />
                         </div>
                       </div>
                     </div>
                     <div className="flex gap-1" aria-label={generationStatus.label}>
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:0ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:150ms]" />
-                      <span className="h-2 w-2 animate-bounce rounded-full bg-primary/50 [animation-delay:300ms]" />
+                      <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:0ms]" />
+                      <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:150ms]" />
+                      <span className="bg-primary/50 h-2 w-2 animate-bounce rounded-full [animation-delay:300ms]" />
                     </div>
                   </div>
                 </div>
@@ -1592,7 +1516,7 @@ export function ChatPage() {
           </div>
 
           {activeAgenticChoiceBlock && activeAgenticPanelChoices.length > 0 ? (
-            <div className="shrink-0 border-t bg-card p-4">
+            <div className="bg-card shrink-0 border-t p-4">
               <div className={cn("mx-auto w-full min-w-0", chatContentWidthClass)}>
                 <ChoiceInputPanel
                   key={activeAgenticChoiceBlock.msg.id}
