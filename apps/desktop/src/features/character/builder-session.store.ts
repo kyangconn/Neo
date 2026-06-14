@@ -42,6 +42,7 @@ type Snapshot = Pick<SessionState, "sessionId" | "messages" | "running" | "error
 class BuilderSessionStore {
   private sessions = new Map<string, SessionState>();
   private listeners = new Set<() => void>();
+  private snapshots = new Map<string, Snapshot>(); // cached for reference stability
 
   private getOrCreate(sessionId: string): SessionState {
     let session = this.sessions.get(sessionId);
@@ -62,7 +63,14 @@ class BuilderSessionStore {
 
   getSnapshot(sessionId: string): Snapshot {
     const s = this.getOrCreate(sessionId);
-    return { sessionId: s.sessionId, messages: s.messages, running: s.running, error: s.error };
+    const prev = this.snapshots.get(sessionId);
+    // Return cached reference when nothing changed (useSyncExternalStore uses Object.is)
+    if (prev && prev.messages === s.messages && prev.running === s.running && prev.error === s.error) {
+      return prev;
+    }
+    const next: Snapshot = { sessionId: s.sessionId, messages: s.messages, running: s.running, error: s.error };
+    this.snapshots.set(sessionId, next);
+    return next;
   }
 
   setMessages(sessionId: string, messages: BuilderMessage[]): void {
