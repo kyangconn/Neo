@@ -1,7 +1,7 @@
-import { startTransition, useEffect, useLayoutEffect, useState, useRef } from "react";
+import { startTransition, useCallback, useEffect, useLayoutEffect, useState, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
-import { ArrowLeft, CheckCircle2, Globe2, Send } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Globe2, Send, StopCircle } from "lucide-react";
 import { Button, Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Textarea } from "@neo-tavern/ui";
 import { useVirtualList, VirtualList } from "@/components";
 import { generateId } from "@neo-tavern/shared";
@@ -96,11 +96,13 @@ export function NeoBuilderPage() {
 
   // Restore snapshot messages into the persistent session store on mount
   const restoredRef = useRef(false);
+  const appliedResultVersionRef = useRef(0);
   useEffect(() => {
     if (restoredRef.current) return;
     restoredRef.current = true;
-    if (initialSnapshot?.messages?.length) {
-      builderSessions.restore(builderSessionId, initialSnapshot.messages);
+    const currentSession = builderSessions.getSnapshot(builderSessionId);
+    if (initialSnapshot?.messages?.length && currentSession.messages.length === 0 && !currentSession.running) {
+      builderSessions.restore(builderSessionId, initialSnapshot.messages, initialSnapshot.lastResult);
     }
   }, [builderSessionId, initialSnapshot]);
 
@@ -204,7 +206,7 @@ export function NeoBuilderPage() {
   const handleSelectWorkspace = (record: BuilderWorkspaceRecord) => {
     setTargetId(record.targetId);
     setBuilderSessionId(record.builderSessionId);
-    builderSessions.restore(record.builderSessionId, normalizeRestoredMessages(record.messages));
+    builderSessions.restore(record.builderSessionId, normalizeRestoredMessages(record.messages), record.lastResult);
     setInput(record.input);
     setWebSearchEnabled(record.webSearchEnabled);
     setLastResult(record.lastResult);
@@ -220,43 +222,62 @@ export function NeoBuilderPage() {
   };
 
   const handleDeleteWorkspace = (record: BuilderWorkspaceRecord) => {
+    builderSessions.abort(record.builderSessionId);
     setWorkspaceRecords((records) => records.filter((item) => item.id !== record.id));
     deleteWorkspaceDir(record.builderSessionId).catch(() => {});
-    if (record.id === builderSessionId) resetWorkspace();
+    if (record.builderSessionId === builderSessionId) resetWorkspace();
   };
 
-  const applyDraftFromResult = (result: NeoBuilderTurnResult) => {
-    if (result.creationPlan) setCreationPlan(result.creationPlan);
-    if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
-    if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
-    if (result.mvu) setMvu(result.mvu);
-    if (result.statusBars) setStatusBars(result.statusBars);
-    if (!result.draft) return;
-    if (!savedCharacterId) setTargetId(NEW_TARGET);
-    setDraft(result.draft.character);
-    setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
-    setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
-    setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
-    if (result.draft.mvu) setMvu(result.draft.mvu);
-    setStatusBars(result.draft.statusBars ?? result.statusBars ?? statusBars);
-    setWorldbookDraft(
-      result.draft.worldbookEntries.length > 0
-        ? {
-            name: result.draft.worldbookName,
-            description: result.draft.worldbookDescription,
-            entries: result.draft.worldbookEntries,
-          }
-        : null,
-    );
-  };
+  const applyDraftFromResult = useCallback(
+    (result: NeoBuilderTurnResult) => {
+      if (result.creationPlan) setCreationPlan(result.creationPlan);
+      if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
+      if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
+      if (result.mvu) setMvu(result.mvu);
+      if (result.statusBars) setStatusBars(result.statusBars);
+      if (!result.draft) return;
+      if (!savedCharacterId) setTargetId(NEW_TARGET);
+      setDraft(result.draft.character);
+      setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
+      setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
+      setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
+      if (result.draft.mvu) setMvu(result.draft.mvu);
+      setStatusBars(result.draft.statusBars ?? result.statusBars ?? statusBars);
+      setWorldbookDraft(
+        result.draft.worldbookEntries.length > 0
+          ? {
+              name: result.draft.worldbookName,
+              description: result.draft.worldbookDescription,
+              entries: result.draft.worldbookEntries,
+            }
+          : null,
+      );
+    },
+    [creationPlan, evaluationReport, personalityPalette, savedCharacterId, statusBars],
+  );
 
+  useEffect(() => {
+    appliedResultVersionRef.current = 0;
+  }, [builderSessionId]);
+
+  useEffect(() => {
+    if (!session.lastResult || session.resultVersion <= 0) return;
+    if (appliedResultVersionRef.current === session.resultVersion) return;
+    appliedResultVersionRef.current = session.resultVersion;
+    setLastResult(session.lastResult);
+    applyDraftFromResult(session.lastResult);
+    void recordUsageCostAndWarn(session.lastResult.usage);
+  }, [applyDraftFromResult, session.lastResult, session.resultVersion]);
+
+  /** Send a user message to the builder session and apply results. */
   const sendMessage = async (content: string, webSearchOverride = webSearchEnabled, hiddenUserMessage = false) => {
     if (hiddenUserMessage) {
       // Hidden user messages bypass the store — they're added locally for context
       const userMsg: BuilderMessage = { id: generateId(), role: "user", content: content.trim(), hidden: true };
       builderSessions.setMessages(builderSessionId, [...messages, userMsg]);
     }
-    const result = await builderSessions.sendMessage(builderSessionId, content, webSearchOverride, {
+
+    await builderSessions.sendMessage(builderSessionId, content, webSearchOverride, {
       draft,
       worldbookDraft,
       creationPlan,
@@ -264,10 +285,10 @@ export function NeoBuilderPage() {
       mvu,
       statusBars,
     });
-    if (!result) return;
-    setLastResult(result);
-    applyDraftFromResult(result);
-    void recordUsageCostAndWarn(result.usage);
+  };
+
+  const handleAbort = () => {
+    builderSessions.abort(builderSessionId);
   };
 
   const handleChoice = (value: string, choice?: ChoiceInputPanelChoice) => {
@@ -541,6 +562,12 @@ export function NeoBuilderPage() {
                     {t("chat.draftReady")}
                   </span>
                 )}
+                {running ? (
+                  <Button type="button" size="sm" variant="outline" onClick={handleAbort}>
+                    <StopCircle className="mr-1 h-3.5 w-3.5" />
+                    Stop
+                  </Button>
+                ) : null}
               </div>
               {activeChoiceMessage && activeChoicePanelQuestions.length > 0 ? (
                 <div className="mb-3">
