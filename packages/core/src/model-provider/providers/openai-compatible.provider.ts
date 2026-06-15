@@ -1,5 +1,10 @@
 import type { ModelProvider, GenerateInput, GenerateMessage, GenerateResult, GenerateChunk } from "@neo-tavern/shared";
 
+function normalizeReasoningEffort(value?: string | null) {
+  if (!value) return undefined;
+  return value === "maximum" ? "max" : value;
+}
+
 export interface OpenAICompatibleProviderOptions {
   id: string;
   name: string;
@@ -65,8 +70,9 @@ export class OpenAICompatibleProvider implements ModelProvider {
     const normalizedModel = (model || "").trim().toLowerCase();
     if (!normalizedModel.includes("v4")) return {};
 
-    if (reasoningEffort) {
-      return { thinking: { type: "enabled" }, reasoning_effort: reasoningEffort };
+    const normalizedEffort = normalizeReasoningEffort(reasoningEffort);
+    if (normalizedEffort) {
+      return { thinking: { type: "enabled" }, reasoning_effort: normalizedEffort };
     }
     return { thinking: { type: "disabled" } };
   }
