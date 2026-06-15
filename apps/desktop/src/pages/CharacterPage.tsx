@@ -94,7 +94,9 @@ function loadImageElement(blob: Blob) {
   });
 }
 
-async function loadAvatarImageSource(blob: Blob): Promise<CanvasImageSource & { width: number; height: number; close?: () => void }> {
+async function loadAvatarImageSource(
+  blob: Blob,
+): Promise<CanvasImageSource & { width: number; height: number; close?: () => void }> {
   if (typeof createImageBitmap === "function") {
     return createImageBitmap(blob);
   }
@@ -204,7 +206,9 @@ async function rollbackImportedResources(resources: { regexPresetId?: string; wo
   }
 
   if (resources.worldbookId) {
-    const worldbooks = useWorldbookStore.getState().worldbooks.filter((worldbook) => worldbook.id !== resources.worldbookId);
+    const worldbooks = useWorldbookStore
+      .getState()
+      .worldbooks.filter((worldbook) => worldbook.id !== resources.worldbookId);
     await worldbookRepository.save(worldbooks);
     await useWorldbookStore.getState().loadWorldbooks();
   }

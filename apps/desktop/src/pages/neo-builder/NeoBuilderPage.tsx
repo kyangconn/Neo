@@ -258,30 +258,33 @@ export function NeoBuilderPage() {
     if (record.id === builderSessionId) resetWorkspace();
   };
 
-  const applyDraftFromResult = useCallback((result: NeoBuilderTurnResult) => {
-    if (result.creationPlan) setCreationPlan(result.creationPlan);
-    if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
-    if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
-    if (result.mvu) setMvu(result.mvu);
-    if (result.statusBars) setStatusBars(result.statusBars);
-    if (!result.draft) return;
-    if (!savedCharacterId) setTargetId(NEW_TARGET);
-    setDraft(result.draft.character);
-    setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
-    setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
-    setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
-    if (result.draft.mvu) setMvu(result.draft.mvu);
-    setStatusBars(result.draft.statusBars ?? result.statusBars ?? statusBars);
-    setWorldbookDraft(
-      result.draft.worldbookEntries.length > 0
-        ? {
-            name: result.draft.worldbookName,
-            description: result.draft.worldbookDescription,
-            entries: result.draft.worldbookEntries,
-          }
-        : null,
-    );
-  }, [creationPlan, evaluationReport, personalityPalette, savedCharacterId, statusBars]);
+  const applyDraftFromResult = useCallback(
+    (result: NeoBuilderTurnResult) => {
+      if (result.creationPlan) setCreationPlan(result.creationPlan);
+      if (result.personalityPalette) setPersonalityPalette(result.personalityPalette);
+      if (result.evaluationReport) setEvaluationReport(result.evaluationReport);
+      if (result.mvu) setMvu(result.mvu);
+      if (result.statusBars) setStatusBars(result.statusBars);
+      if (!result.draft) return;
+      if (!savedCharacterId) setTargetId(NEW_TARGET);
+      setDraft(result.draft.character);
+      setCreationPlan(result.draft.creationPlan ?? result.creationPlan ?? creationPlan);
+      setPersonalityPalette(result.draft.personalityPalette ?? result.personalityPalette ?? personalityPalette);
+      setEvaluationReport(result.draft.evaluationReport ?? result.evaluationReport ?? evaluationReport);
+      if (result.draft.mvu) setMvu(result.draft.mvu);
+      setStatusBars(result.draft.statusBars ?? result.statusBars ?? statusBars);
+      setWorldbookDraft(
+        result.draft.worldbookEntries.length > 0
+          ? {
+              name: result.draft.worldbookName,
+              description: result.draft.worldbookDescription,
+              entries: result.draft.worldbookEntries,
+            }
+          : null,
+      );
+    },
+    [creationPlan, evaluationReport, personalityPalette, savedCharacterId, statusBars],
+  );
 
   /** Send a user message to the builder session and apply results. */
   const sendMessage = async (content: string, webSearchOverride = webSearchEnabled, hiddenUserMessage = false) => {
@@ -451,7 +454,7 @@ export function NeoBuilderPage() {
           <div
             ref={builderScrollRef}
             onScroll={handleBuilderScroll}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-5 py-5"
+            className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-5"
             style={{ overflowAnchor: "none" }}
           >
             <div className="mx-auto w-full max-w-4xl min-w-0" style={{ overflowAnchor: "none" }}>
@@ -465,9 +468,7 @@ export function NeoBuilderPage() {
           </div>
 
           {builderError && (
-            <div className="bg-destructive/10 text-destructive mx-5 mb-3 rounded-md p-3 text-sm">
-              {builderError}
-            </div>
+            <div className="bg-destructive/10 text-destructive mx-5 mb-3 rounded-md p-3 text-sm">{builderError}</div>
           )}
 
           <div className="bg-card shrink-0 border-t p-4">
