@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  '@react-native-oh/react-native-harmony-cli@0.84.1': 0f2f217d3f8176bedd7c9f0b484b1695e47631066a6e7f756b11eebee81d2023
+
 importers:
 
   .:
@@ -204,7 +207,7 @@ importers:
         version: 0.84.1(@types/react@19.2.16)(react-native@0.84.1(@babel/core@7.29.0)(@react-native-community/cli@20.1.0(typescript@5.9.3))(@react-native/metro-config@0.84.1(@babel/core@7.29.0))(@types/react@19.2.16)(react@19.2.3))(react@19.2.3)
       '@react-native-oh/react-native-harmony-cli':
         specifier: ^0.84.1
-        version: 0.84.1(@babel/core@7.29.0)(@babel/preset-env@7.29.7(@babel/core@7.29.0))(@types/node@24.13.2)(metro@0.83.7)
+        version: 0.84.1(patch_hash=0f2f217d3f8176bedd7c9f0b484b1695e47631066a6e7f756b11eebee81d2023)(@babel/core@7.29.0)(@babel/preset-env@7.29.7(@babel/core@7.29.0))(@types/node@24.13.2)(metro@0.83.7)
       '@react-native/babel-preset':
         specifier: 0.84.1
         version: 0.84.1(@babel/core@7.29.0)
@@ -7517,7 +7520,7 @@ snapshots:
       - typescript
       - utf-8-validate
 
-  '@react-native-oh/react-native-harmony-cli@0.84.1(@babel/core@7.29.0)(@babel/preset-env@7.29.7(@babel/core@7.29.0))(@types/node@24.13.2)(metro@0.83.7)':
+  '@react-native-oh/react-native-harmony-cli@0.84.1(patch_hash=0f2f217d3f8176bedd7c9f0b484b1695e47631066a6e7f756b11eebee81d2023)(@babel/core@7.29.0)(@babel/preset-env@7.29.7(@babel/core@7.29.0))(@types/node@24.13.2)(metro@0.83.7)':
     dependencies:
       '@react-native-community/cli-tools': 13.6.9
       '@react-native/codegen': 0.84.1(@babel/core@7.29.0)

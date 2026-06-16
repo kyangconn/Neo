@@ -11,7 +11,7 @@ Whale Play 的 React Native 移动端工程骨架。本分支（`feat/mobile-app
 | 工程配置     | ✅   | `package.json` / `metro.config.js` / `babel.config.js` / `tsconfig.json`，已接入 pnpm workspace |
 | Android 原生 | ✅   | `MainActivity.kt` / `MainApplication.kt` 已补齐，`./gradlew :app:assembleDebug` 通过          |
 | Android 真机 | ✅   | APK 构建 + Metro JS bundle 均通过；`pnpm mobile android` 可部署到真机                          |
-| 鸿蒙原生     | ⏳   | npm 依赖 + metro 配置就位，需 `react-native init-harmony` 生成 `harmony/` 工程（见下文）       |
+| 鸿蒙原生     | ✅   | `harmony/` 工程已由 `init-harmony` 生成；`bundle-harmony` 产出通过；DevEco Studio 打开即可构建 |
 | workspace 复用 | ⏳ | `@neo-tavern/shared`/`core` 路径别名已配，待 dev 主线解耦后接入                                |
 | 同步客户端   | ⏳   | 待 dev 主线 sync API（`/api/sync/*`）就绪                                                      |
 | 本地 SQLite  | ⏳   | 待 repository adapter 设计落地                                                                 |
@@ -50,13 +50,15 @@ Whale Play 的 React Native 移动端工程骨架。本分支（`feat/mobile-app
 sdk.dir=C:\\SDK\\android
 ```
 
-### HarmonyOS（待搭建）
+### HarmonyOS
 
 | 工具 | 版本 | 说明 |
 | --- | --- | --- |
-| DevEco Studio | 6.x | 需 API 20 SDK；5.x 只到 API 15，不满足 RNOH 0.84 target |
-| HarmonyOS SDK | compatibleSdk `5.0.0(12)`、target `6.0.0(20)` | 由 DevEco 管理 |
-| `DEVECO_SDK_HOME` | 指向 DevEco 的 `sdk/` 目录 | `run-harmony` 读取 |
+| DevEco Studio | 6.x（本机 6.1.1.280） | 需 API 20+ SDK；5.x 只到 API 15，不满足 RNOH 0.84 target |
+| HarmonyOS SDK | compatibleSdk `5.0.0(12)`、target `6.0.0(20)`（本机装了 API 23） | 由 DevEco 管理 |
+| `DEVECO_SDK_HOME` | 指向 SDK 目录 | `react-native run-harmony` 需要；DevEco Studio GUI 构建不强制 |
+
+> ⚠️ Node 24 兼容性：RNOH CLI 0.84.1 的 `RealFS.js` 用了 Node 24 已删除的 `Dirent.path`（改名为 `parentPath`）。本仓库已通过 `pnpm patch` 持久化修复（见 `patches/@react-native-oh__react-native-harmony-cli@0.84.1.patch`）。
 
 ---
 
@@ -76,7 +78,11 @@ apps/mobile/
 │   │   └── MainApplication.kt
 │   ├── app/build.gradle              react { } 块，autolinkLibrariesWithApp()
 │   └── gradle.properties             newArchEnabled=true, hermesEnabled=true
-├── harmony/                          ⏳ 待 init-harmony 生成
+├── harmony/                          鸿蒙原生工程（ArkTS + C++）
+│   ├── entry/src/main/ets/pages/Index.ets   RNApp，appKey="mobile"
+│   ├── entry/src/main/cpp/CMakeLists.txt
+│   ├── build-profile.json5            compatibleSdk 12 / targetSdk 20
+│   └── oh-package.json5               引用 @rnoh/react-native-openharmony
 └── README.md                         本文件
 ```
 
@@ -123,34 +129,42 @@ rm -rf apps/mobile/android/app/build apps/mobile/android/build apps/mobile/andro
 
 ---
 
-## 鸿蒙（HarmonyOS NEXT）桥接计划
+## 鸿蒙（HarmonyOS NEXT）桥接
 
-RNOH（React Native OpenHarmony）让**同一套 `App.tsx` + `index.js`** 同时跑在 Android 和 HarmonyOS 上，无需平台入口分支。
+RNOH（React Native OpenHarmony）让**同一套 `App.tsx` + `index.js`** 同时跑在 Android 和 HarmonyOS 上，无需平台入口分支。鸿蒙工程已生成。
 
-### 已就位
+### 生成命令（已完成，仅记录）
 
-- `metro.config.js` 已合并 `createHarmonyMetroConfig`（注册 `harmony` platform + 模块替换）。
-- `package.json` 有 `"harmony": "react-native bundle-harmony"` 脚本。
-- 依赖已安装：`@react-native-oh/react-native-harmony`、`@react-native-oh/react-native-harmony-cli`、`@react-native-ohos/react-native-safe-area-context`。
+> `init-harmony` 是一次性脚手架命令，已执行过，正常开发无需重跑。
 
-### 待执行（Android 验证通过后）
+```bash
+cd apps/mobile
+pnpm react-native init-harmony --bundle-name com.whaleplay.mobile --app-name "WhalePlay"
+```
 
-1. 安装 DevEco Studio 6.x，设置 `DEVECO_SDK_HOME`。
-2. 生成鸿蒙原生工程：
+关键点：
+- **不要**传 `--project-root-path harmony`。该参数指「项目根」（`package.json`/`node_modules` 所在目录），默认 `.`（即 `apps/mobile`）就对了；`harmony/` 输出目录是 CLI 自动拼的。
+- **不要**传 `--app-name` 给 `appKey` 用——`appKey` 必须等于 `index.js` 里 `AppRegistry.registerComponent` 的名字（`"mobile"`，来自 `app.json`）。本仓库 `Index.ets` 已手动改回 `appKey: "mobile"`，否则鸿蒙端白屏。
 
-   ```bash
-   cd apps/mobile
-   npx react-native init-harmony --bundle-name com.whaleplay.mobile
-   ```
+### 在 DevEco Studio 中运行
 
-   这会在 `apps/mobile/harmony/` 下生成 ArkTS + C++ 工程（`EntryAbility.ets`、`Index.ets`、`CMakeLists.txt` 等）。`appKey` 会自动匹配 `index.js` 里注册的 `"mobile"`。
+1. 启动 Metro：`pnpm --filter @neo-tavern/mobile start`。
+2. 用 DevEco Studio 打开 `apps/mobile/harmony/`，等待后台 sync / autolinking 完成（会生成 `RNOHPackagesFactory.ets`、`autolinking.cmake` 等）。
+3. File → Project Structure → Signing Configs → 勾选「Automatically generate signature」→ OK。
+4. 顶部选 `entry` run 配置，点 Debug/Run 部署到鸿蒙真机。
 
-3. 用 DevEco Studio 打开 `apps/mobile/harmony/`，完成签名（File → Project Structure → Signing Configs → 自动生成），run `entry` 到鸿蒙真机。
+### JS bundle
+
+```bash
+# 预打包 release bundle（dev 模式下设备从 Metro 实时拉取，无需预打包）
+pnpm --filter @neo-tavern/mobile harmony
+```
+
+产出到 `harmony/entry/src/main/resources/rawfile/bundle.harmony.js`。
 
 ### Android / 鸿蒙差异要点
 
-- JS 完全共享；原生模块需要鸿蒙 port（纯 JS 库直接可用）。
-- `bundle-harmony` 产出到 `harmony/entry/src/main/resources/rawfile/bundle.harmony.js`（dev 模式下设备从 Metro 拉取，无需预打包）。
+- JS 完全共享；原生模块需要鸿蒙 port（纯 JS 库直接可用）。当前 `react-native-safe-area-context` 已装鸿蒙 port `@react-native-ohos/react-native-safe-area-context`。
 - `Platform.OS === 'harmony'` 可做平台判断。
 
 ### 参考文档

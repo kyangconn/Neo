@@ -1,0 +1,15 @@
+diff --git a/dist/io/RealFS.js b/dist/io/RealFS.js
+index 02cabad24dc3028d39cde268c27921301bff68f6..a32882effef582d6a61f0f60df4e2daffd4bf345 100644
+--- a/dist/io/RealFS.js
++++ b/dist/io/RealFS.js
+@@ -37,7 +37,9 @@ class RealFSDirent extends FileSystem_1.Dirent {
+         return this.nodeFSDirent.name;
+     }
+     get path() {
+-        return new core_1.AbsolutePath(this.nodeFSDirent.path).copyWithNewSegment(this.nodeFSDirent.name);
++        // Node 24 removed Dirent.path (deprecated since Node 18); use parentPath.
++        const dir = this.nodeFSDirent.parentPath != null ? this.nodeFSDirent.parentPath : this.nodeFSDirent.path;
++        return new core_1.AbsolutePath(dir).copyWithNewSegment(this.nodeFSDirent.name);
+     }
+ }
+ class RealFS extends FileSystem_1.FS {
