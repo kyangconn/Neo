@@ -12,11 +12,16 @@ Whale Play 的 React Native 移动端工程骨架。本分支（`feat/mobile-app
 | Android 原生 | ✅   | `MainActivity.kt` / `MainApplication.kt` 已补齐，`./gradlew :app:assembleDebug` 通过          |
 | Android 真机 | ✅   | APK 构建 + Metro JS bundle 均通过；`pnpm mobile android` 可部署到真机                          |
 | 鸿蒙原生     | ✅   | `harmony/` 工程已由 `init-harmony` 生成；`bundle-harmony` 产出通过；DevEco Studio 打开即可构建 |
+| 存储框架     | ✅   | `src/storage/` (KVStorage + typed keys + zustand persist)；见[架构文档](../../docs/mobile-architecture.md) |
+| 连接状态 store | ✅ | `src/store/connection.store.ts` (zustand + persist，baseUrl 持久化 / token 不落盘) |
+| 目录骨架     | ✅   | `src/` 下 features / services / navigation / theme / components / hooks / utils / i18n / __tests__ 均已初始化 |
 | workspace 复用 | ⏳ | `@neo-tavern/shared`/`core` 路径别名已配，待 dev 主线解耦后接入                                |
 | 同步客户端   | ⏳   | 待 dev 主线 sync API（`/api/sync/*`）就绪                                                      |
 | 本地 SQLite  | ⏳   | 待 repository adapter 设计落地                                                                 |
 
-当前 `App.tsx` 是 React Native 模板页（`@react-native/new-app-screen`），后续会替换为真正的移动 UI。
+> 📖 **架构文档**：[`docs/mobile-architecture.md`](../../docs/mobile-architecture.md) — 目录规划、依赖规则、存储策略、Key 命名规范、Feature 设计约定、测试约定。
+
+当前 `App.tsx` 在启动时初始化 KV 存储，仍使用 `@react-native/new-app-screen` 作为首页占位。
 
 ---
 
@@ -78,6 +83,13 @@ apps/mobile/
 │   │   └── MainApplication.kt
 │   ├── app/build.gradle              react { } 块，autolinkLibrariesWithApp()
 │   └── gradle.properties             newArchEnabled=true, hermesEnabled=true
+├── src/                               JS 源码（详见[架构文档](../../docs/mobile-architecture.md)）
+│   ├── storage/                       KV 存储层（唯一持久化入口）
+│   ├── store/                         zustand stores
+│   ├── features/                      功能模块（connection / character / chat / ...）
+│   ├── services/                      基础设施（api / model / repository）
+│   ├── navigation/ / theme/ / ...    共享模块
+│   └── __tests__/                     测试（与 src/ 镜像结构）
 ├── harmony/                          鸿蒙原生工程（ArkTS + C++）
 │   ├── entry/src/main/ets/pages/Index.ets   RNApp，appKey="mobile"
 │   ├── entry/src/main/cpp/CMakeLists.txt
