@@ -114,18 +114,25 @@ cd apps/mobile/android && ./gradlew :app:assembleDebug
 
 ### 清缓存
 
-构建遇到奇怪问题时按需执行：
+构建遇到奇怪问题时按需执行（Metro 缓存最容易在改动 metro.config.js 或升级依赖后踩坑）：
 
 ```bash
 # 清 Gradle 缓存
 cd apps/mobile/android && ./gradlew clean
 
-# 清 Metro / Watchman 缓存
+# 清 Metro / Watchman 缓存（改过 metro.config.js 后必跑）
 cd apps/mobile && npx react-native start --reset-cache
 
 # 彻底清 Android build 产物
 rm -rf apps/mobile/android/app/build apps/mobile/android/build apps/mobile/android/.gradle
 ```
+
+### 已知坑点（已修复，记录于此）
+
+- **Android dev 报 `ReferenceError: Property 'window' doesn't exist`**：根因是 metro.config.js 里用了 RNOH 的 `serializer.getModulesRunBeforeMainModule`，它在非 harmony 平台返回 `[]`，导致 `InitializeCore`（设置 `global.window`）没在主模块前运行。当前 metro.config.js 已合并默认配置的 `getModulesRunBeforeMainModule`，harmony 用 RNOH 的 InitializeCore，其他平台回退到默认的 InitializeCore。
+- **`bundle-harmony`（dev 模式）报 `Unable to resolve module .../ReactDevToolsSettingsManager`**：RN 0.84 的该模块只有 `.android.js`/`.ios.js`，RNOH 0.84.1 metro 配置的最终回退没做平台降级。当前 metro.config.js 在 harmony 解析失败时，对 react-native 包内部的相对路径导入回退到 `ios` 平台（与 RNOH `resolveWithHarmonyFallback` 约定一致）。
+- **Node 24 + RNOH CLI**：见环境要求里的 pnpm patch 说明。
+- **鸿蒙白屏 + `invalid hook call` / `useContext of null`**：根因是 monorepo 里 desktop 用 `react@^19.2.7`、mobile 用 `react@19.2.3`，Metro 默认会同时打包两份 React（hooks 的 dispatcher 是 React 实例级的，两份实例互不可见）。当前 metro.config.js 在 `resolveRequest` 里把所有 `react` / `react/*` 裸导入钉死到 `apps/mobile/node_modules/react`，保证 bundle 里只有一份 React。验证方法：bundle 里搜 `.pnpm/react@` 只应出现一个版本。
 
 ---
 

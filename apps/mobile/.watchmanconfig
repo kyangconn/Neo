@@ -1,1 +1,9 @@
-{}
+{
+    "roots": ["."],
+    "ignore_dirs": [
+        "node_modules",
+        "android",
+        "harmony",
+        "ios",
+    ]
+}
