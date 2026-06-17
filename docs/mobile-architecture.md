@@ -201,6 +201,8 @@ apps/mobile/
 | KVStorage 接口   | ✅   | `src/storage/storage.ts`                            |
 | Key 命名体系     | ✅   | `src/storage/keys.ts`                               |
 | Connection store | ✅   | `src/store/connection.store.ts` (zustand + persist) |
+| React Navigation | ✅   | `src/navigation/` (Tab + 3 Stacks, 7 screens)      |
+| enableScreens    | ✅   | 鸿蒙 `enableScreens(false)` 降级 JS View           |
 | 目录骨架         | ✅   | 所有 feature / service / shared 文件夹均已初始化    |
 | 其他 store       | ⏳   | 待功能开发时补充                                    |
 | SQLite adapter   | ⏳   | Phase 5                                             |

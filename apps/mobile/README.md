@@ -11,7 +11,8 @@ Whale Play 的 React Native 移动端工程骨架。本分支（`feat/mobile-app
 | 工程配置     | ✅   | `package.json` / `metro.config.js` / `babel.config.js` / `tsconfig.json`，已接入 pnpm workspace |
 | Android 原生 | ✅   | `MainActivity.kt` / `MainApplication.kt` 已补齐，`./gradlew :app:assembleDebug` 通过          |
 | Android 真机 | ✅   | APK 构建 + Metro JS bundle 均通过；`pnpm mobile android` 可部署到真机                          |
-| 鸿蒙原生     | ✅   | `harmony/` 工程已由 `init-harmony` 生成；`bundle-harmony` 产出通过；DevEco Studio 打开即可构建 |
+| 鸿蒙原生     | ✅   | `harmony/` 工程已生成；`bundle-harmony` 产出通过；原生屏幕降级 JS View（`enableScreens(false)`）    |
+| 导航框架     | ✅   | React Navigation v7：Bottom Tabs（Home / Chat / Settings）内嵌 Native Stack；7 个空 screen 占位     |
 | 存储框架     | ✅   | `src/storage/` (KVStorage + typed keys + zustand persist)；见[架构文档](../../docs/mobile-architecture.md) |
 | 连接状态 store | ✅ | `src/store/connection.store.ts` (zustand + persist，baseUrl 持久化 / token 不落盘) |
 | 目录骨架     | ✅   | `src/` 下 features / services / navigation / theme / components / hooks / utils / i18n / __tests__ 均已初始化 |

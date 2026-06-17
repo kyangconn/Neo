@@ -13,11 +13,17 @@
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-ohos/async-storage": "2.3.0-beta.1",
+    "@react-native-ohos/native-stack": "^7.3.11",
     "@react-native-ohos/react-native-safe-area-context": "^5.6.3",
+    "@react-native-ohos/react-native-screens": "4.8.3-rc.2",
     "@react-native/new-app-screen": "0.84.1",
+    "@react-navigation/bottom-tabs": "^7.18.2",
+    "@react-navigation/native": "7.1.6",
+    "@react-navigation/native-stack": "7.3.10",
     "react": "19.2.3",
     "react-native": "0.84.1",
     "react-native-safe-area-context": "^5.5.2",
+    "react-native-screens": "^4.25.2",
     "zustand": "4.5.7"
   },
   "devDependencies": {

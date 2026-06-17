@@ -14,6 +14,10 @@ export default [
       "**/gen/**",
       "**/builder/skill/**",
       "**/scripts/**",
+      "**/android/**",
+      "**/harmony/**",
+      "**/ios/**",
+      "patches/**",
     ],
   },
 
