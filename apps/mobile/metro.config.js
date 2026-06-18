@@ -91,6 +91,10 @@ const harmonyRunBeforeMain = harmonyConfig.serializer?.getModulesRunBeforeMainMo
 const defaultRunBeforeMain = defaultConfig.serializer?.getModulesRunBeforeMainModule;
 const config = {
   projectRoot,
+  // pnpm stores the real package files under the workspace-level node_modules/.pnpm
+  // directory. Metro must be able to see those symlink targets, so the workspace
+  // root stays in watchFolders; resolver.blockList below keeps native/build
+  // directories from participating in the live file map.
   watchFolders: [workspaceRoot],
   resolver: {
     ...defaultConfig.resolver,
@@ -98,12 +102,17 @@ const config = {
     unstable_enablePackageExports: true,
     nodeModulesPaths: [path.resolve(projectRoot, "node_modules"), path.resolve(workspaceRoot, "node_modules")],
     extraNodeModules,
-    // 排除 desktop app、构建产物、.pnpm-store 等，加速 Metro 启动并避免误打包 desktop 依赖。
+    // 排除原生工程和构建产物，避免 Gradle/Hvigor 写文件时触发 Metro 重扫或退出。
+    // 不要在这里排除 node_modules：pnpm 依赖通过 symlink 解析，Metro 仍需要能读取依赖文件。
     blockList: [
       /apps[\\/]desktop[\\/]/,
-      /apps[\\/]mobile[\\/]android[\\/](?:build|\.gradle|\.cxx)[\\/]/,
-      /apps[\\/]mobile[\\/]harmony[\\/](?:build|\.hvigor|\.cxx|oh_modules)[\\/]/,
+      /apps[\\/]mobile[\\/]android[\\/]/,
+      /apps[\\/]mobile[\\/]harmony[\\/]/,
       /apps[\\/]mobile[\\/]ios[\\/]/,
+      /apps[\\/]mobile[\\/]__tests__[\\/]/,
+      /apps[\\/]mobile[\\/]\.bundle[\\/]/,
+      /apps[\\/]mobile[\\/]dist[\\/]/,
+      /[\\/]node_modules[\\/]\.pnpm[\\/].*[\\/](?:android|ios|\.gradle|\.cxx|oh_modules)[\\/]/,
       /\.pnpm-store[\\/]/,
       /[\\/]src-tauri[\\/]target[\\/]/,
       /docs[\\/]/,

@@ -14,6 +14,9 @@ set(OH_MODULES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../../oh_modules") # requi
 
 add_subdirectory("${RNOH_CPP_DIR}" ./rn)
 
+add_subdirectory("${OH_MODULES_DIR}/@react-native-ohos/react-native-safe-area-context/src/main/cpp" ./safe-area)
+add_subdirectory("${OH_MODULES_DIR}/@react-native-ohos/react-native-gesture-handler/src/main/cpp" ./gesture-handler)
+
 include("${CMAKE_CURRENT_SOURCE_DIR}/autolinking.cmake")
 
 file(GLOB GENERATED_CPP_FILES "${CMAKE_CURRENT_SOURCE_DIR}/generated/*.cpp") # this line is needed by codegen v1
@@ -23,5 +26,8 @@ add_library(rnoh_app SHARED
     "${RNOH_CPP_DIR}/RNOHAppNapiBridge.cpp"
 )
 target_link_libraries(rnoh_app PUBLIC rnoh)
+
+target_link_libraries(rnoh_app PUBLIC rnoh_safe_area)
+target_link_libraries(rnoh_app PUBLIC rnoh_gesture_handler)
 
 autolink_libraries(rnoh_app)

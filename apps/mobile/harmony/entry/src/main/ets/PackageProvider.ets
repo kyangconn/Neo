@@ -6,10 +6,14 @@
  */
 
 import type { RNPackageContext, RNOHPackage } from '@rnoh/react-native-openharmony';
-import { createRNOHPackages as createRNOHPackagesAutolinking } from "./RNOHPackagesFactory"
+import { createRNOHPackages as createRNOHPackagesAutolinking } from "./RNOHPackagesFactory";
+import GestureHandlerPackage from '@react-native-ohos/react-native-gesture-handler';
+import {SafeAreaViewPackage} from '@react-native-ohos/react-native-safe-area-context/ts';
 
 export function getRNOHPackages(ctx: RNPackageContext): RNOHPackage[] {
   return [
-    ...createRNOHPackagesAutolinking(ctx)
+    new SafeAreaViewPackage(ctx),
+    new GestureHandlerPackage(ctx),
+    ...createRNOHPackagesAutolinking(ctx),
   ]
 }
