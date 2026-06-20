@@ -19,6 +19,12 @@ export interface Backend {
     set(key: string, value: string): Promise<void>;
     remove(key: string): Promise<void>;
     entries(): Promise<Record<string, string>>;
+    batch(
+      operations: Array<{ type: "set"; key: string; value: string } | { type: "remove"; key: string }>,
+    ): Promise<void>;
+    lock(): Promise<boolean>;
+    unlock(): Promise<void>;
+    backup(): Promise<string>;
   };
 
   // ── Messages + chat persistence (sqlite_* Tauri commands → db.rs) ──
@@ -36,6 +42,8 @@ export interface Backend {
     migrateParentIds(): Promise<number>;
     mergeFromSavepoint(messages: Message[]): Promise<Message[]>;
     initMessages(legacyJson: string | null): Promise<void>;
+    getVersion(): Promise<number>;
+    setVersion(version: number): Promise<void>;
   };
 
   // ── Agentic play state (sqlite_* Tauri commands) ──
