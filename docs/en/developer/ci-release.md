@@ -4,18 +4,18 @@ CI is split into quality, security, and release workflows so each path stays und
 
 ## Pull requests and main
 
-`.github/workflows/pr-check.yml` runs for pull requests, merge queues, and pushes to `main`. It detects frontend and Rust changes first, then reports a stable `CI success` result. Documentation-only pull requests therefore complete explicitly instead of leaving a required check pending.
+`.github/workflows/pr-check.yml` runs for pull requests, merge queues, and manual dispatches. It does not run again after a pull request is merged into `main`. It detects frontend and Rust changes first, then reports a stable `CI success` result. Documentation-only pull requests therefore complete explicitly instead of leaving a required check pending.
 
 - Frontend: ESLint, TypeScript build mode, Vitest, and the production Vite build.
 - Rust: `cargo fmt`, Clippy with warnings denied, and the complete Rust test suite.
 - Node.js, pnpm, and Rust versions are pinned; installs use `pnpm-lock.yaml` and `Cargo.lock`.
-- External Actions are pinned to full commit SHAs and updated by Dependabot.
+- External Actions are pinned to full commit SHAs and updated deliberately during CI maintenance.
 
 ## Security automation
 
 - `codeql.yml` scans JavaScript/TypeScript and Rust on pull requests, `main`, and a weekly schedule.
 - `dependency-review.yml` blocks newly introduced high/critical known vulnerabilities and reports OpenSSF Scorecard data.
-- `dependabot.yml` maintains pnpm, Cargo, and GitHub Actions weekly. Minor and patch updates are grouped by ecosystem while major updates remain individually reviewable.
+- GitHub's dependency graph and Dependabot alerts should remain enabled in the repository security settings. Automated Dependabot version-update pull requests are intentionally disabled to avoid routine dependency churn.
 
 Recommended required checks are `CI success`, `Review dependency changes`, and both language-specific CodeQL jobs.
 

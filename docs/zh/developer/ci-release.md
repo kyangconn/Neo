@@ -4,18 +4,18 @@
 
 ## Pull Request 与 main
 
-`.github/workflows/pr-check.yml` 在 PR、merge queue 和 `main` push 上运行。它先按路径判断是否需要前端或 Rust 检查，再由固定名称的 `CI success` job 汇总结果，因此文档-only PR 也能得到明确的成功状态。
+`.github/workflows/pr-check.yml` 在 PR、merge queue 和手动触发时运行，不会在 PR 合并到 `main` 后再次执行。它先按路径判断是否需要前端或 Rust 检查，再由固定名称的 `CI success` job 汇总结果，因此仅修改文档的 PR 也能得到明确的成功状态。
 
 - 前端：ESLint、TypeScript build mode、Vitest、Vite production build；
 - Rust：`cargo fmt`、Clippy（warnings as errors）、完整测试；
 - Node.js、pnpm 和 Rust 版本固定，安装使用 `pnpm-lock.yaml` 与 `Cargo.lock`；
-- 外部 Actions 固定到完整 commit SHA，由 Dependabot 维护更新。
+- 外部 Actions 固定到完整 commit SHA，在维护 CI 时主动更新。
 
 ## 安全自动化
 
 - `codeql.yml`：在 PR、`main` 和每周计划任务中扫描 JavaScript/TypeScript 与 Rust；
 - `dependency-review.yml`：阻止 PR 引入 high/critical 已知漏洞，并展示依赖的 OpenSSF Scorecard 信息；
-- `dependabot.yml`：每周分别维护 pnpm、Cargo 和 GitHub Actions，minor/patch 更新按生态分组，major 更新保持单独 PR 以便审阅。
+- 在仓库安全设置中保留 dependency graph 和 Dependabot alerts；有意关闭 Dependabot 自动版本更新 PR，避免常规依赖更新造成过多干扰。
 
 启用分支保护时，建议要求 `CI success`、`Review dependency changes` 和两个 CodeQL language job 通过。
 
