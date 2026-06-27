@@ -14,7 +14,6 @@ export {
   TokenDialog,
   DeleteMessageDialog,
   ThinkingDialog,
-  RegenerateDialog,
 } from "./dialogs";
 export type { TokenUsageView, PendingSendItem } from "./types";
 export {

@@ -76,7 +76,7 @@ interface UseSendMessageOptions {
   onPromptBuilt?: (built: BuiltPrompt) => void;
 }
 
-interface SendMessageOptions {
+export interface SendMessageOptions {
   hiddenUserMessage?: boolean;
   hiddenReason?: string;
   metadata?: Message["metadata"];
