@@ -25,8 +25,8 @@ export function useSecondaryUsage({
   useEffect(() => {
     let cancelled = false;
     if (!currentChatId) {
-      setSecondaryUsageRecords([]);
-      return;
+      const timeout = window.setTimeout(() => setSecondaryUsageRecords([]), 0);
+      return () => window.clearTimeout(timeout);
     }
     if (!tokenDialogOpen) return;
     secondaryApiUsageRepository.listByChatId(currentChatId).then((records) => {

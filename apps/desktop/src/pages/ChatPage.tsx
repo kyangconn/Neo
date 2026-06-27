@@ -1,20 +1,9 @@
 import { useCallback, useState } from "react";
 import { cn } from "@neo-tavern/ui";
-import { ChoiceInputPanel } from "@/components/ChoiceInputPanel";
 import type { AgenticGameState } from "@/features/agentic-play/agentic-play";
-import type { Message } from "@neo-tavern/shared";
 import { useSettingsStore } from "@/features/settings/settings.store";
-import { toast } from "@/utils/toast";
-import {
-  ChatSidebar,
-  ChatRightPanel,
-  ChatInputArea,
-  useBranchNavigation,
-  useSavepointManager,
-  getGenerationStatus,
-  getChatDraftKey,
-  type PendingSendItem,
-} from "@/pages/chat";
+import { ChatSidebar, ChatRightPanel, getGenerationStatus, type PendingSendItem } from "@/pages/chat";
+import { AgenticChatFooter, AgenticGeneratingFooter, NormalChatFooter } from "@/pages/chat/ChatFooters";
 import { MessageList } from "@/pages/chat/MessageList";
 import {
   ImagePromptDialog,
@@ -25,14 +14,19 @@ import {
   DeleteMessageDialog,
   ThinkingDialog,
 } from "@/pages/chat/dialogs";
-import { useChatSession } from "@/pages/chat/hooks/useChatSession";
-import { useChatMessages } from "@/pages/chat/hooks/useChatMessages";
-import { useChatScroll } from "@/pages/chat/hooks/useChatScroll";
-import { useChatCost } from "@/pages/chat/hooks/useChatCost";
-import { useChatImages } from "@/pages/chat/hooks/useChatImages";
-import { useNormalChat } from "@/pages/chat/hooks/useNormalChat";
-import { useAgenticChat } from "@/pages/chat/hooks/useAgenticChat";
-import { useSecondaryUsage } from "@/pages/chat/hooks/useSecondaryUsage";
+import {
+  useAgenticChat,
+  useBranchNavigation,
+  useChatCost,
+  useChatImages,
+  useChatMessageActions,
+  useChatMessages,
+  useChatScroll,
+  useChatSession,
+  useNormalChat,
+  useSavepointManager,
+  useSecondaryUsage,
+} from "@/pages/chat/hooks";
 import type { TokenUsageView } from "@/pages/chat/types";
 
 /**
@@ -56,9 +50,7 @@ export function ChatPage() {
     messagesHydrated,
     chatError,
     character,
-    characterId,
     navigate,
-    addMessage,
     updateMessage,
     patchMessage,
     deleteMessages,
@@ -103,18 +95,15 @@ export function ChatPage() {
   const [agenticGameState, setAgenticGameState] = useState<AgenticGameState | null>(null);
   const [dismissedAgenticChoiceMessageId, setDismissedAgenticChoiceMessageId] = useState<string | null>(null);
 
+  const messageUi = useChatMessageActions({ messages, updateMessage, deleteMessages });
+
   // ── Chat UI-only state ──
-  const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
   const [tokenUsageView, setTokenUsageView] = useState<TokenUsageView>("main");
-  const [deleteMsgTarget, setDeleteMsgTarget] = useState<Message | null>(null);
-  const [thinkingMsg, setThinkingMsg] = useState<Message | null>(null);
 
   // ── Normal chat: send / continue / abort / preview / queue ──
   const normal = useNormalChat({
     session,
-    visibleMessages: branch.visibleMessages,
     visibleMessagesLength: branch.visibleMessages.length,
     agenticPlayEnabled,
     agenticGameState,
@@ -147,7 +136,6 @@ export function ChatPage() {
     agenticPlayEnabled,
     setAgenticPlayEnabled,
     setAgenticGameState,
-    dismissedAgenticChoiceMessageId,
     setDismissedAgenticChoiceMessageId,
     submitContent: normal.submitContent,
     sending: normal.sending,
@@ -206,48 +194,7 @@ export function ChatPage() {
   const hasStreamingMessage =
     isGeneratingCurrentChat && !!normal.streamingMessageId && messages.some((m) => m.id === normal.streamingMessageId);
   const generationStatus = getGenerationStatus(normal.generationPhase);
-
-  // ── Interaction handlers ──
-  const handleCopy = useCallback(async (content: string, msgId: string) => {
-    try {
-      await navigator.clipboard.writeText(content);
-      setCopiedId(msgId);
-      setTimeout(() => setCopiedId(null), 2000);
-    } catch {
-      toast("error", "Failed to copy");
-    }
-  }, []);
-
-  const handleDeleteMessage = useCallback(async () => {
-    if (!deleteMsgTarget) return;
-    try {
-      const ids = [deleteMsgTarget.id];
-      if (deleteMsgTarget.role === "user") {
-        const idx = messages.findIndex((m) => m.id === deleteMsgTarget.id);
-        const next = idx >= 0 ? messages[idx + 1] : undefined;
-        if (next?.role === "assistant") ids.push(next.id);
-      }
-      await deleteMessages(ids);
-      setDeleteMsgTarget(null);
-      toast("info", ids.length > 1 ? "Messages deleted" : "Message deleted");
-    } catch {
-      toast("error", "Failed to delete");
-    }
-  }, [deleteMsgTarget, deleteMessages, messages]);
-
-  const saveEdit = useCallback(
-    async (content: string) => {
-      if (!editingMsgId || !content.trim()) return;
-      try {
-        await updateMessage(editingMsgId, content.trim());
-        setEditingMsgId(null);
-        toast("success", "Message updated");
-      } catch {
-        toast("error", "Failed to update");
-      }
-    },
-    [editingMsgId, updateMessage],
-  );
+  const showAgenticGeneratingFooter = agenticPlayEnabled && isGeneratingCurrentChat && !activeAgenticChoiceBlock;
 
   const onCancelPending = useCallback(
     (queueIndex: number) => {
@@ -284,57 +231,65 @@ export function ChatPage() {
 
         <section className="chat-grid-cell bg-background flex flex-col rounded-lg border">
           <MessageList
-            scrollContainerRef={messagesContainerRef}
-            bottomSentinelRef={chatBottomRef}
-            onScroll={handleChatScroll}
-            loading={loading}
-            visibleMessagesLength={branch.visibleMessages.length}
-            isGeneratingCurrentChat={isGeneratingCurrentChat}
-            hasStreamingMessage={hasStreamingMessage}
+            scroll={{
+              containerRef: messagesContainerRef,
+              bottomSentinelRef: chatBottomRef,
+              onScroll: handleChatScroll,
+            }}
+            state={{
+              loading,
+              visibleMessagesLength: branch.visibleMessages.length,
+              isGeneratingCurrentChat,
+              hasStreamingMessage,
+              copiedId: messageUi.copiedId,
+              editingMsgId: messageUi.editingMsgId,
+              canRegenerate: !normal.sending,
+            }}
+            layout={{
+              fontSize,
+              chatContentWidthClass,
+              userBubbleWidthClass,
+              firstMessageWidthClass,
+            }}
+            image={{
+              busyByMessageId: images.imageGenerationBusy,
+              enabled: imageGeneration.enabled,
+              mode: imageGeneration.mode,
+            }}
             character={character}
             personaName={personaName}
             renderedMessages={renderedMessages}
             generationStatus={generationStatus}
-            fontSize={fontSize}
-            chatContentWidthClass={chatContentWidthClass}
-            userBubbleWidthClass={userBubbleWidthClass}
-            firstMessageWidthClass={firstMessageWidthClass}
-            copiedId={copiedId}
-            editingMsgId={editingMsgId}
-            imageGenerationBusy={images.imageGenerationBusy}
-            imageGenerationEnabled={imageGeneration.enabled}
-            imageGenerationMode={imageGeneration.mode}
-            onCopy={handleCopy}
-            onStartEdit={(msg) => setEditingMsgId(msg.id)}
-            onCancelEdit={() => setEditingMsgId(null)}
-            onSaveEdit={saveEdit}
-            onShowPromptDialog={normal.showPromptDialog}
-            onViewReasoning={(msg) => setThinkingMsg(msg)}
-            onGenerateImages={(msg) => void images.handleGenerateMessageImages(msg)}
-            onRegenerate={() => void normal.regenerate()}
-            onDelete={(msg) => setDeleteMsgTarget(msg)}
-            onSetInput={setInput}
-            onDeleteImage={(...args) => void images.handleDeleteImage(...args)}
-            onEditImagePrompt={images.openImagePromptEditor}
-            onRegenerateImage={(...args) => void images.handleRegenerateImage(...args)}
-            canRegenerate={!normal.sending}
+            actions={{
+              copy: messageUi.copyMessage,
+              startEdit: messageUi.startEdit,
+              cancelEdit: messageUi.cancelEdit,
+              saveEdit: messageUi.saveEdit,
+              showPromptDialog: normal.showPromptDialog,
+              viewReasoning: messageUi.viewReasoning,
+              generateImages: (msg) => void images.handleGenerateMessageImages(msg),
+              regenerate: () => void normal.regenerate(),
+              deleteMessage: messageUi.requestDelete,
+              setInput,
+              deleteImage: (...args) => void images.handleDeleteImage(...args),
+              editImagePrompt: images.openImagePromptEditor,
+              regenerateImage: (...args) => void images.handleRegenerateImage(...args),
+            }}
           />
 
           {activeAgenticChoiceBlock && activeAgenticChoiceBlock.panelChoices.length > 0 ? (
-            <div className="bg-card shrink-0 border-t p-4">
-              <div className={cn("mx-auto w-full min-w-0", chatContentWidthClass)}>
-                <ChoiceInputPanel
-                  key={activeAgenticChoiceBlock.rendered.msg.id}
-                  title={character ? `你要在 ${character.name} 的场景里采取什么行动？` : "你下一步要怎么做？"}
-                  choices={activeAgenticChoiceBlock.panelChoices}
-                  disabled={!currentChat || isGeneratingCurrentChat}
-                  onSubmit={agentic.handleAgenticChoiceSubmit}
-                  onCancel={() => setDismissedAgenticChoiceMessageId(activeAgenticChoiceBlock.rendered.msg.id)}
-                />
-              </div>
-            </div>
+            <AgenticChatFooter
+              choiceBlock={activeAgenticChoiceBlock}
+              characterName={character?.name}
+              chatContentWidthClass={chatContentWidthClass}
+              disabled={!currentChat || isGeneratingCurrentChat}
+              onSubmit={agentic.handleAgenticChoiceSubmit}
+              onCancel={() => setDismissedAgenticChoiceMessageId(activeAgenticChoiceBlock.rendered.msg.id)}
+            />
+          ) : showAgenticGeneratingFooter ? (
+            <AgenticGeneratingFooter generationStatus={generationStatus} onAbort={normal.abort} />
           ) : (
-            <ChatInputArea
+            <NormalChatFooter
               displayError={normal.sendError || chatError}
               onDismissError={() => {
                 normal.clearSendError();
@@ -358,13 +313,8 @@ export function ChatPage() {
               input={input}
               onInputChange={normal.handleInputChange}
               onKeyDown={normal.handleKeyDown}
-              placeholder={
-                character
-                  ? agenticPlayEnabled
-                    ? `Action in ${character.name}'s scene...`
-                    : `Message ${character.name}...`
-                  : "Type a message..."
-              }
+              characterName={character?.name}
+              agenticPlayEnabled={agenticPlayEnabled}
               onSend={normal.handleSend}
               isSending={normal.sending}
               onAbort={normal.abort}
@@ -462,19 +412,19 @@ export function ChatPage() {
       />
 
       <DeleteMessageDialog
-        open={!!deleteMsgTarget}
+        open={!!messageUi.deleteMsgTarget}
         onOpenChange={(v) => {
-          if (!v) setDeleteMsgTarget(null);
+          if (!v) messageUi.clearDeleteTarget();
         }}
-        onDelete={handleDeleteMessage}
+        onDelete={messageUi.deleteTarget}
       />
 
       <ThinkingDialog
-        open={!!thinkingMsg}
+        open={!!messageUi.thinkingMsg}
         onOpenChange={(v) => {
-          if (!v) setThinkingMsg(null);
+          if (!v) messageUi.clearThinkingMessage();
         }}
-        reasoningContent={thinkingMsg?.reasoningContent}
+        reasoningContent={messageUi.thinkingMsg?.reasoningContent}
       />
     </div>
   );

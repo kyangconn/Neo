@@ -1,4 +1,5 @@
 import { applyRegexRules } from "@neo-tavern/core";
+import { useTranslation } from "react-i18next";
 import type { Message, RegexRule } from "@neo-tavern/shared";
 import type { AgenticActionOption } from "@/features/agentic-play/agentic-play";
 import type { ChoiceInputPanelChoice } from "@/components/ChoiceInputPanel";
@@ -39,6 +40,8 @@ export function useChatMessages({
   streamingMessageId,
   dismissedAgenticChoiceMessageId,
 }: UseChatMessagesParams) {
+  const { t } = useTranslation("chat");
+
   // React Compiler auto-memoises these derived values.
   const renderedMessages: RenderedMessage[] = visibleMessages.map((msg) => {
     const isUser = msg.role === "user";
@@ -85,7 +88,7 @@ export function useChatMessages({
         label: option.label,
         value: option.action,
         description: [
-          option.probability !== undefined ? `成功率 ${option.probability}%` : "",
+          option.probability !== undefined ? t("choicePanel.successRate", { rate: option.probability }) : "",
           option.difficulty !== undefined ? `DC ${option.difficulty}` : "",
           option.description ?? "",
         ]

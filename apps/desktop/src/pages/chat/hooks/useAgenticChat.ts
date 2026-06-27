@@ -18,7 +18,6 @@ interface UseAgenticChatParams {
   agenticPlayEnabled: boolean;
   setAgenticPlayEnabled: Dispatch<SetStateAction<boolean>>;
   setAgenticGameState: Dispatch<SetStateAction<AgenticGameState | null>>;
-  dismissedAgenticChoiceMessageId: string | null;
   setDismissedAgenticChoiceMessageId: Dispatch<SetStateAction<string | null>>;
   submitContent: (
     content: string,
@@ -78,7 +77,6 @@ export function useAgenticChat({
   agenticPlayEnabled,
   setAgenticPlayEnabled,
   setAgenticGameState,
-  dismissedAgenticChoiceMessageId,
   setDismissedAgenticChoiceMessageId,
   submitContent,
   sending,

@@ -17,8 +17,6 @@ import type { UseChatSessionReturn } from "./useChatSession";
 
 interface UseNormalChatParams {
   session: UseChatSessionReturn;
-  /** Visible (branch-active) messages — drives the first-message fallback. */
-  visibleMessages: Message[];
   visibleMessagesLength: number;
   /** Agentic toggles — when on, prompt preview resolves agentic preset items. */
   agenticPlayEnabled: boolean;
@@ -39,13 +37,13 @@ interface UseNormalChatParams {
  */
 export function useNormalChat({
   session,
-  visibleMessages,
   visibleMessagesLength,
   agenticPlayEnabled,
   agenticGameState,
   setAgenticGameState,
 }: UseNormalChatParams) {
   const { character, currentChat, messages, addMessage, input, setInput, mountedRef, currentChatIdRef } = session;
+  const firstMessage = character?.firstMessage;
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [previewText, setPreviewText] = useState("");
@@ -178,12 +176,12 @@ export function useNormalChat({
         setPendingSendQueue((queue) => [...queue, { chatId: currentChat.id, content: trimmedContent, ...options }]);
         return;
       }
-      if (visibleMessagesLength === 0 && character?.firstMessage.trim()) {
+      if (visibleMessagesLength === 0 && firstMessage?.trim()) {
         await addMessage({
           chatId: currentChat.id,
           parentId: null,
           role: "assistant",
-          content: replaceUserPlaceholders(character.firstMessage, personaName).trim(),
+          content: replaceUserPlaceholders(firstMessage, personaName).trim(),
         });
       }
       await sendMessage(trimmedContent, {
@@ -192,7 +190,7 @@ export function useNormalChat({
         metadata: options.metadata,
       });
     },
-    [currentChat, sending, visibleMessagesLength, character?.firstMessage, addMessage, personaName, sendMessage],
+    [currentChat, sending, visibleMessagesLength, firstMessage, addMessage, personaName, sendMessage],
   );
 
   // Drain the pending queue when generation finishes.
@@ -201,12 +199,15 @@ export function useNormalChat({
     const nextIndex = pendingSendQueue.findIndex((item) => item.chatId === currentChat.id);
     if (nextIndex < 0) return;
     const next = pendingSendQueue[nextIndex];
-    setPendingSendQueue((queue) => queue.filter((_, index) => index !== nextIndex));
-    void sendMessage(next.content, {
-      hiddenUserMessage: next.hiddenUserMessage,
-      hiddenReason: next.label,
-      metadata: next.metadata,
-    });
+    const timeout = window.setTimeout(() => {
+      setPendingSendQueue((queue) => queue.filter((_, index) => index !== nextIndex));
+      void sendMessage(next.content, {
+        hiddenUserMessage: next.hiddenUserMessage,
+        hiddenReason: next.label,
+        metadata: next.metadata,
+      });
+    }, 0);
+    return () => window.clearTimeout(timeout);
   }, [sending, pendingSendQueue, currentChat, sendMessage]);
 
   const handleSend = useCallback(async () => {

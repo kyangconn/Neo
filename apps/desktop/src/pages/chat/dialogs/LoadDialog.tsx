@@ -38,7 +38,7 @@ export function LoadDialog({
   onDelete: (savepointId: string) => void;
   onRefresh: () => void;
 }) {
-  const { t } = useTranslation("chat");
+  const { t } = useTranslation(["chat", "common"]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -100,7 +100,7 @@ export function LoadDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("close")}
+            {t("common:actions.close")}
           </Button>
           <Button variant="outline" onClick={onRefresh} disabled={isLoading}>
             {t("loadDialog.refresh")}

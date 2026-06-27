@@ -148,8 +148,8 @@ export function useChatSession({ onFontSizeLoaded }: UseChatSessionParams = {}) 
     const chatId = currentChat?.id;
     if (!chatId) {
       draftReadyChatRef.current = null;
-      setInput("");
-      return;
+      const timeout = window.setTimeout(() => setInput(""), 0);
+      return () => window.clearTimeout(timeout);
     }
 
     draftReadyChatRef.current = null;

@@ -55,7 +55,7 @@ export function TokenDialog({
   contextUsageTone: string;
   contextUsageDisplay: string;
 }) {
-  const { t } = useTranslation("chat");
+  const { t } = useTranslation(["chat", "common"]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -140,7 +140,9 @@ export function TokenDialog({
                 <div
                   className="min-w-0 rounded-lg bg-purple-500/10 p-3 text-center"
                   title={
-                    tokenUsageView === "main" ? contextUsageTitle : `${secondaryUsageRecordsCount} secondary API calls`
+                    tokenUsageView === "main"
+                      ? contextUsageTitle
+                      : t("tokenDialog.secondaryCallsTitle", { count: secondaryUsageRecordsCount })
                   }
                 >
                   <p
@@ -244,7 +246,7 @@ export function TokenDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t("close")}
+            {t("common:actions.close")}
           </Button>
         </DialogFooter>
       </DialogContent>

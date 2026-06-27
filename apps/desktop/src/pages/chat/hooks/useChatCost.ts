@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import type { Message } from "@neo-tavern/shared";
 import type { SecondaryApiUsageRecord } from "@/db/repositories";
 import { DEEPSEEK_CONTEXT_LIMIT } from "@/pages/chat/utils";
@@ -20,6 +21,7 @@ export type { TokenDialogRow, TokenDialogTotals };
  * Extracted verbatim from ChatPage (Phase 1 UI split).
  */
 export function useChatCost({ messages, secondaryUsageRecords, tokenUsageView }: UseChatCostParams) {
+  const { t } = useTranslation("chat");
   // React Compiler auto-memoises these derived values.
   const usageMessages = messages.filter((m) => m.role === "assistant" && m.usage);
   const totalPrompt = usageMessages.reduce((s, m) => s + (m.usage?.promptTokens || 0), 0);
@@ -106,8 +108,11 @@ export function useChatCost({ messages, secondaryUsageRecords, tokenUsageView }:
     currentContextTokens > 0 ? Math.min((currentContextTokens / DEEPSEEK_CONTEXT_LIMIT) * 100, 100) : 0;
   const contextUsageTitle =
     currentContextTokens > 0
-      ? `${currentContextTokens.toLocaleString()} / ${DEEPSEEK_CONTEXT_LIMIT.toLocaleString()} current conversation context tokens`
-      : "No context usage data yet";
+      ? t("contextUsage.title", {
+          current: currentContextTokens.toLocaleString(),
+          limit: DEEPSEEK_CONTEXT_LIMIT.toLocaleString(),
+        })
+      : t("contextUsage.noData");
 
   return {
     usageMessages,
