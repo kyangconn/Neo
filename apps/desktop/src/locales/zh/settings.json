@@ -14,11 +14,15 @@
     "description": "针对 DeepSeek 兼容 OpenAI 的聊天端点及当前 V4 模型进行了优化。",
     "officialBase": "官方基础地址",
     "currentDefault": "当前默认模型",
+    "currentDefaultDescription": "预览保存后聊天实际会使用的配置。",
     "loading": "正在加载已保存的 DeepSeek 配置…",
     "connectionProfile": "连接配置",
     "profileDescription": "保存一个或多个 DeepSeek 密钥，并切换聊天使用的活跃配置。",
+    "connectionDetails": "连接详情",
+    "connectionDetailsDescription": "填写密钥、确认端点，并选择聊天请求使用的默认模型。",
+    "credentials": "密钥与端点",
     "profiles": "DeepSeek 配置",
-    "newProfile": "+ 新建 DeepSeek 配置",
+    "newProfile": "新建 DeepSeek 配置",
     "active": "活跃——正在聊天中使用",
     "profileName": "配置名称",
     "apiKey": "DeepSeek API 密钥",
@@ -66,6 +70,8 @@
     "format": "格式",
     "streaming": "流式输出",
     "streamingHint": "开启后 AI 回复将逐字流式显示；关闭则等全部生成后一次性展示。",
+    "enabled": "已开启",
+    "disabled": "已关闭",
     "endpoint": "端点",
     "balance": "余额",
     "balanceChecking": "查询中...",
@@ -157,6 +163,37 @@
       "short": "~2k 词",
       "medium": "~8k 词",
       "full": "无限制"
+    },
+    "contentMode": {
+      "title": "内容模式",
+      "description": "选择本机生成时的内容策略。该状态会持久保存，并作为生成链路的唯一策略来源。",
+      "normal": "普通",
+      "normalDesc": "不启用健康拦截，也不启用内置 NSFW 写作项。适合大多数日常角色扮演。",
+      "healthy": "健康",
+      "healthyDesc": "注入安全提示词，拦截露骨输入和输出，并强制过滤 NSFW 写作项。",
+      "adultLimited": "有限度 NSFW",
+      "adultLimitedDesc": "启用内置温柔 NSFW 写作项，不使用健康模式的粗暴拦截。",
+      "adultLimitedActive": "有限度 NSFW 已启用：聊天会使用内置温柔 NSFW 写作项，但仍应遵守平台和模型提供商规则。",
+      "adultEnabled": "已切换到有限度 NSFW 模式"
+    },
+    "healthyMode": {
+      "title": "健康模式",
+      "description": "启用内容安全护栏，自动拦截露骨内容。与 NSFW 预设互斥。",
+      "enable": "启用健康模式",
+      "enableHint": "开启后将注入安全提示词并检测露骨内容。",
+      "nsfwDisabled": "已自动关闭 NSFW 预设项",
+      "features": {
+        "title": "已启用的防护",
+        "prompt": "安全提示词：指导 AI 避免生成 R18 内容",
+        "explicit": "色情检测：检测到明晃晃的色情内容时终止输出",
+        "nsfw": "NSFW 预设过滤：生成时不会发送内置 NSFW 写作项"
+      },
+      "conflict": {
+        "title": "健康模式与 NSFW 冲突",
+        "description": "当前已启用 NSFW 写作预设项，与健康模式互斥。是否关闭 NSFW 并启用健康模式？",
+        "cancel": "取消",
+        "confirm": "关闭 NSFW 并启用"
+      }
     }
   },
   "regex": {

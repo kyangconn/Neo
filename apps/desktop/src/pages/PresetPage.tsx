@@ -32,9 +32,11 @@ import { usePresetStore } from "@/features/preset/preset.store";
 import { AGENTIC_PLAY_PRESET_ID, ensureAgenticPlayPreset } from "@/features/agentic-play/agentic-preset";
 import { forwardRef } from "react";
 import type { Preset, PresetItem } from "@neo-tavern/shared";
-import { sessionSync } from "@/db/kv";
+import { deviceSync } from "@/db/kv";
 import { getBackend } from "@/platform";
 import { toast } from "@/utils/toast";
+import { useSettingsStore } from "@/features/settings/settings.store";
+import { isNsfwPresetItem } from "@/features/content-policy/content-policy";
 
 function sortPresetItems(items: PresetItem[]) {
   return [...items].sort(
@@ -591,7 +593,7 @@ export function PresetPage() {
   useEffect(() => {
     let cancelled = false;
     const refreshSecret = () => {
-      if (!cancelled) setSecretUnlocked(sessionSync.get("secret-unlocked") === "1");
+      if (!cancelled) setSecretUnlocked(deviceSync.get("secret-unlocked") === "1");
     };
     refreshSecret();
     window.addEventListener("neotavern-secret-changed", refreshSecret);
@@ -721,6 +723,11 @@ export function PresetPage() {
 
   const handleToggleItem = async (item: PresetItem) => {
     if (!selected) return;
+    if (isNsfwPresetItem(item)) {
+      await store.toggleItem(selected.id, item.id);
+      useSettingsStore.getState().setContentMode(item.enabled ? "normal" : "adultLimited");
+      return;
+    }
     await store.toggleItem(selected.id, item.id);
   };
 
@@ -910,6 +917,7 @@ export function PresetPage() {
         name: sourceItem.name,
         enabled: true,
         hidden: sourceItem.hidden,
+        builtinKind: sourceItem.builtinKind,
         role: sourceItem.role,
         content: sourceItem.content,
         injectionOrder: nextOrder,

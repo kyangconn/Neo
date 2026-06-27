@@ -45,10 +45,28 @@ import {
   stripPromptContent,
   WorldbookContributor,
 } from "@neo-tavern/core";
-import type { Character, BuiltPrompt, ContextBlock, GenerateMessage, Message, ModelConfig } from "@neo-tavern/shared";
+import type {
+  Character,
+  BuiltPrompt,
+  ContextBlock,
+  GenerateMessage,
+  Message,
+  ModelConfig,
+  PresetItem,
+} from "@neo-tavern/shared";
 import type { ChatMemory, ChatMemorySegment } from "@/db/repositories";
 import type { GenerationPhase } from "../chat.types";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
+import {
+  createHealthyModeContextBlock,
+  detectExplicitContent,
+  HEALTHY_MODE_BLOCKED_PLACEHOLDER,
+} from "@/features/healthy-mode/healthy-mode";
+import {
+  createContentPolicySnapshot,
+  filterNsfwItems,
+  type ContentPolicySnapshot,
+} from "@/features/content-policy/content-policy";
 
 interface UseSendMessageOptions {
   character: Character | undefined;
@@ -88,6 +106,8 @@ const EMPTY_ASSISTANT_RETRY_MESSAGE = [
   "如果当前预设要求使用 <content></content>，请把完整正文写在这个标签内。",
   "不要解释重试原因，不要输出道歉，只输出符合当前角色与预设格式的回复。",
 ].join("\n");
+
+type PromptPresetItem = { role: "system" | "user"; content: string; injectionOrder: number };
 
 type DebugPromptTrigger = "send" | "continue" | "regenerate" | "retry";
 
@@ -183,6 +203,16 @@ function finishImageGeneration(messageId: string, token: string) {
   if (activeImageGenerations.get(messageId)?.token === token) {
     activeImageGenerations.delete(messageId);
   }
+}
+
+function buildPolicyPresetItems(items: PresetItem[], policy: ContentPolicySnapshot): PromptPresetItem[] {
+  const enabledItems = items.filter((item) => item.enabled);
+  const policyItems = policy.filterNsfwPresetItems ? filterNsfwItems(enabledItems) : enabledItems;
+  return policyItems.map((item) => ({
+    role: item.role,
+    content: item.content,
+    injectionOrder: item.injectionOrder,
+  }));
 }
 
 async function notifyAssistantOutputComplete(characterName?: string) {
@@ -473,10 +503,8 @@ export function useSendMessage({
     finishSending(chatId);
   }, [chatId, finishSending]);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const isGenerationActive = (controller: AbortController) => !controller.signal.aborted;
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   const stripMessages = (msgs: Message[]): Message[] => {
     const rules = useSettingsStore.getState().getActiveRegexRules() ?? [];
     return msgs.map((m) => (m.role === "assistant" ? { ...m, content: stripPromptContent(m.content, rules) } : m));
@@ -1162,6 +1190,17 @@ export function useSendMessage({
         let assistantId: string | null = null;
         beginSending(chatId);
         setChatError(chatId, null);
+        const contentPolicy = createContentPolicySnapshot(useSettingsStore.getState().contentMode);
+
+        // Strict healthy mode: block explicit user input before sending.
+        if (contentPolicy.blockExplicitInput) {
+          const explicitMatch = detectExplicitContent(trimmedContent);
+          if (explicitMatch) {
+            setChatError(chatId, "健康模式：检测到不当输入，消息已被拦截。");
+            finishSending(chatId);
+            return;
+          }
+        }
 
         try {
           const activePath = getActivePath(chatId);
@@ -1182,17 +1221,11 @@ export function useSendMessage({
           const contextTokens = useSettingsStore.getState().contextTokens ?? 64000;
 
           const activePresetId = await presetRepository.getActivePresetId();
-          let presetItems: { role: "system" | "user"; content: string; injectionOrder: number }[] | undefined;
+          let presetItems: PromptPresetItem[] | undefined;
           if (activePresetId) {
             const preset = await presetRepository.getById(activePresetId);
             if (preset) {
-              presetItems = preset.items
-                .filter((i) => i.enabled)
-                .map((i) => ({
-                  role: i.role,
-                  content: i.content,
-                  injectionOrder: i.injectionOrder,
-                }));
+              presetItems = buildPolicyPresetItems(preset.items, contentPolicy);
             }
           }
 
@@ -1207,6 +1240,9 @@ export function useSendMessage({
           const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
             Boolean,
           ) as ContextBlock[];
+          if (contentPolicy.injectHealthyPrompt) {
+            contextBlocks.push(createHealthyModeContextBlock());
+          }
           const effectivePresetItems = agenticRecord ? await getAgenticPlayPresetItems() : presetItems;
 
           const built = buildChatPrompt({
@@ -1271,6 +1307,19 @@ export function useSendMessage({
             await removeEmptyStreamingDraft(assistant.id);
             return;
           }
+          if (contentPolicy.checkExplicitOutput) {
+            const explicitMatch = detectExplicitContent(finalContent);
+            if (explicitMatch) {
+              await patchMessage(assistant.id, {
+                content: HEALTHY_MODE_BLOCKED_PLACEHOLDER,
+                reasoningContent: undefined,
+              });
+              setChatError(chatId, "健康模式：检测到不当内容，回复已被拦截。");
+              void notifyAssistantOutputComplete(character.name);
+              await removeEmptyStreamingDraft(assistant.id);
+              return;
+            }
+          }
           void notifyAssistantOutputComplete(character.name);
           void processImageGeneration(chatId, assistant.id, finalContent);
           await removeEmptyStreamingDraft(assistant.id);
@@ -1287,25 +1336,24 @@ export function useSendMessage({
       });
     },
     [
-      character,
       chatId,
-      addMessage,
-      ensureMessagesHydrated,
-      agenticPlayEnabled,
-      onPromptBuilt,
-      getActivePath,
+      character,
       beginSending,
-      setStreamingMessageId,
-      getMemoryPromptPlan,
-      getWorldbookContextBlocks,
-      stripMessages,
-      generateAgenticAssistantWithEmptyRetry,
-      generateAssistantWithEmptyRetry,
-      isGenerationActive,
-      processImageGeneration,
-      removeEmptyStreamingDraft,
       setChatError,
       finishSending,
+      getActivePath,
+      addMessage,
+      ensureMessagesHydrated,
+      getMemoryPromptPlan,
+      getWorldbookContextBlocks,
+      agenticPlayEnabled,
+      onPromptBuilt,
+      setStreamingMessageId,
+      generateAgenticAssistantWithEmptyRetry,
+      generateAssistantWithEmptyRetry,
+      processImageGeneration,
+      removeEmptyStreamingDraft,
+      patchMessage,
     ],
   );
 
@@ -1321,6 +1369,7 @@ export function useSendMessage({
       const character = targetCharacter;
       beginSending(chatId);
       setChatError(chatId, null);
+      const contentPolicy = createContentPolicySnapshot(useSettingsStore.getState().contentMode);
       let assistantId: string | null = null;
 
       try {
@@ -1355,13 +1404,11 @@ export function useSendMessage({
         const contextTokens = useSettingsStore.getState().contextTokens ?? 64000;
 
         const activePresetId = await presetRepository.getActivePresetId();
-        let presetItems: { role: "system" | "user"; content: string; injectionOrder: number }[] | undefined;
+        let presetItems: PromptPresetItem[] | undefined;
         if (activePresetId) {
           const preset = await presetRepository.getById(activePresetId);
           if (preset) {
-            presetItems = preset.items
-              .filter((i) => i.enabled)
-              .map((i) => ({ role: i.role, content: i.content, injectionOrder: i.injectionOrder }));
+            presetItems = buildPolicyPresetItems(preset.items, contentPolicy);
           }
         }
 
@@ -1376,6 +1423,9 @@ export function useSendMessage({
         const contextBlocks = [memoryPlan.memoryBlock, agenticBlock, ...worldbookBlocks].filter(
           Boolean,
         ) as ContextBlock[];
+        if (contentPolicy.injectHealthyPrompt) {
+          contextBlocks.push(createHealthyModeContextBlock());
+        }
         const effectivePresetItems = agenticRecord ? await getAgenticPlayPresetItems() : presetItems;
 
         const built = buildChatPrompt({
@@ -1430,6 +1480,19 @@ export function useSendMessage({
           await removeEmptyStreamingDraft(assistant.id);
           return;
         }
+        if (contentPolicy.checkExplicitOutput) {
+          const explicitMatch = detectExplicitContent(finalContent);
+          if (explicitMatch) {
+            await patchMessage(assistant.id, {
+              content: HEALTHY_MODE_BLOCKED_PLACEHOLDER,
+              reasoningContent: undefined,
+            });
+            setChatError(chatId, "健康模式：检测到不当内容，回复已被拦截。");
+            void notifyAssistantOutputComplete(character.name);
+            await removeEmptyStreamingDraft(assistant.id);
+            return;
+          }
+        }
         void notifyAssistantOutputComplete(character.name);
         void processImageGeneration(chatId, assistant.id, finalContent);
       } catch (err) {
@@ -1444,24 +1507,23 @@ export function useSendMessage({
       }
     });
   }, [
-    character,
     chatId,
-    addMessage,
-    deleteMessage,
-    ensureMessagesHydrated,
-    agenticPlayEnabled,
-    onPromptBuilt,
+    character,
     beginSending,
-    setStreamingMessageId,
+    setChatError,
+    ensureMessagesHydrated,
+    deleteMessage,
     getMemoryPromptPlan,
     getWorldbookContextBlocks,
-    stripMessages,
+    agenticPlayEnabled,
+    onPromptBuilt,
+    addMessage,
+    setStreamingMessageId,
     generateAgenticAssistantWithEmptyRetry,
     generateAssistantWithEmptyRetry,
-    isGenerationActive,
     processImageGeneration,
     removeEmptyStreamingDraft,
-    setChatError,
+    patchMessage,
     finishSending,
   ]);
 

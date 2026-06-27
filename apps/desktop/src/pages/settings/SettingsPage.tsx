@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { Bug, Plug, Palette, Regex, SlidersHorizontal, Image as ImageIcon } from "lucide-react";
 import { useSettingsStore } from "@/features/settings/settings.store";
-import { sessionSync } from "@/db/kv";
+import { deviceSync, sessionSync } from "@/db/kv";
 import { SettingsSidebar } from "./SettingsSidebar";
 import { AppearanceSection } from "./AppearanceSection";
 import { ContextSection } from "./ContextSection";
@@ -43,7 +43,7 @@ export function SettingsPage() {
   const [section, setSection] = useState<Section>(() => readCachedTab() ?? "api");
   const [locale, setLocale] = useState<Locale>(getLocale);
   const [easterEggClicks, setEasterEggClicks] = useState(0);
-  const [secretUnlocked, setSecretUnlocked] = useState(() => sessionSync.get("secret-unlocked") === "1");
+  const [secretUnlocked, setSecretUnlocked] = useState(() => deviceSync.get("secret-unlocked") === "1");
 
   // Persist selected tab in the session namespace (1-minute TTL).
   useEffect(() => {
@@ -52,12 +52,15 @@ export function SettingsPage() {
 
   const contextTokens = useSettingsStore((s) => s.contextTokens);
   const setContextTokens = useSettingsStore((s) => s.setContextTokens);
+  const contentMode = useSettingsStore((s) => s.contentMode);
+  const setContentMode = useSettingsStore((s) => s.setContentMode);
   const loadAllConfigs = useSettingsStore((s) => s.loadAllConfigs);
   const loadRegexRules = useSettingsStore((s) => s.loadRegexRules);
   const loadMemorySettings = useSettingsStore((s) => s.loadMemorySettings);
   const loadImageGenerationSettings = useSettingsStore((s) => s.loadImageGenerationSettings);
   const loadDailyCostWarningSettings = useSettingsStore((s) => s.loadDailyCostWarningSettings);
   const loadDailyCostSpent = useSettingsStore((s) => s.loadDailyCostSpent);
+  const loadContentMode = useSettingsStore((s) => s.loadContentMode);
 
   const sections: SectionWithLabel[] = [
     { key: "general", icon: Bug, label: t("sections.general") },
@@ -75,6 +78,7 @@ export function SettingsPage() {
     loadImageGenerationSettings();
     loadDailyCostWarningSettings();
     loadDailyCostSpent();
+    loadContentMode();
   }, [
     loadAllConfigs,
     loadRegexRules,
@@ -82,6 +86,7 @@ export function SettingsPage() {
     loadImageGenerationSettings,
     loadDailyCostWarningSettings,
     loadDailyCostSpent,
+    loadContentMode,
   ]);
 
   const handleContextEasterEgg = () => {
@@ -92,7 +97,7 @@ export function SettingsPage() {
     const next = easterEggClicks + 1;
     setEasterEggClicks(next);
     if (next >= 10) {
-      sessionSync.set("secret-unlocked", "1");
+      deviceSync.set("secret-unlocked", "1");
       setSecretUnlocked(true);
       window.dispatchEvent(new Event("neotavern-secret-changed"));
       toast("success", tt("secretUnlocked"));
@@ -112,11 +117,17 @@ export function SettingsPage() {
       />
 
       <div className="flex-1 overflow-auto p-6">
-        {section === "general" && <GeneralSection locale={locale} setLocale={setLocale} t={t} />}
+        {section === "general" && <GeneralSection t={t} />}
         {section === "api" && <ApiSection t={t} />}
-        {section === "appearance" && <AppearanceSection t={t} />}
+        {section === "appearance" && <AppearanceSection t={t} locale={locale} setLocale={setLocale} />}
         {section === "context" && (
-          <ContextSection contextTokens={contextTokens} setContextTokens={setContextTokens} t={t} />
+          <ContextSection
+            contextTokens={contextTokens}
+            setContextTokens={setContextTokens}
+            contentMode={contentMode}
+            setContentMode={setContentMode}
+            t={t}
+          />
         )}
         {section === "image" && <ImageSection t={t} />}
         {section === "regex" && <RegexSection t={t} />}
