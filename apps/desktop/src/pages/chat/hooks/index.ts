@@ -10,6 +10,8 @@ export type { ActiveAgenticChoice } from "./useChatMessages";
 export { useChatScroll } from "./useChatScroll";
 export { useChatSession } from "./useChatSession";
 export type { UseChatSessionReturn } from "./useChatSession";
+export { useChatTurn } from "./useChatTurn";
+export type { TurnPhase } from "./useChatTurn";
 export { useNormalChat } from "./useNormalChat";
 export { useSavepointManager } from "./useSavepointManager";
 export { useSecondaryUsage } from "./useSecondaryUsage";

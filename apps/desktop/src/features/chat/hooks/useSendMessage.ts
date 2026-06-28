@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { generationTaskRunner } from "@/app/generation-task-runner";
 import { getBackend } from "@/platform";
+import { createGenerationStreamAccumulator, isReasoningCaptureEnabled } from "@neo-tavern/core";
 import { useChatStore } from "../chat.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import {
@@ -716,9 +717,27 @@ export function useSendMessage({
     let nextUsage: Message["usage"] | undefined;
     let thinkingDuration: number | undefined;
     const showLiveText = modelConfig.streamingEnabled !== false;
+    const captureReasoning = isReasoningCaptureEnabled(modelConfig);
     const attemptMessages = getAttemptMessages(built, retrying);
     const userId = getChatScopedDeepSeekUserId(modelConfig, targetChatId);
     let debugPrompt: SavedDebugPrompt | undefined;
+    const stream = createGenerationStreamAccumulator({
+      reasoningDeltaMode: captureReasoning ? "reasoning" : "content",
+      onContentDelta: (_delta, accumulated) => {
+        thinkingDuration ??= Date.now() - genStart;
+        nextContent = accumulated;
+        setGenerationPhase(targetChatId, "writing");
+      },
+      onReasoningDelta: (_delta, accumulated) => {
+        nextReasoningContent = accumulated;
+        if (useChatStore.getState().activeGenerations[targetChatId]?.generationPhase !== "writing") {
+          setGenerationPhase(targetChatId, retrying ? "retrying" : "thinking");
+        }
+      },
+      onUsage: (usage) => {
+        nextUsage = usage;
+      },
+    });
 
     if (debugContext) {
       try {
@@ -761,26 +780,15 @@ export function useSendMessage({
         signal: controller.signal,
       })) {
         if (!isGenerationActive(controller)) throwGenerationStopped();
-        if (chunk.reasoningContentDelta) {
-          nextReasoningContent += chunk.reasoningContentDelta;
-          if (useChatStore.getState().activeGenerations[targetChatId]?.generationPhase !== "writing") {
-            setGenerationPhase(targetChatId, retrying ? "retrying" : "thinking");
-          }
-        }
-        if (chunk.contentDelta) {
-          thinkingDuration ??= Date.now() - genStart;
-          nextContent += chunk.contentDelta;
-          setGenerationPhase(targetChatId, "writing");
-        }
-        if (chunk.usage) nextUsage = chunk.usage;
+        await stream.acceptChunk(chunk);
         if (chunk.reasoningContentDelta || chunk.contentDelta || chunk.usage) {
           await patchMessage(
             assistantId,
             {
-              content: showLiveText ? nextContent : "",
-              reasoningContent: nextReasoningContent || undefined,
+              content: showLiveText ? stream.content : "",
+              reasoningContent: stream.reasoningContent || undefined,
               thinkingDuration,
-              usage: nextUsage,
+              usage: stream.usage,
             },
             { persist: false },
           );
@@ -800,18 +808,23 @@ export function useSendMessage({
       if (!isGenerationActive(controller)) throwGenerationStopped();
       thinkingDuration = Date.now() - genStart;
       setGenerationPhase(targetChatId, "writing");
+      const resultContent =
+        !captureReasoning && result.reasoningContent && !result.content.trim()
+          ? result.reasoningContent
+          : result.content;
+      const resultReasoningContent = captureReasoning ? (result.reasoningContent ?? "") : "";
       await patchMessage(
         assistantId,
         {
           content: "",
-          reasoningContent: result.reasoningContent || undefined,
+          reasoningContent: resultReasoningContent || undefined,
           thinkingDuration,
           usage: result.usage,
         },
         { persist: false },
       );
-      nextContent = result.content;
-      nextReasoningContent = result.reasoningContent ?? "";
+      nextContent = resultContent;
+      nextReasoningContent = resultReasoningContent;
       nextUsage = result.usage;
     }
 
@@ -904,11 +917,16 @@ export function useSendMessage({
     const provider = createModelProvider(modelConfig);
     const genStart = Date.now();
     const userId = getChatScopedDeepSeekUserId(modelConfig, targetChatId);
-    let nextContent = "";
-    let nextReasoningContent = "";
     let thinkingDuration: number | undefined;
     const showLiveText = modelConfig.streamingEnabled !== false;
+    const captureReasoning = isReasoningCaptureEnabled(modelConfig);
     let debugPrompt: SavedDebugPrompt | undefined;
+    const stream = createGenerationStreamAccumulator({
+      onContentDelta: () => {
+        thinkingDuration ??= Date.now() - genStart;
+        setGenerationPhase(targetChatId, "writing");
+      },
+    });
 
     if (debugContext) {
       try {
@@ -961,14 +979,12 @@ export function useSendMessage({
       },
       onContentDelta: async (delta) => {
         if (!isGenerationActive(controller)) throwGenerationStopped();
-        thinkingDuration ??= Date.now() - genStart;
-        nextContent += delta;
-        setGenerationPhase(targetChatId, "writing");
+        await stream.acceptChunk({ contentDelta: delta });
         await patchMessage(
           assistantId,
           {
-            content: showLiveText ? nextContent : "",
-            reasoningContent: nextReasoningContent || undefined,
+            content: showLiveText ? stream.content : "",
+            reasoningContent: stream.reasoningContent || undefined,
             thinkingDuration,
           },
           { persist: false },
@@ -976,24 +992,24 @@ export function useSendMessage({
       },
       onReasoningDelta: async (delta) => {
         if (!isGenerationActive(controller)) throwGenerationStopped();
-        nextReasoningContent += delta;
+        await stream.acceptChunk({ reasoningContentDelta: delta });
         await patchMessage(
           assistantId,
           {
-            content: showLiveText ? nextContent : "",
-            reasoningContent: nextReasoningContent || undefined,
+            content: showLiveText ? stream.content : "",
+            reasoningContent: stream.reasoningContent || undefined,
             thinkingDuration,
           },
           { persist: false },
         );
       },
       onContentReset: async () => {
-        nextContent = "";
+        stream.resetContent();
         await patchMessage(
           assistantId,
           {
             content: "",
-            reasoningContent: nextReasoningContent || undefined,
+            reasoningContent: stream.reasoningContent || undefined,
             thinkingDuration,
             agenticOptions: undefined,
           },
@@ -1001,6 +1017,7 @@ export function useSendMessage({
         );
       },
       requirePlayerOptions: true,
+      captureReasoning,
     });
 
     if (!isGenerationActive(controller)) throwGenerationStopped();
@@ -1010,7 +1027,7 @@ export function useSendMessage({
     return {
       content: result.content,
       agenticOptions: result.agenticOptions,
-      reasoningContent: result.reasoningContent ?? nextReasoningContent,
+      reasoningContent: result.reasoningContent ?? stream.reasoningContent,
       usage,
       generateDuration: Date.now() - genStart,
       thinkingDuration,
