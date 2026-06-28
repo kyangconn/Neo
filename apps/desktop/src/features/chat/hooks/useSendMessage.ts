@@ -2,7 +2,12 @@ import { useCallback } from "react";
 import { isPermissionGranted, requestPermission, sendNotification } from "@tauri-apps/plugin-notification";
 import { generationTaskRunner } from "@/app/generation-task-runner";
 import { getBackend } from "@/platform";
-import { createGenerationStreamAccumulator, isReasoningCaptureEnabled } from "@neo-tavern/core";
+import {
+  createFloodInspectOutput,
+  createGenerationStreamAccumulator,
+  isReasoningCaptureEnabled,
+  type GenerationHooks,
+} from "@neo-tavern/core";
 import { useChatStore } from "../chat.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import {
@@ -62,7 +67,7 @@ import {
   createHealthyModeContextBlock,
   detectExplicitContent,
   HEALTHY_MODE_BLOCKED_PLACEHOLDER,
-} from "@/features/healthy-mode/healthy-mode";
+} from "@/features/content-policy/healthy-mode";
 import {
   createContentPolicySnapshot,
   filterNsfwItems,
@@ -107,6 +112,7 @@ const EMPTY_ASSISTANT_RETRY_MESSAGE = [
   "如果当前预设要求使用 <content></content>，请把完整正文写在这个标签内。",
   "不要解释重试原因，不要输出道歉，只输出符合当前角色与预设格式的回复。",
 ].join("\n");
+const FLOOD_GUARD_STOP_MESSAGE = "检测到模型重复输出，已自动停止生成。";
 
 type PromptPresetItem = { role: "system" | "user"; content: string; injectionOrder: number };
 
@@ -159,6 +165,37 @@ function notifyDebugPromptSaveFailed(error: unknown) {
 
 function isAbortError(error: unknown) {
   return (error as Error).name === "AbortError";
+}
+
+function isFloodGuardError(error: unknown) {
+  return (error as Error).name === "FloodGuardAbortError";
+}
+
+function createFloodGuardError(reason: string) {
+  const err = new Error(`${FLOOD_GUARD_STOP_MESSAGE}${reason ? ` ${reason}` : ""}`);
+  err.name = "FloodGuardAbortError";
+  return err;
+}
+
+function createOutputQualityHooks(sourceMessages: Message[]): Pick<GenerationHooks, "inspectOutput"> {
+  const recentAssistantContents = sourceMessages
+    .filter((message) => message.role === "assistant" && message.content.trim())
+    .slice(-8)
+    .map((message) => message.content);
+  return {
+    inspectOutput: createFloodInspectOutput(recentAssistantContents),
+  };
+}
+
+function inspectGeneratedOutput(
+  hooks: Pick<GenerationHooks, "inspectOutput"> | undefined,
+  accumulated: string,
+  controller: AbortController,
+) {
+  const result = hooks?.inspectOutput?.(accumulated);
+  if (!result || result.pass) return;
+  if (result.terminate) controller.abort();
+  throw createFloodGuardError(result.reason);
 }
 
 function withDebugUsage(
@@ -702,6 +739,7 @@ export function useSendMessage({
     retrying: boolean,
     attempt: number,
     debugContext?: DebugPromptContext,
+    generationHooks?: Pick<GenerationHooks, "inspectOutput">,
   ): Promise<{
     content: string;
     agenticOptions?: AgenticActionOption[];
@@ -781,6 +819,7 @@ export function useSendMessage({
       })) {
         if (!isGenerationActive(controller)) throwGenerationStopped();
         await stream.acceptChunk(chunk);
+        inspectGeneratedOutput(generationHooks, stream.content, controller);
         if (chunk.reasoningContentDelta || chunk.contentDelta || chunk.usage) {
           await patchMessage(
             assistantId,
@@ -813,6 +852,7 @@ export function useSendMessage({
           ? result.reasoningContent
           : result.content;
       const resultReasoningContent = captureReasoning ? (result.reasoningContent ?? "") : "";
+      inspectGeneratedOutput(generationHooks, resultContent, controller);
       await patchMessage(
         assistantId,
         {
@@ -846,6 +886,7 @@ export function useSendMessage({
     modelConfig: ModelConfig,
     controller: AbortController,
     debugContext?: DebugPromptContext,
+    generationHooks?: Pick<GenerationHooks, "inspectOutput">,
   ): Promise<string> => {
     for (let attempt = 0; attempt <= EMPTY_ASSISTANT_RETRY_LIMIT; attempt++) {
       const attemptNumber = attempt + 1;
@@ -858,6 +899,7 @@ export function useSendMessage({
         attempt > 0,
         attemptNumber,
         debugContext,
+        generationHooks,
       );
       void recordUsageCostAndWarn(result.usage);
 
@@ -905,6 +947,7 @@ export function useSendMessage({
     retrying: boolean,
     attempt: number,
     debugContext?: DebugPromptContext,
+    generationHooks?: Pick<GenerationHooks, "inspectOutput">,
   ): Promise<{
     content: string;
     agenticOptions?: AgenticActionOption[];
@@ -980,6 +1023,7 @@ export function useSendMessage({
       onContentDelta: async (delta) => {
         if (!isGenerationActive(controller)) throwGenerationStopped();
         await stream.acceptChunk({ contentDelta: delta });
+        inspectGeneratedOutput(generationHooks, stream.content, controller);
         await patchMessage(
           assistantId,
           {
@@ -1023,6 +1067,7 @@ export function useSendMessage({
     if (!isGenerationActive(controller)) throwGenerationStopped();
 
     thinkingDuration ??= Date.now() - genStart;
+    inspectGeneratedOutput(generationHooks, result.content, controller);
     const usage = withDebugUsage(withDeepSeekUsageCost(result.usage, modelConfig), debugPrompt);
     return {
       content: result.content,
@@ -1044,6 +1089,7 @@ export function useSendMessage({
     initialGameState: AgenticGameState,
     controller: AbortController,
     debugContext?: DebugPromptContext,
+    generationHooks?: Pick<GenerationHooks, "inspectOutput">,
   ): Promise<string> => {
     let currentState = initialGameState;
     for (let attempt = 0; attempt <= EMPTY_ASSISTANT_RETRY_LIMIT; attempt++) {
@@ -1058,6 +1104,7 @@ export function useSendMessage({
         attempt > 0,
         attemptNumber,
         debugContext,
+        generationHooks,
       );
       currentState = result.gameState;
       void recordUsageCostAndWarn(result.usage);
@@ -1247,6 +1294,7 @@ export function useSendMessage({
           }
 
           const historyMessages = recentMessages.slice(0, -1);
+          const generationHooks = createOutputQualityHooks(historyMessages);
           const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal);
           const worldbookBlocks = await getWorldbookContextBlocks(trimmedContent, stripMessages(recentMessages));
           const agenticRecord =
@@ -1311,6 +1359,7 @@ export function useSendMessage({
                   agenticRecord.gameState,
                   controller,
                   debugContext,
+                  generationHooks,
                 )
               : await generateAssistantWithEmptyRetry(
                   chatId,
@@ -1319,6 +1368,7 @@ export function useSendMessage({
                   modelConfig,
                   controller,
                   debugContext,
+                  generationHooks,
                 );
           if (!isCurrent() || !isGenerationActive(controller)) {
             await removeEmptyStreamingDraft(assistant.id);
@@ -1342,7 +1392,9 @@ export function useSendMessage({
           await removeEmptyStreamingDraft(assistant.id);
         } catch (err) {
           await removeEmptyStreamingDraft(assistantId);
-          if ((err as Error).name === "AbortError" || controller.signal.aborted) {
+          if (isFloodGuardError(err)) {
+            if (isCurrent()) setChatError(chatId, (err as Error).message || FLOOD_GUARD_STOP_MESSAGE);
+          } else if ((err as Error).name === "AbortError" || controller.signal.aborted) {
             if (isCurrent()) setChatError(chatId, "Generation stopped");
           } else if (isCurrent()) {
             setChatError(chatId, (err as Error).message || "Failed to send message");
@@ -1430,6 +1482,7 @@ export function useSendMessage({
         }
 
         const historyMessages = messagesForPrompt.slice(0, -1);
+        const generationHooks = createOutputQualityHooks(historyMessages);
         const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, controller.signal);
         const worldbookBlocks = await getWorldbookContextBlocks(userContent, stripMessages(messagesForPrompt));
         const agenticRecord =
@@ -1491,8 +1544,17 @@ export function useSendMessage({
                 agenticRecord.gameState,
                 controller,
                 debugContext,
+                generationHooks,
               )
-            : await generateAssistantWithEmptyRetry(chatId, assistant.id, built, modelConfig, controller, debugContext);
+            : await generateAssistantWithEmptyRetry(
+                chatId,
+                assistant.id,
+                built,
+                modelConfig,
+                controller,
+                debugContext,
+                generationHooks,
+              );
         if (!isCurrent() || !isGenerationActive(controller)) {
           await removeEmptyStreamingDraft(assistant.id);
           return;
@@ -1513,7 +1575,9 @@ export function useSendMessage({
         void notifyAssistantOutputComplete(character.name);
         void processImageGeneration(chatId, assistant.id, finalContent);
       } catch (err) {
-        if ((err as Error).name === "AbortError" || controller.signal.aborted) {
+        if (isFloodGuardError(err)) {
+          if (isCurrent()) setChatError(chatId, (err as Error).message || FLOOD_GUARD_STOP_MESSAGE);
+        } else if ((err as Error).name === "AbortError" || controller.signal.aborted) {
           if (isCurrent()) setChatError(chatId, "Generation stopped");
         } else if (isCurrent()) {
           setChatError(chatId, (err as Error).message || "Failed to regenerate");
