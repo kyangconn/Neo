@@ -2,9 +2,10 @@ import { useCallback, useState } from "react";
 import { cn } from "@neo-tavern/ui";
 import type { AgenticGameState } from "@/features/agentic-play/agentic-play";
 import { useSettingsStore } from "@/features/settings/settings.store";
-import { ChatSidebar, ChatRightPanel, getGenerationStatus, type PendingSendItem } from "@/pages/chat";
-import { AgenticChatFooter, AgenticGeneratingFooter, NormalChatFooter } from "@/pages/chat/ChatFooters";
-import { MessageList } from "@/pages/chat/MessageList";
+import { ChatSidebar } from "./ChatSidebar";
+import { ChatRightPanel } from "./ChatRightPanel";
+import { AgenticChatFooter, AgenticGeneratingFooter, NormalChatFooter } from "./ChatFooters";
+import { MessageList } from "./MessageList";
 import {
   ImagePromptDialog,
   PromptDialog,
@@ -13,7 +14,7 @@ import {
   TokenDialog,
   DeleteMessageDialog,
   ThinkingDialog,
-} from "@/pages/chat/dialogs";
+} from "./dialogs";
 import {
   useAgenticChat,
   useBranchNavigation,
@@ -26,8 +27,9 @@ import {
   useNormalChat,
   useSavepointManager,
   useSecondaryUsage,
-} from "@/pages/chat/hooks";
-import type { TokenUsageView } from "@/pages/chat/types";
+} from "./hooks";
+import type { PendingSendItem, TokenUsageView } from "./types";
+import { getGenerationStatus } from "./utils";
 
 /**
  * Thin orchestrator for the chat page. All concerns are delegated to hooks:

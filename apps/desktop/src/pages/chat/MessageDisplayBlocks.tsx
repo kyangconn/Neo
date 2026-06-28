@@ -1,5 +1,6 @@
 import type { DisplayBlock } from "@neo-tavern/core";
-import { ImageDisplayBlockView, SideBlockView, TemplateDisplayBlockView } from "@/pages/chat";
+import { SideBlockView, TemplateDisplayBlockView } from "./ChatDisplay";
+import { ImageDisplayBlockView } from "./ImageBlocks";
 import type { MessageListActions, RenderedMessage } from "./types";
 
 interface MessageDisplayBlocksProps {

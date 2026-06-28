@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { Chat, Message, MessageImage } from "@neo-tavern/shared";
 import {
   createGeneratingImages,
@@ -16,7 +17,7 @@ import { resolveWorldbookEntries } from "@neo-tavern/core";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import { toast } from "@/utils/toast";
-import { ensureImageSlots, clipImageReference, resolveImagePlannerConfig } from "@/pages/chat";
+import { clipImageReference, ensureImageSlots, resolveImagePlannerConfig } from "../ImageBlocks";
 
 interface UseChatImagesParams {
   currentChat: Chat | null;
@@ -44,6 +45,7 @@ export function useChatImages({
   getLatestMessage,
   patchMessage,
 }: UseChatImagesParams) {
+  const { t } = useTranslation("chat");
   const [imageGenerationBusy, setImageGenerationBusy] = useState<Record<string, boolean>>({});
   const [imagePromptEditTarget, setImagePromptEditTarget] = useState<{
     messageId: string;
@@ -105,15 +107,15 @@ export function useChatImages({
 
       const settings = normalizeImageSettings(useSettingsStore.getState().imageGeneration);
       if (!settings.enabled) {
-        toast("error", "请先在 Image Gen 设置里开启生图功能");
+        toast("error", t("toast.imageGenerationEnableRequired"));
         return;
       }
       if (settings.maxImages <= 0) {
-        toast("error", "Images / Trigger 不能为 0");
+        toast("error", t("toast.imageGenerationTriggerRequired"));
         return;
       }
       if (!settings.comfyWorkflowJson.trim()) {
-        toast("error", "请先在 Image Gen 设置里导入 ComfyUI workflow JSON");
+        toast("error", t("toast.imageGenerationWorkflowRequired"));
         return;
       }
 
@@ -125,7 +127,7 @@ export function useChatImages({
         if (markers.length === 0) {
           const plannerConfig = await resolveImagePlannerConfig(settings.plannerConfigId);
           if (!plannerConfig) {
-            toast("error", "请先在 Image Gen 设置里选择 Secondary API for Image Planning");
+            toast("error", t("toast.imagePlanningApiRequired"));
             return;
           }
 
@@ -140,7 +142,7 @@ export function useChatImages({
           void secondaryApiUsageRepository.create({
             chatId: message.chatId,
             source: "image-planner",
-            label: "Manual Image Planning",
+            label: t("imageGeneration.manualPlanningLabel"),
             modelConfigId: plannerConfig.id,
             model: plannerConfig.model,
             usage: plannedUsage,
@@ -155,7 +157,7 @@ export function useChatImages({
         }
 
         if (markers.length === 0) {
-          toast("info", "副 API 没有找到适合生图的可见画面");
+          toast("info", t("toast.imagePlanningNoScene"));
           return;
         }
 
@@ -180,16 +182,16 @@ export function useChatImages({
               return {
                 ...image,
                 status: "error" as const,
-                error: (err as Error).message || "Image generation failed",
+                error: (err as Error).message || t("toast.imageGenerationFailed"),
                 updatedAt: new Date().toISOString(),
               };
             });
           }
           await patchMessage(message.id, { images });
         }
-        toast("success", "图片生成完成");
+        toast("success", t("toast.imageGenerationComplete"));
       } catch (err) {
-        toast("error", (err as Error).message || "图片生成失败");
+        toast("error", (err as Error).message || t("toast.imageGenerationFailed"));
       } finally {
         setMessageImageBusy(message.id, false);
       }
@@ -201,6 +203,7 @@ export function useChatImages({
       imageGenerationBusy,
       patchMessage,
       setMessageImageBusy,
+      t,
     ],
   );
 
@@ -225,9 +228,9 @@ export function useChatImages({
         error: undefined,
         updatedAt: new Date().toISOString(),
       }));
-      toast("info", "图片已删除");
+      toast("info", t("toast.imageDeleted"));
     },
-    [updateImageSlot],
+    [t, updateImageSlot],
   );
 
   const handleRegenerateImage = useCallback(
@@ -235,13 +238,13 @@ export function useChatImages({
       const latest = getLatestMessage(messageId);
       const prompt = (overridePrompt ?? latest?.images?.[imageIndex]?.prompt ?? fallbackPrompt).trim();
       if (!prompt) {
-        toast("error", "图片提示词为空");
+        toast("error", t("toast.imagePromptEmpty"));
         return;
       }
 
       const settings = normalizeImageSettings(useSettingsStore.getState().imageGeneration);
       if (!settings.comfyWorkflowJson.trim()) {
-        toast("error", "请先在 Image Gen 设置里导入 ComfyUI workflow JSON");
+        toast("error", t("toast.imageGenerationWorkflowRequired"));
         return;
       }
 
@@ -267,7 +270,7 @@ export function useChatImages({
             updatedAt: new Date().toISOString(),
           };
         });
-        toast("success", "图片已重新生成");
+        toast("success", t("toast.imageRegenerated"));
       } catch (err) {
         await updateImageSlot(messageId, imageIndex, prompt, (image) => {
           if (image.status === "deleted") return image;
@@ -276,14 +279,14 @@ export function useChatImages({
             prompt,
             status: "error",
             src: undefined,
-            error: (err as Error).message || "Image generation failed",
+            error: (err as Error).message || t("toast.imageGenerationFailed"),
             updatedAt: new Date().toISOString(),
           };
         });
-        toast("error", (err as Error).message || "图片重新生成失败");
+        toast("error", (err as Error).message || t("toast.imageRegenerateFailed"));
       }
     },
-    [getLatestMessage, updateImageSlot],
+    [getLatestMessage, t, updateImageSlot],
   );
 
   const saveImagePromptEdit = useCallback(
@@ -291,7 +294,7 @@ export function useChatImages({
       if (!imagePromptEditTarget) return;
       const prompt = imagePromptDraft.trim();
       if (!prompt) {
-        toast("error", "图片提示词为空");
+        toast("error", t("toast.imagePromptEmpty"));
         return;
       }
 
@@ -302,12 +305,12 @@ export function useChatImages({
         updatedAt: new Date().toISOString(),
       }));
       closeImagePromptEditor();
-      toast("success", "图片提示词已更新");
+      toast("success", t("toast.imagePromptUpdated"));
       if (regenerateAfterSave) {
         void handleRegenerateImage(target.messageId, target.imageIndex, target.fallbackPrompt, prompt);
       }
     },
-    [closeImagePromptEditor, handleRegenerateImage, imagePromptDraft, imagePromptEditTarget, updateImageSlot],
+    [closeImagePromptEditor, handleRegenerateImage, imagePromptDraft, imagePromptEditTarget, t, updateImageSlot],
   );
 
   return {

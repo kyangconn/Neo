@@ -8,7 +8,7 @@ import { useWorldbookStore } from "@/features/settings/worldbook.store";
 import { chatRepository } from "@/db/repositories";
 import { device, prefs } from "@/db/kv";
 import { readOptional } from "@/db/storage/repository-helpers";
-import { CHAT_FONT_SIZE_KEY, clampChatFontSize, getChatDraftKey } from "@/pages/chat/utils";
+import { CHAT_FONT_SIZE_KEY, clampChatFontSize, getChatDraftKey } from "../utils";
 
 interface UseChatSessionParams {
   /** Called once the font-size preference has been read from storage. */

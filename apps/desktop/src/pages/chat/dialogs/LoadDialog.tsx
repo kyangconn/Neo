@@ -10,7 +10,7 @@ import {
   DialogFooter,
 } from "@neo-tavern/ui";
 import type { ChatSavepoint } from "@/db/repositories";
-import { formatSavepointDate } from "@/pages/chat/utils";
+import { formatSavepointDate } from "../utils";
 import { iconSm } from "./shared";
 
 export function LoadDialog({

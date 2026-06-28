@@ -3,9 +3,9 @@ import { BarChart3 } from "lucide-react";
 import { Button, cn, Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@neo-tavern/ui";
 import type { SecondaryApiUsageSource } from "@/db/repositories";
 import type { MessageUsage } from "@neo-tavern/shared";
-import type { TokenUsageView } from "@/pages/chat/types";
-import { formatCompactToken } from "@/pages/chat/utils";
 import { formatCnyCost, formatCnyExact } from "@/features/billing/deepseek-billing";
+import type { TokenUsageView } from "../types";
+import { formatCompactToken } from "../utils";
 import { dialogMax80vh, dialogScrollContent } from "./shared";
 
 const TOKEN_COST_FRACTION_DIGITS = 4;

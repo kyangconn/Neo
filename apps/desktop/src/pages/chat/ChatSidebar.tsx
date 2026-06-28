@@ -1,7 +1,7 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, MessageSquare } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Avatar } from "@/pages/chat/ChatDisplay";
 import type { Character, Chat } from "@neo-tavern/shared";
+import { Avatar } from "./ChatDisplay";
 
 interface ChatSidebarProps {
   chats: Chat[];

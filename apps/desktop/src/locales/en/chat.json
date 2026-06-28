@@ -34,6 +34,13 @@
     "agenticTitleWithCharacter": "What action do you take in {{name}}'s scene?",
     "successRate": "Success Rate {{rate}}%"
   },
+  "agentic": {
+    "openingLabel": "Opening options",
+    "customActionLabel": "Custom action"
+  },
+  "imageGeneration": {
+    "manualPlanningLabel": "Manual Image Planning"
+  },
   "deleteBtn": "Delete",
   "contextUsage": {
     "title": "{{current}} / {{limit}} current conversation context tokens",
@@ -152,7 +159,19 @@
     "messagesDeleted": "Messages deleted",
     "messageDeleted": "Message deleted",
     "deleteFailed": "Failed to delete",
-    "copied": "Copied"
+    "copied": "Copied",
+    "imageGenerationEnableRequired": "Enable image generation in Image Gen settings first",
+    "imageGenerationTriggerRequired": "Images / Trigger cannot be 0",
+    "imageGenerationWorkflowRequired": "Import a ComfyUI workflow JSON in Image Gen settings first",
+    "imagePlanningApiRequired": "Select a Secondary API for Image Planning in Image Gen settings first",
+    "imagePlanningNoScene": "The secondary API did not find a visible scene suitable for image generation",
+    "imageGenerationComplete": "Image generation complete",
+    "imageGenerationFailed": "Image generation failed",
+    "imageDeleted": "Image deleted",
+    "imagePromptEmpty": "Image prompt is empty",
+    "imageRegenerated": "Image regenerated",
+    "imageRegenerateFailed": "Failed to regenerate image",
+    "imagePromptUpdated": "Image prompt updated"
   },
   "regenerateDialog": {
     "title": "Regenerate",

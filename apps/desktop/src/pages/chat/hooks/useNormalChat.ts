@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { buildChatPrompt, formatPreview, stripPromptContent } from "@neo-tavern/core";
 import type { BuiltPrompt, ContextBlock, Message } from "@neo-tavern/shared";
 import {
@@ -12,7 +13,8 @@ import { resolveWorldbookEntries, getWorldbookEntryInsertPosition } from "@neo-t
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { useSettingsStore } from "@/features/settings/settings.store";
 import { useWorldbookStore } from "@/features/settings/worldbook.store";
-import { CONTINUE_PROMPT, getChatDraftKey, replaceUserPlaceholders, type PendingSendItem } from "@/pages/chat";
+import type { PendingSendItem } from "../types";
+import { CONTINUE_PROMPT, getChatDraftKey, replaceUserPlaceholders } from "../utils";
 import type { UseChatSessionReturn } from "./useChatSession";
 
 interface UseNormalChatParams {
@@ -42,6 +44,7 @@ export function useNormalChat({
   agenticGameState,
   setAgenticGameState,
 }: UseNormalChatParams) {
+  const { t } = useTranslation("chat");
   const { character, currentChat, messages, addMessage, input, setInput, mountedRef, currentChatIdRef } = session;
   const firstMessage = character?.firstMessage;
 
@@ -219,8 +222,8 @@ export function useNormalChat({
   }, [input, currentChat, setInput, submitContent]);
 
   const handleContinue = useCallback(async () => {
-    await submitContent(CONTINUE_PROMPT, { hiddenUserMessage: true, label: "续写" });
-  }, [submitContent]);
+    await submitContent(CONTINUE_PROMPT, { hiddenUserMessage: true, label: t("continueLabel") });
+  }, [submitContent, t]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

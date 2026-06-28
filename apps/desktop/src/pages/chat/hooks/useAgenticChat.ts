@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import type { Character, Chat } from "@neo-tavern/shared";
 import type { Dispatch, SetStateAction } from "react";
 import type { ChoiceInputPanelChoice } from "@/components/ChoiceInputPanel";
@@ -89,6 +90,7 @@ export function useAgenticChat({
   lastAssistantId,
   activeAgenticChoice,
 }: UseAgenticChatParams) {
+  const { t } = useTranslation("chat");
   const agenticOpeningStartedRef = useRef<string | null>(null);
 
   // Load persisted agentic state when the chat / character changes.
@@ -121,7 +123,7 @@ export function useAgenticChat({
     if (agenticOpeningStartedRef.current === chatId) return;
 
     agenticOpeningStartedRef.current = chatId;
-    void submitContent(AGENTIC_PLAY_OPENING_PROMPT, { hiddenUserMessage: true, label: "开局选项" });
+    void submitContent(AGENTIC_PLAY_OPENING_PROMPT, { hiddenUserMessage: true, label: t("agentic.openingLabel") });
   }, [
     currentChat?.id,
     character,
@@ -132,6 +134,7 @@ export function useAgenticChat({
     sending,
     isGeneratingCurrentChat,
     submitContent,
+    t,
   ]);
 
   const handleAgenticChoiceSubmit = useCallback(
@@ -165,11 +168,11 @@ export function useAgenticChat({
       }
       void submitContent(value, {
         hiddenUserMessage: true,
-        label: choice?.label ?? "自定义行动",
+        label: choice?.label ?? t("agentic.customActionLabel"),
         metadata: { hiddenReason: "agentic_custom_action" },
       });
     },
-    [lastAssistantId, setDismissedAgenticChoiceMessageId, submitContent],
+    [lastAssistantId, setDismissedAgenticChoiceMessageId, submitContent, t],
   );
 
   const handleDismissChoice = useCallback(() => {

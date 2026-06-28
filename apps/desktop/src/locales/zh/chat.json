@@ -29,6 +29,13 @@
     "agenticTitleWithCharacter": "你要在 {{name}} 的场景里采取什么行动？",
     "successRate": "成功率 {{rate}}%"
   },
+  "agentic": {
+    "openingLabel": "开局选项",
+    "customActionLabel": "自定义行动"
+  },
+  "imageGeneration": {
+    "manualPlanningLabel": "手动图片规划"
+  },
   "contextUsage": {
     "title": "当前对话上下文 Token：{{current}} / {{limit}}",
     "noData": "暂无上下文使用数据"
@@ -142,7 +149,19 @@
     "messagesDeleted": "消息已删除",
     "messageDeleted": "消息已删除",
     "deleteFailed": "删除失败",
-    "copied": "已复制"
+    "copied": "已复制",
+    "imageGenerationEnableRequired": "请先在 Image Gen 设置里开启生图功能",
+    "imageGenerationTriggerRequired": "Images / Trigger 不能为 0",
+    "imageGenerationWorkflowRequired": "请先在 Image Gen 设置里导入 ComfyUI workflow JSON",
+    "imagePlanningApiRequired": "请先在 Image Gen 设置里选择 Secondary API for Image Planning",
+    "imagePlanningNoScene": "副 API 没有找到适合生图的可见画面",
+    "imageGenerationComplete": "图片生成完成",
+    "imageGenerationFailed": "图片生成失败",
+    "imageDeleted": "图片已删除",
+    "imagePromptEmpty": "图片提示词为空",
+    "imageRegenerated": "图片已重新生成",
+    "imageRegenerateFailed": "图片重新生成失败",
+    "imagePromptUpdated": "图片提示词已更新"
   },
   "oldMessages": {
     "collapse": "收起较早消息，保留最近 {{limit}} 轮",

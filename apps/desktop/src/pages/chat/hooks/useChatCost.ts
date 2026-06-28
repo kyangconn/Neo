@@ -1,9 +1,9 @@
 import { useTranslation } from "react-i18next";
 import type { Message } from "@neo-tavern/shared";
 import type { SecondaryApiUsageRecord } from "@/db/repositories";
-import { DEEPSEEK_CONTEXT_LIMIT } from "@/pages/chat/utils";
-import type { TokenUsageView } from "@/pages/chat/types";
-import type { TokenDialogRow, TokenDialogTotals } from "@/pages/chat/dialogs/TokenDialog";
+import type { TokenDialogRow, TokenDialogTotals } from "../dialogs/TokenDialog";
+import type { TokenUsageView } from "../types";
+import { DEEPSEEK_CONTEXT_LIMIT } from "../utils";
 
 interface UseChatCostParams {
   messages: Message[];
