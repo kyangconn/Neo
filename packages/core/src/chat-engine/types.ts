@@ -31,6 +31,16 @@ export interface TurnResult<TSideEffects extends Record<string, unknown> = Recor
   sideEffects: TSideEffects;
 }
 
+export type TurnEvent<TSideEffects extends Record<string, unknown> = Record<string, unknown>> =
+  | { type: "turn.started" }
+  | { type: "turn.phase"; phase: TurnPhase }
+  | { type: "generation.phase"; phase: GenerationPhase }
+  | { type: "content.delta"; delta: string; accumulated: string }
+  | { type: "reasoning.delta"; delta: string; accumulated: string }
+  | { type: "tool.event"; toolName: string }
+  | { type: "turn.completed"; result: TurnResult<TSideEffects> }
+  | { type: "turn.failed"; error: Error };
+
 export interface GenerationHooks {
   signal?: AbortSignal;
   onContentDelta?: (delta: string, accumulated: string) => void | Promise<void>;

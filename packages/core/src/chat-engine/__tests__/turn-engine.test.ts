@@ -70,8 +70,12 @@ describe("runChatTurn", () => {
         events.push("strategy.presets");
         return null;
       },
-      generate: async () => {
+      generate: async (_ctx, hooks) => {
         events.push("strategy.generate");
+        await hooks.onContentDelta?.("he", "he");
+        await hooks.onReasoningDelta?.("hm", "hm");
+        hooks.onToolEvent?.("roll_dice");
+        hooks.onPhaseChange?.("writing");
         return { content: "ok", sideEffects: {} };
       },
       onTurnComplete: async () => {
@@ -80,9 +84,13 @@ describe("runChatTurn", () => {
     };
 
     const phases: string[] = [];
+    const turnEvents: string[] = [];
     const result = await runChatTurn(strategy, createContext(), {
       pluginRegistry: registry,
       onPhaseChange: (phase) => phases.push(phase),
+      onEvent: (event) => {
+        turnEvents.push(event.type === "turn.phase" ? `${event.type}:${event.phase}` : event.type);
+      },
     });
 
     expect(result.content).toBe("ok");
@@ -96,5 +104,40 @@ describe("runChatTurn", () => {
       "plugin.after",
     ]);
     expect(phases).toEqual(["preparing", "streaming", "postprocessing", "idle"]);
+    expect(turnEvents).toEqual([
+      "turn.started",
+      "turn.phase:preparing",
+      "turn.phase:streaming",
+      "content.delta",
+      "reasoning.delta",
+      "tool.event",
+      "generation.phase",
+      "turn.phase:postprocessing",
+      "turn.completed",
+      "turn.phase:idle",
+    ]);
+  });
+
+  it("emits a failed event when the strategy throws", async () => {
+    const strategy: ChatStrategy = {
+      mode: "normal",
+      buildExtraContextBlocks: () => [],
+      resolvePresetItems: () => null,
+      generate: async () => {
+        throw new Error("boom");
+      },
+      onTurnComplete: async () => {},
+    };
+
+    const events: string[] = [];
+    await expect(
+      runChatTurn(strategy, createContext(), {
+        onEvent: (event) => {
+          events.push(event.type);
+        },
+      }),
+    ).rejects.toThrow("boom");
+
+    expect(events).toEqual(["turn.started", "turn.phase", "turn.phase", "turn.failed"]);
   });
 });
