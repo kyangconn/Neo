@@ -372,7 +372,9 @@ pub(crate) fn try_start_lan_server(handle: tauri::AppHandle) {
 
 fn random_password() -> String {
     let chars: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&";
-    (0..12).map(|_| chars[rand::random::<u8>() as usize % chars.len()] as char).collect()
+    (0..12)
+        .map(|_| chars[rand::random::<u8>() as usize % chars.len()] as char)
+        .collect()
 }
 
 fn resolve_web_dir(_handle: &tauri::AppHandle) -> String {
