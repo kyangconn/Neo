@@ -1,9 +1,8 @@
 import { useCallback } from "react";
-import { assembleChatContext } from "../context-assembler";
 import { cancelAutoImageGeneration, runAutoImageGeneration } from "../auto-image-runner";
 import { buildMemoryPromptPlan, resolveModelConfig } from "../memory-planner";
-import { generateAssistantWithRetry, getNextDebugRound, type DebugPromptContext } from "../generation-runner";
-import { finalizeAssistantTurn, handleTurnError } from "../turn-finalizer";
+import { runAssistantTurn } from "../assistant-turn-runner";
+import { handleTurnError } from "../turn-finalizer";
 import { abortChatTurn, startChatTurn } from "../turn-runtime";
 import { useChatStore } from "../chat.store";
 import { useSettingsStore } from "@/features/settings/settings.store";
@@ -78,8 +77,6 @@ export function useSendMessage({
     if (!chatId) return;
     abortChatTurn(chatId);
   }, [chatId]);
-
-  const isGenerationActive = (controller: AbortController) => !controller.signal.aborted;
 
   const stripMessages = useCallback((msgs: Message[]): Message[] => {
     const rules = useSettingsStore.getState().getActiveRegexRules() ?? [];
@@ -165,7 +162,6 @@ export function useSendMessage({
       return startChatTurn(targetChatId, async ({ controller, isCurrent }) => {
         const chatId = targetChatId;
         const character = targetCharacter;
-        let assistantId: string | null = null;
         const contentPolicy = createContentPolicySnapshot(useSettingsStore.getState().contentMode);
 
         // Strict healthy mode: block explicit user input before sending.
@@ -193,83 +189,37 @@ export function useSendMessage({
           });
 
           const recentMessages = await ensureMessagesHydrated(chatId);
-          const assembled = await assembleChatContext({
+          await runAssistantTurn({
             chatId,
             character,
             userInput: trimmedContent,
             promptMessages: recentMessages,
             contentPolicy,
             agenticPlayEnabled,
-            signal: controller.signal,
+            assistantParentId: userMsg.id,
+            controller,
+            isCurrent,
+            fallbackMessage: "Failed to send message",
+            debugBaseTrigger: options.hiddenUserMessage ? "continue" : "send",
+            hiddenUserMessage: !!options.hiddenUserMessage,
+            isDebugEnabled: () => useSettingsStore.getState().debugMode,
             getMemoryPromptPlan,
             getWorldbookContextBlocks,
             stripMessages,
-          });
-          const { agenticRecord, built, contextTokens, generationHooks, modelConfig } = assembled;
-
-          if (onPromptBuilt) {
-            onPromptBuilt(built);
-          }
-
-          const assistant = await addMessage({
-            chatId,
-            parentId: userMsg.id,
-            role: "assistant",
-            content: "",
-          });
-          assistantId = assistant.id;
-          setStreamingMessageId(chatId, assistant.id);
-          const debugContext: DebugPromptContext | undefined = useSettingsStore.getState().debugMode
-            ? {
-                chatId,
-                characterId: character.id,
-                characterName: character.name,
-                contextTokens,
-                round: getNextDebugRound(recentMessages),
-                assistantMessageId: assistant.id,
-                baseTrigger: options.hiddenUserMessage ? "continue" : "send",
-                hiddenUserMessage: !!options.hiddenUserMessage,
-              }
-            : undefined;
-          const finalContent = await generateAssistantWithRetry({
-            chatId,
-            assistantId: assistant.id,
-            built,
-            modelConfig,
-            controller,
-            debugContext,
-            generationHooks,
-            agentic:
-              agenticRecord && agenticPlayEnabled
-                ? {
-                    character,
-                    initialGameState: agenticRecord.gameState,
-                  }
-                : undefined,
             effects: {
+              addMessage,
               patchMessage,
               deleteMessage,
               setStreamingMessageId,
               setGenerationPhase,
               onAgenticPlayStateUpdated,
             },
-          });
-          await finalizeAssistantTurn({
-            chatId,
-            assistantId: assistant.id,
-            characterName: character.name,
-            finalContent,
-            contentPolicy,
-            isCurrent,
-            isGenerationActive: () => isGenerationActive(controller),
-            patchMessage,
+            onPromptBuilt,
             removeEmptyStreamingDraft,
             setChatError,
-            runAutoImageGeneration: () =>
-              scheduleAutoImageGeneration({ chatId, assistantId: assistant.id, content: finalContent }),
+            runAutoImageGeneration: scheduleAutoImageGeneration,
           });
         } catch (err) {
-          await removeEmptyStreamingDraft(assistantId);
           handleTurnError({
             chatId,
             error: err,
@@ -314,7 +264,6 @@ export function useSendMessage({
       const chatId = targetChatId;
       const character = targetCharacter;
       const contentPolicy = createContentPolicySnapshot(useSettingsStore.getState().contentMode);
-      let assistantId: string | null = null;
 
       try {
         const allMessages = await ensureMessagesHydrated(chatId);
@@ -345,82 +294,37 @@ export function useSendMessage({
         await deleteMessage(lastAssistantMsg.id);
 
         const messagesForPrompt = allMessages.filter((message) => message.id !== lastAssistantMsg.id);
-        const assembled = await assembleChatContext({
+        await runAssistantTurn({
           chatId,
           character,
           userInput: userContent,
           promptMessages: messagesForPrompt,
           contentPolicy,
           agenticPlayEnabled,
-          signal: controller.signal,
+          assistantParentId: allMessages[lastUserIdx].id,
+          controller,
+          isCurrent,
+          fallbackMessage: "Failed to regenerate",
+          debugBaseTrigger: "regenerate",
+          hiddenUserMessage: false,
+          isDebugEnabled: () => useSettingsStore.getState().debugMode,
           getMemoryPromptPlan,
           getWorldbookContextBlocks,
           stripMessages,
-        });
-        const { agenticRecord, built, contextTokens, generationHooks, modelConfig } = assembled;
-
-        if (onPromptBuilt) onPromptBuilt(built);
-
-        const assistant = await addMessage({
-          chatId,
-          parentId: allMessages[lastUserIdx].id,
-          role: "assistant",
-          content: "",
-        });
-        assistantId = assistant.id;
-        setStreamingMessageId(chatId, assistant.id);
-        const promptMessages = messagesForPrompt;
-        const debugContext: DebugPromptContext | undefined = useSettingsStore.getState().debugMode
-          ? {
-              chatId,
-              characterId: character.id,
-              characterName: character.name,
-              contextTokens,
-              round: getNextDebugRound(promptMessages),
-              assistantMessageId: assistant.id,
-              baseTrigger: "regenerate",
-              hiddenUserMessage: false,
-            }
-          : undefined;
-        const finalContent = await generateAssistantWithRetry({
-          chatId,
-          assistantId: assistant.id,
-          built,
-          modelConfig,
-          controller,
-          debugContext,
-          generationHooks,
-          agentic:
-            agenticRecord && agenticPlayEnabled
-              ? {
-                  character,
-                  initialGameState: agenticRecord.gameState,
-                }
-              : undefined,
           effects: {
+            addMessage,
             patchMessage,
             deleteMessage,
             setStreamingMessageId,
             setGenerationPhase,
             onAgenticPlayStateUpdated,
           },
-        });
-        await finalizeAssistantTurn({
-          chatId,
-          assistantId: assistant.id,
-          characterName: character.name,
-          finalContent,
-          contentPolicy,
-          isCurrent,
-          isGenerationActive: () => isGenerationActive(controller),
-          patchMessage,
+          onPromptBuilt,
           removeEmptyStreamingDraft,
           setChatError,
-          runAutoImageGeneration: () =>
-            scheduleAutoImageGeneration({ chatId, assistantId: assistant.id, content: finalContent }),
+          runAutoImageGeneration: scheduleAutoImageGeneration,
         });
       } catch (err) {
-        await removeEmptyStreamingDraft(assistantId);
         handleTurnError({
           chatId,
           error: err,
