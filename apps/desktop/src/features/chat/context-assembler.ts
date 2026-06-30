@@ -39,6 +39,11 @@ export interface ChatContextAssembly {
   historyMessages: Message[];
 }
 
+/**
+ * Converts stored preset items into prompt-builder input while applying the
+ * active content-policy mode. This is the first place where healthy/normal mode
+ * changes what the model is allowed to see.
+ */
 export function buildPolicyPresetItems(items: PresetItem[], policy: ContentPolicySnapshot): PromptPresetItem[] {
   const enabledItems = items.filter((item) => item.enabled);
   const policyItems = policy.filterNsfwPresetItems ? filterNsfwItems(enabledItems) : enabledItems;
@@ -49,6 +54,10 @@ export function buildPolicyPresetItems(items: PresetItem[], policy: ContentPolic
   }));
 }
 
+/**
+ * Builds generation-time hooks from prior assistant text. Flood detection lives
+ * here because it needs the exact history used for this turn, not global state.
+ */
 export function createOutputQualityHooks(sourceMessages: Message[]): Pick<GenerationHooks, "inspectOutput"> {
   const recentAssistantContents = sourceMessages
     .filter((message) => message.role === "assistant" && message.content.trim())
@@ -59,6 +68,12 @@ export function createOutputQualityHooks(sourceMessages: Message[]): Pick<Genera
   };
 }
 
+/**
+ * Builds everything the model needs for one chat turn: preset, memory,
+ * worldbook, Agentic state, healthy-mode safety prompt, model config, and the
+ * flood guard hook. The caller should only care about the returned prompt and
+ * generation metadata.
+ */
 export async function assembleChatContext({
   chatId,
   character,
@@ -76,6 +91,8 @@ export async function assembleChatContext({
   const historyMessages = promptMessages.slice(0, -1);
   const generationHooks = createOutputQualityHooks(historyMessages);
 
+  // Presets are loaded late from the repository so the active preset can change
+  // without rebuilding the hook layer.
   const activePresetId = await presetRepository.getActivePresetId();
   let presetItems: PromptPresetItem[] | undefined;
   if (activePresetId) {
@@ -85,8 +102,13 @@ export async function assembleChatContext({
     }
   }
 
+  // Memory and worldbook are separate context sources; keeping them as injected
+  // callbacks lets future RAG/context stages join without touching this runner.
   const memoryPlan = await getMemoryPromptPlan(historyMessages, chatId, signal);
   const worldbookBlocks = await getWorldbookContextBlocks(userInput, stripMessages(promptMessages));
+
+  // Agentic Play replaces the normal preset and injects game state as a
+  // first-class context block for this turn.
   const agenticRecord =
     agenticPlayEnabled && character ? await agenticPlayStateRepository.getOrCreate(chatId, character, true) : null;
   const agenticBlock = agenticRecord ? createAgenticPlayContextBlock(agenticRecord.gameState) : null;
@@ -95,6 +117,8 @@ export async function assembleChatContext({
     contextBlocks.push(createHealthyModeContextBlock());
   }
 
+  // Agentic turns use a stricter system preset; normal RP keeps the user's
+  // selected preset after policy filtering.
   const effectivePresetItems = agenticRecord ? await getAgenticPlayPresetItems() : presetItems;
   const built = buildChatPrompt({
     character,

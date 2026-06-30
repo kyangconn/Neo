@@ -19,6 +19,11 @@ const LOCAL_MEMORY_COMPRESSOR_KEY = "local";
 const MEMORY_COMPACTION_BATCH_TURNS = 4;
 const MEMORY_COMPACTION_BATCH_MIN_CHARS = 6000;
 
+/**
+ * Builds the memory part of a prompt: recent full turns plus an optional compact
+ * summary block for older turns. This is the place future RAG/compression stages
+ * should integrate, because it owns the history-to-context boundary.
+ */
 export interface BuildMemoryPromptPlanParams {
   historyMessages: Message[];
   targetChatId: string;
@@ -40,6 +45,8 @@ export function capText(content: string, maxChars: number) {
   return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
 }
 
+// The compression prompt can be much longer than the requested summary. Cap the
+// source to a predictable range so secondary model calls remain bounded.
 function formatMessagesForCompression(messages: Message[], maxChars: number) {
   const sourceLimit = Math.max(60_000, Math.min(240_000, maxChars * 20));
   const source = messages
@@ -66,6 +73,8 @@ function shouldCompactMemoryBuffer(messages: Message[], maxChars: number) {
   );
 }
 
+// Preserve the leading header and most recent details when model compression
+// exceeds the configured memory budget.
 function clampMemorySummary(summary: string, maxChars: number) {
   const normalized = summary.trim();
   if (normalized.length <= maxChars) return normalized;
@@ -77,6 +86,8 @@ function clampMemorySummary(summary: string, maxChars: number) {
   return `${header}${marker}${body.slice(-budget).trimStart()}`;
 }
 
+// The cache key changes whenever the model identity or important limits change,
+// preventing stale summaries from being reused across compressor configs.
 function getMemoryCompressorKey(config: ModelConfig | null) {
   if (!config) return LOCAL_MEMORY_COMPRESSOR_KEY;
   return ["model", config.id, config.baseUrl, config.model, config.maxTokens, config.updatedAt].join(":");
@@ -88,6 +99,8 @@ export async function resolveModelConfig(configId: string | null) {
   return stateConfig ?? settingsRepository.getModelConfig(configId);
 }
 
+// Older installs may have a single legacy summary. Normalize it into the segment
+// format so new incremental compaction can reuse it.
 function normalizeMemorySegments(memory: ChatMemory | null): ChatMemorySegment[] {
   if (!memory) return [];
   if (Array.isArray(memory.segments) && memory.segments.length > 0) {
@@ -110,6 +123,8 @@ function normalizeMemorySegments(memory: ChatMemory | null): ChatMemorySegment[]
   ];
 }
 
+// Memory segments are append-only summaries of older message batches. The source
+// hash lets later turns reuse the already-compressed prefix.
 function createMemorySegment(
   summary: string,
   sourceMessages: Message[],
@@ -135,6 +150,8 @@ function createMemorySegment(
   };
 }
 
+// Uses a secondary model as a plot-memory compressor. If it fails, callers fall
+// back to the local lightweight summary unless the failure was an abort.
 async function buildModelMemorySummary({
   messages,
   maxChars,
@@ -200,6 +217,10 @@ async function buildModelMemorySummary({
   };
 }
 
+/**
+ * Computes what history enters the prompt this turn. Recent messages remain
+ * verbatim; older messages are summarized into cached segments when needed.
+ */
 export async function buildMemoryPromptPlan({
   historyMessages,
   targetChatId,
@@ -211,6 +232,8 @@ export async function buildMemoryPromptPlan({
     return { recentMessages: historyMessages, memoryBlock: null };
   }
 
+  // Split first so recent turns stay lossless, while only older turns are
+  // eligible for summary/cache handling.
   const { memoryMessages, recentMessages } = splitMessagesByRecentTurns(historyMessages, settings.promptRecentTurns);
   if (memoryMessages.length === 0) {
     return { recentMessages, memoryBlock: null };
@@ -229,6 +252,8 @@ export async function buildMemoryPromptPlan({
     cached.compressorKey === compressorKey &&
     cached.memorySummaryMaxChars === settings.memorySummaryMaxChars;
 
+  // Reuse the cached prefix when possible; only summarize new overflow messages
+  // once enough old material has accumulated.
   let compressionMode: "local" | "model" | "fallback" = compressorConfig ? "fallback" : "local";
   let summarizedMessageCount = cacheReusable ? cachedMessageCount : 0;
   let segments = cacheReusable ? normalizeMemorySegments(cached) : [];
@@ -263,6 +288,8 @@ export async function buildMemoryPromptPlan({
         }
         compressionMode = "model";
       } catch (err) {
+        // Manual stop must remain a real abort. Other compressor failures should
+        // degrade to local memory so the chat turn can continue.
         if ((err as Error).name === "AbortError") throw err;
         segmentSummary = buildLightweightMemorySummary(messagesToSummarize, settings.memorySummaryMaxChars);
         compressionMode = "fallback";
@@ -287,6 +314,8 @@ export async function buildMemoryPromptPlan({
   }
 
   if (targetChatId && shouldPersistMemory) {
+    // Persist only after the new segment is ready, so a failed compressor call
+    // cannot corrupt the reusable memory cache.
     const summarizedSourceMessages = memorySourceMessages.slice(0, summarizedMessageCount);
     const summary = formatMemorySegmentsForPrompt(segments);
     await chatMemoryRepository.upsert({

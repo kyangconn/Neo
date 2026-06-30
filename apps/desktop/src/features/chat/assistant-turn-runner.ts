@@ -12,6 +12,12 @@ import { finalizeAssistantTurn, handleTurnError, type FinalizeAssistantTurnStatu
 
 type AssistantTurnTrigger = Exclude<DebugPromptTrigger, "retry">;
 
+/**
+ * Store-side effects required to run one assistant reply.
+ *
+ * Keeping these as injected callbacks makes this runner independent from React
+ * hooks and leaves send/regenerate responsible only for preparing messages.
+ */
 export interface AssistantTurnEffects extends GenerationEffects {
   addMessage: (input: CreateMessageInput) => Promise<Message>;
 }
@@ -46,6 +52,11 @@ export interface RunAssistantTurnResult {
   status: FinalizeAssistantTurnStatus | "error";
 }
 
+/**
+ * Shared assistant lifecycle for both send and regenerate:
+ * build prompt context, create the streaming assistant draft, generate, then
+ * run finalizers such as healthy-mode output blocking and auto image planning.
+ */
 export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<RunAssistantTurnResult> {
   const {
     agenticPlayEnabled,
@@ -73,6 +84,8 @@ export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<
   let assistantId: string | null = null;
 
   try {
+    // Context assembly is intentionally before the assistant draft so failures
+    // do not leave an empty message in the chat tree.
     const assembled = await assembleChatContext({
       chatId,
       character,
@@ -88,6 +101,8 @@ export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<
     const { agenticRecord, built, contextTokens, generationHooks, modelConfig } = assembled;
     onPromptBuilt?.(built);
 
+    // The draft becomes the stable streaming target for both normal and
+    // Agentic generation paths.
     const assistant = await effects.addMessage({
       chatId,
       parentId: assistantParentId,
@@ -97,6 +112,8 @@ export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<
     assistantId = assistant.id;
     effects.setStreamingMessageId(chatId, assistant.id);
 
+    // Debug prompt metadata is attached to usage so the cost/debug table can
+    // link a generated row back to the saved prompt payload.
     const finalContent = await generateAssistantWithRetry({
       chatId,
       assistantId: assistant.id,
@@ -124,6 +141,8 @@ export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<
       effects,
     });
 
+    // Finalization owns UI-visible completion semantics: stale-turn cleanup,
+    // healthy-mode output blocking, notification, and optional auto image work.
     const status = await finalizeAssistantTurn({
       chatId,
       assistantId: assistant.id,
@@ -141,6 +160,8 @@ export async function runAssistantTurn(params: RunAssistantTurnParams): Promise<
 
     return { assistantId: assistant.id, finalContent, status };
   } catch (error) {
+    // Generation failures after draft creation must not leave a blank assistant
+    // bubble. Error wording still goes through the shared turn error mapper.
     await removeEmptyStreamingDraft(assistantId);
     handleTurnError({
       chatId,

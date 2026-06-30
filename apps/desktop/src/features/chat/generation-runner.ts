@@ -40,6 +40,10 @@ const FLOOD_GUARD_STOP_MESSAGE = "检测到模型重复输出，已自动停止�
 
 export type DebugPromptTrigger = "send" | "continue" | "regenerate" | "retry";
 
+/**
+ * Metadata needed to save one model prompt snapshot. The saved file is linked
+ * back to usage rows, so debug mode can explain what the model actually saw.
+ */
 export interface DebugPromptContext {
   chatId: string;
   characterId: string;
@@ -76,6 +80,8 @@ export interface GenerationEffects {
   onAgenticPlayStateUpdated?: (state: AgenticGameState) => void;
 }
 
+// Generation runner stays UI-framework-free. The caller injects store effects so
+// the same generation path can be reused by send, regenerate, and future tools.
 interface BaseGenerationParams {
   chatId: string;
   assistantId: string;
@@ -161,6 +167,8 @@ function createFloodGuardError(reason: string) {
   return err;
 }
 
+// inspectOutput is the streaming safety seam. The hook can terminate generation
+// before the model finishes when repeated/flood output is detected.
 function inspectGeneratedOutput(
   hooks: Pick<GenerationHooks, "inspectOutput"> | undefined,
   accumulated: string,
@@ -172,6 +180,8 @@ function inspectGeneratedOutput(
   throw createFloodGuardError(result.reason);
 }
 
+// Debug prompt fields live on usage so cost/history views can jump from one
+// assistant message to its saved request payload.
 function withDebugUsage(
   usage: Message["usage"] | undefined,
   debugPrompt?: SavedDebugPrompt,
@@ -189,6 +199,8 @@ function withDebugUsage(
   };
 }
 
+// Saves the final request payload, including included context blocks, before a
+// model call. It is deliberately non-fatal; generation continues if saving fails.
 async function saveDebugPromptFile({
   attempt,
   built,
@@ -259,6 +271,8 @@ function getAttemptMessages(built: BuiltPrompt, retrying: boolean) {
   return [...built.messages, { role: "system" as const, content: EMPTY_ASSISTANT_RETRY_MESSAGE }];
 }
 
+// Builds the provider request once so stream/non-stream paths cannot drift on
+// model parameters, user id, or reasoning settings.
 function buildProviderGenerateInput(params: {
   messages: GenerateMessage[];
   modelConfig: ModelConfig;
@@ -293,6 +307,8 @@ async function resetAssistantDraft(effects: GenerationEffects, assistantId: stri
   );
 }
 
+// Empty-body retry uses the post-regex visible body, not raw model text. This
+// catches presets that generate only tags or content stripped from display.
 function hasVisibleAssistantBody(content: string) {
   if (!content.trim()) return false;
   const rules = useSettingsStore.getState().getActiveRegexRules();
@@ -339,6 +355,8 @@ function createNormalGenerationStream(params: {
   });
 }
 
+// Streaming normal generation updates the draft message as chunks arrive and
+// runs output inspection on accumulated visible content.
 async function runStreamingNormalGeneration(params: {
   assistantId: string;
   controller: AbortController;
@@ -375,6 +393,9 @@ async function runStreamingNormalGeneration(params: {
   return true;
 }
 
+// Non-stream providers still need the same reasoning-capture behavior as stream
+// mode. Some reasoning models put visible text in reasoningContent when thinking
+// capture is disabled.
 async function runNonStreamingNormalGeneration(params: {
   assistantId: string;
   chatId: string;
@@ -423,6 +444,8 @@ async function runNonStreamingNormalGeneration(params: {
   state.usage = result.usage;
 }
 
+// One normal generation attempt. Retry policy and final persistence are handled
+// by generateNormalAssistantWithRetry so this function can focus on the API call.
 async function generateNormalAssistantOnce(
   params: BaseGenerationParams & {
     retrying: boolean;
@@ -510,6 +533,8 @@ async function generateNormalAssistantOnce(
   };
 }
 
+// One Agentic Play attempt. Tool rounds, dice results, content reset, and final
+// player options are driven by the Agentic engine while sharing the same draft.
 async function generateAgenticAssistantOnce(
   params: BaseGenerationParams & {
     character: Character;
@@ -646,6 +671,10 @@ async function generateAgenticAssistantOnce(
   };
 }
 
+/**
+ * Runs normal chat generation with one automatic retry when the final displayed
+ * body is empty after regex/preset processing.
+ */
 export async function generateNormalAssistantWithRetry(params: BaseGenerationParams): Promise<string> {
   const { assistantId, chatId, effects } = params;
   for (let attempt = 0; attempt <= EMPTY_ASSISTANT_RETRY_LIMIT; attempt++) {
@@ -690,6 +719,10 @@ export async function generateNormalAssistantWithRetry(params: BaseGenerationPar
   return "";
 }
 
+/**
+ * Runs Agentic Play generation with retry while preserving the latest game
+ * state produced by tool rounds.
+ */
 export async function generateAgenticAssistantWithRetry(
   params: BaseGenerationParams & {
     character: Character;
@@ -746,6 +779,10 @@ export async function generateAgenticAssistantWithRetry(
   return "";
 }
 
+/**
+ * Public entry for assistant generation. Callers choose normal vs Agentic by
+ * passing optional agentic params; the rest of the lifecycle stays identical.
+ */
 export async function generateAssistantWithRetry(params: AssistantGenerationParams): Promise<string> {
   if (params.agentic) {
     return generateAgenticAssistantWithRetry({

@@ -34,6 +34,10 @@ export interface HandleTurnErrorParams {
   setChatError: (chatId: string, message: string | null) => void;
 }
 
+/**
+ * Completion notification prefers native system notifications when the app is
+ * backgrounded, then falls back to the in-app toast used elsewhere.
+ */
 export async function notifyAssistantOutputComplete(characterName?: string) {
   const toast = typeof window !== "undefined" ? window.__toast : null;
   const name = characterName?.trim();
@@ -63,6 +67,11 @@ export async function notifyAssistantOutputComplete(characterName?: string) {
   if (toast) toast("success", message);
 }
 
+/**
+ * Final gate after generation succeeds. It handles stale turns, healthy-mode
+ * output blocking, completion notification, auto image trigger, and blank-draft
+ * cleanup in one place.
+ */
 export async function finalizeAssistantTurn({
   chatId,
   assistantId,
@@ -82,6 +91,8 @@ export async function finalizeAssistantTurn({
     return "stale";
   }
 
+  // Output policy is checked after generation because the model can produce
+  // unsafe text even if the user input was clean.
   const violation = contentPolicy.checkExplicitOutput ? checkHealthyModeOutput(finalContent) : null;
   if (violation) {
     await patchMessage(assistantId, {
@@ -95,11 +106,17 @@ export async function finalizeAssistantTurn({
   }
 
   void notifyComplete(characterName);
+  // Auto image generation is intentionally fire-and-forget; the message itself
+  // is already complete and should not wait on Comfy/planner work.
   runAutoImageGeneration();
   await removeEmptyStreamingDraft(assistantId);
   return "completed";
 }
 
+/**
+ * Converts internal failure classes into user-facing chat errors. This keeps
+ * flood stop, manual abort, and generic generation failure distinguishable.
+ */
 export function handleTurnError({
   chatId,
   error,

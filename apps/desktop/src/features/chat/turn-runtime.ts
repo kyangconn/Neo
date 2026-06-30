@@ -14,6 +14,9 @@ function chatTaskKey(chatId: string) {
  *
  * It owns task exclusivity, abort wiring, and store lifecycle state. Prompt
  * building and generation should keep moving toward core strategies.
+ *
+ * A separate key per chat keeps one conversation from starting two concurrent
+ * assistant runs, while still allowing future background work for other chats.
  */
 export function startChatTurn<T>(chatId: string, runner: ChatTurnRunner<T>): Promise<T> {
   return generationTaskRunner.startExclusive(chatTaskKey(chatId), async (context) => {
@@ -28,6 +31,8 @@ export function startChatTurn<T>(chatId: string, runner: ChatTurnRunner<T>): Pro
   });
 }
 
+// Abort is mirrored to the store immediately so the UI footer stops even before
+// lower-level stream/provider cleanup finishes.
 export function abortChatTurn(chatId: string) {
   generationTaskRunner.abort(chatTaskKey(chatId));
   useChatStore.getState().finishSending(chatId);

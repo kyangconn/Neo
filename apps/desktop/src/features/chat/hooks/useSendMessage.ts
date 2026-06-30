@@ -42,6 +42,10 @@ interface UseSendMessageReturn {
   clearError: () => void;
 }
 
+/**
+ * React facade for chat commands. It owns UI/store wiring and input preparation;
+ * shared assistant generation lives in assistant-turn-runner.
+ */
 export function useSendMessage({
   character,
   chatId,
@@ -78,6 +82,8 @@ export function useSendMessage({
     abortChatTurn(chatId);
   }, [chatId]);
 
+  // Regex stripping is only for prompt construction. Stored assistant messages
+  // keep their original text so display/edit/history remain faithful.
   const stripMessages = useCallback((msgs: Message[]): Message[] => {
     const rules = useSettingsStore.getState().getActiveRegexRules() ?? [];
     return msgs.map((m) => (m.role === "assistant" ? { ...m, content: stripPromptContent(m.content, rules) } : m));
@@ -94,6 +100,8 @@ export function useSendMessage({
     [deleteMessage],
   );
 
+  // Adapter around desktop worldbook store state. The pure selection/matching
+  // rule stays in worldbook-context for reuse by image planning.
   const getWorldbookContextBlocks = useCallback(
     async (userInput: string, recentMessages: Message[]) => {
       const { worldbooks, activeWorldbookId } = useWorldbookStore.getState();
@@ -109,6 +117,8 @@ export function useSendMessage({
     [character],
   );
 
+  // Auto-image planning uses worldbook snippets too, but as compact references
+  // rather than prompt ContextBlocks.
   const getPlannerWorldbookReferences = useCallback(
     async (content: string) => {
       const imageSettings = useSettingsStore.getState().imageGeneration;
@@ -126,6 +136,8 @@ export function useSendMessage({
     [character],
   );
 
+  // Fire-and-forget follow-up after final text is accepted. Errors are routed
+  // through the same chat toast path.
   const scheduleAutoImageGeneration = useCallback(
     (params: { chatId: string; assistantId: string; content: string }) => {
       void runAutoImageGeneration({
@@ -141,6 +153,8 @@ export function useSendMessage({
     [getPlannerWorldbookReferences, patchMessage, setChatError],
   );
 
+  // Memory planning is injected into context assembly so future RAG/compression
+  // strategies can replace this adapter without changing send/regenerate.
   const getMemoryPromptPlan = useCallback(
     async (historyMessages: Message[], targetChatId: string, signal?: AbortSignal) =>
       buildMemoryPromptPlan({
@@ -174,6 +188,8 @@ export function useSendMessage({
         }
 
         try {
+          // sendMessage is the only path that creates a new user node. The
+          // assistant lifecycle below is shared with regenerate.
           const activePath = getActivePath(chatId);
           const lastMessageId = activePath.length > 0 ? activePath[activePath.length - 1].id : null;
 
@@ -266,6 +282,8 @@ export function useSendMessage({
       const contentPolicy = createContentPolicySnapshot(useSettingsStore.getState().contentMode);
 
       try {
+        // Regenerate rewinds the latest assistant reply, then reruns the shared
+        // assistant lifecycle from the previous user message.
         const allMessages = await ensureMessagesHydrated(chatId);
 
         let lastAssistantIdx = -1;

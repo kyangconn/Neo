@@ -29,6 +29,8 @@ export interface RunAutoImageGenerationParams {
   getWorldbookReferences: (content: string) => Promise<ImagePlannerWorldbookReference[]>;
 }
 
+// Per-message image jobs are cancelable. Regenerate/delete must be able to stop
+// an older Comfy/planner run before it writes stale image state back.
 const activeImageGenerations = new Map<string, { controller: AbortController; token: string }>();
 
 interface ImageGenerationRun {
@@ -58,6 +60,8 @@ function beginImageGeneration(messageId: string) {
   return run;
 }
 
+// The token check prevents a slower previous image run from patching a message
+// after a newer run has started for the same assistant reply.
 function isCurrentImageGeneration(messageId: string, token: string) {
   const active = activeImageGenerations.get(messageId);
   return !!active && active.token === token && !active.controller.signal.aborted;
@@ -101,6 +105,10 @@ async function recordImagePlannerUsage(params: {
   }
 }
 
+/**
+ * Finds image markers in the assistant text, or asks the secondary model to add
+ * them. This keeps planner usage and worldbook references outside the UI hook.
+ */
 async function resolvePlannedImageContent({
   chatId,
   content,
@@ -134,6 +142,10 @@ async function resolvePlannedImageContent({
   return { content: nextContent, markers };
 }
 
+/**
+ * Drives Comfy generation slot by slot. Each slot re-reads latest message
+ * images before patching so user edits/deletes win over late image responses.
+ */
 async function generateImagesForMarkers(
   { assistantId, settings, imageSignal, isCurrent, patchMessage }: ImageGenerationRun,
   markers: ImageMarker[],
@@ -168,6 +180,11 @@ async function generateImagesForMarkers(
   }
 }
 
+/**
+ * Auto image generation runs after assistant finalization. It is deliberately
+ * best-effort: chat completion should stay valid even if planning or Comfy
+ * generation fails.
+ */
 export async function runAutoImageGeneration({
   chatId,
   assistantId,

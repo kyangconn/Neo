@@ -25,6 +25,10 @@ interface GetImagePlannerWorldbookReferencesParams extends ResolveChatWorldbookP
   maxContentChars?: number;
 }
 
+/**
+ * Shared worldbook selection rule for chat context and image planning.
+ * Character-bound worldbooks win; otherwise the global active worldbook is used.
+ */
 export function resolveChatWorldbook({
   activeWorldbookId,
   character,
@@ -35,6 +39,10 @@ export function resolveChatWorldbook({
   return worldbooks.find((worldbook) => worldbook.id === worldbookId) ?? null;
 }
 
+/**
+ * Produces prompt context blocks from the resolved worldbook using the core
+ * contributor, preserving insertion position/priority semantics.
+ */
 export async function getChatWorldbookContextBlocks({
   activeWorldbookId,
   character,
@@ -54,6 +62,10 @@ export async function getChatWorldbookContextBlocks({
   });
 }
 
+/**
+ * Produces compact worldbook references for image planning. This intentionally
+ * returns only title/content snippets, not full prompt ContextBlocks.
+ */
 export function getImagePlannerWorldbookReferences({
   activeWorldbookId,
   character,
